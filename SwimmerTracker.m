@@ -53,7 +53,8 @@ function purgeMemory(obj)
     obj.v.nextTrackCandidateId=1;
 end
 
-function nextFrame(obj, image, debug)
+% elapsedTimeMs - time in milliseconds since last frame
+function nextFrame(obj, image, elapsedTimeMs, debug)
     ensureInitialized(obj, debug);
 
     obj.frameInd = obj.frameInd + 1;
@@ -67,10 +68,10 @@ function nextFrame(obj, image, debug)
     
     fprintf(1, 'track shapes\n');
 
-    processDetections(obj, obj.frameInd, bodyDescrs);
+    processDetections(obj, obj.frameInd, elapsedTimeMs, bodyDescrs);
 end
 
-function processDetections(obj, frameInd, frameDetections)
+function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
     % remember tracks count at the beginning of current frame processing
     % because new tracks may be added
     %tracksCountPrevFrame = length(obj.tracks);
@@ -78,7 +79,7 @@ function processDetections(obj, frameInd, frameDetections)
     %
     predictSwimmerPositions(obj, frameInd);
 
-    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, frameDetections);
+    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections);
 
     % make assignment using Hungarian algo
     % all unassigned detectoins and unprocessed tracks
@@ -165,12 +166,9 @@ function predictSwimmerPositions(obj, frameInd)
     end
 end
 
-function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, frameDetections)
-    % max distance for swimmer to move in two consequent frames
-    % 20 is too small: when shape changes from upper body to lower, the 
-    % centroid shifts 38 pixels. => set for 50 (with margin).
-    %swimmerMaxShiftPerFrame = 50;
-    swimmerMaxShiftPerFrameM = 0.5;
+function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections)
+    % 2.3m/s is max speed for swimmers
+    swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000;
     
     % calculate distance from predicted pos of each tracked object
     % to each detection

@@ -13,7 +13,7 @@ end
 function run(obj)
     debug = 1;
     renderTopView = false;
-    obj.v.keepTrackHistory = true;
+    obj.v.keepTrackHistory = false;
     
     RunSwimmingPoolVideoFileTracker.init(obj,renderTopView);
     RunSwimmingPoolVideoFileTracker.processFrames(obj, renderTopView, debug);
@@ -21,6 +21,7 @@ end
 
 function init(obj, renderTopView)
     % open video
+    
     %videoFilePath = fullfile('data/mvi3177_blueWomanLane3_16frames.avi');
     videoFilePath = fullfile('../output/mvi3177_blueWomanLane3.avi');
     %videoFilePath = fullfile('../rawdata/MVI_3177.mov');
@@ -31,13 +32,17 @@ function init(obj, renderTopView)
     frameRate = get(videoReader,'FrameRate');
     procFrames=videoReader.NumberOfFrames;
     fprintf('video FrameRate=%d NumberOfFrames=%d\n', frameRate, procFrames);
+    
+    %obj.v.elapsedTimePerFrameMs = 1000 / videoReader.FrameRate;
+    obj.v.elapsedTimePerFrameMs = 1000 / videoReader.FrameRate * 29; % for /mvi3177_blueWomanLane3.avi
+
 
     toFrame=Inf;
     framesToTakeLast = min([procFrames toFrame]);
     fprintf('analysis of first %d frames\n', framesToTakeLast);
     
     %framesToTake=1:20:procFrames;
-    framesToTake=286:framesToTakeLast;
+    framesToTake=285:framesToTakeLast;
     %framesToTake=2476;
     %framesToTake=16;
     obj.v.framesToTake = framesToTake;
@@ -98,7 +103,7 @@ function processFrames(obj, renderTopView, debug)
 
         % do frame analysis
         
-        obj.v.tr.nextFrame(image,debug);
+        obj.v.tr.nextFrame(image, obj.v.elapsedTimePerFrameMs, debug);
 
         % get debug image
 
