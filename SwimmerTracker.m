@@ -168,7 +168,8 @@ end
 
 function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections)
     % 2.3m/s is max speed for swimmers
-    swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000;
+    shapeCentroidNoise = 0.5; % shape may change significantly
+    swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000 + shapeCentroidNoise;
     
     % calculate distance from predicted pos of each tracked object
     % to each detection
@@ -258,7 +259,13 @@ function kalman = createCalmanPredictor(~, initPos)
     % init Kalman Filter
     stateModel = [1 0 1 0; 0 1 0 1; 0 0 1 0; 0 0 0 1]; 
     measurementModel = [1 0 0 0; 0 1 0 0]; 
-    kalman = vision.KalmanFilter(stateModel, measurementModel, 'ProcessNoise', 4, 'MeasurementNoise', 30);
+    kalman = vision.KalmanFilter(stateModel, measurementModel);
+    
+    % max shift per frame = 20cm
+    kalman.ProcessNoise = (0.2 / 3)^2;
+    
+    % max measurment error per frame = 1m (far away it can be 5m)
+    kalman.MeasurementNoise = (5 / 3)^2;
     kalman.State = [initPos 0 0]; % v0=0
 end
 
