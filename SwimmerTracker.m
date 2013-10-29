@@ -4,7 +4,7 @@ properties
     tracks;
     %v.nextTrackId;
     %trackCandidates;
-    frameInd;
+    frameInd;                 % number of processed frames
     v;
     % v.nextTrackCandidateId;
     % v.distanceCompensator;
@@ -625,6 +625,10 @@ function imageTopView = adornImageWithTrackedBodiesTopView(obj, image)
 %         %imageTopView = cv.rectangle(imageTopView, box, 'Color', candColor);
 %         imageTopView=cv.circle(imageTopView, estPosTopView, 3, 'Color', trackColor);
     end
+end
+
+function rewindToFrameDebug(obj, toFrame, debug)
+    obj.frameInd = toFrame;
 end
 
 function color = getTrackColor(obj, track)

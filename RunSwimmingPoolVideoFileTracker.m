@@ -5,11 +5,16 @@ function obj = create()
     obj = utils.TypeErasedClass;
     obj.v.debug = false;
     obj.v.tr=SwimmerTracker;
+    
+    % for debugging
+    obj.v.keepTrackHistory = false;
 end
 
 function run(obj)
-    debug = 0;
+    debug = 1;
     renderTopView = false;
+    obj.v.keepTrackHistory = true;
+    
     RunSwimmingPoolVideoFileTracker.init(obj,renderTopView);
     RunSwimmingPoolVideoFileTracker.processFrames(obj, renderTopView, debug);
 end
@@ -32,7 +37,7 @@ function init(obj, renderTopView)
     fprintf('analysis of first %d frames\n', framesToTakeLast);
     
     %framesToTake=1:20:procFrames;
-    framesToTake=1:framesToTakeLast;
+    framesToTake=286:framesToTakeLast;
     %framesToTake=2476;
     %framesToTake=16;
     obj.v.framesToTake = framesToTake;
@@ -58,7 +63,10 @@ function init(obj, renderTopView)
 end
 
 function processFrames(obj, renderTopView, debug)
-    obj.v.tr.purgeMemory();
+    
+    if ~obj.v.keepTrackHistory
+        obj.v.tr.purgeMemory();
+    end    
     
     if ~renderTopView
         subplot(1,1,1); % reset subplotting
@@ -74,6 +82,12 @@ function processFrames(obj, renderTopView, debug)
         if ~isempty(userBreakFile)
             warning('Interrupted by user');
             break;
+        end
+        
+        if obj.v.keepTrackHistory
+            rewindToFrame = frameInd - 1; % is incremented when started processing frame
+            %obj.v.tr.rewindToFrameDebug(rewindToFrame, debug);
+            obj.v.tr.frameInd = rewindToFrame;
         end
 
         %image=video(:,:,:,num);
