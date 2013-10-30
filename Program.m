@@ -26,6 +26,9 @@ RunCameraDistanceCompensator.run(distComp);
 opticFlow1 = RunOpticalFlow1.create;
 RunOpticalFlow1.run(opticFlow1)
 %%
+emdRunner = RunEarthMoverDistance1.create;
+RunEarthMoverDistance1.run(emdRunner, true);
+%%
 
 % TRACK TESTS
 %{
