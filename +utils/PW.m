@@ -12,12 +12,13 @@ function debugImage(sender, msg, image)
 end
 
 % removes each row of the mat for which condition rowPred is true.
-function matRemoveIf(mat, rowPred)
+function cleanedMat = matRemoveIf(mat, rowPred)
     for i=size(mat,1):-1:1 % traverse in back order
         if rowPred(mat(i,:))
             mat(i,:) = [];
         end
     end
+    cleanedMat = mat;
 end
 
 end
