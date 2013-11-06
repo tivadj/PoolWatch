@@ -36,7 +36,7 @@ function imageProps = drawRegionProps(imageGray, connComps, labelShift)
 
         % find centroid
         [rows,cols] = ind2sub(size(imageGray), oneInds);
-        centroid = mean([cols rows]);
+        centroid = mean([cols rows], 1);
         
         % shift label out of component
         dir = centroid-totalCentroid;

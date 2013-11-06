@@ -47,78 +47,46 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
         imshow(imageBody);
     end    
     
-%     sel=strel('disk',1,0);
-%     bodyI2=imopen(imageBody, sel);
-%     if debug
-%         imshow(bodyI2);
-%     end
-%     
-%     bodyGray=bodyI2(:,:,1);
-%     if debug
-%         imshow(bodyGray);
-%     end
-    
     imageInputGray = imageBody(:,:,1); % TODO: make gray?
     
     if debug
         imshow(imageInputGray);
     end
     
-    % cut bridges between connected components
+    % cut tenuous bridges between connected components
     % =1 dashed lines
     % =2 too match, some parts flying around
     narrowRad = 1;     
     sel=strel('disk',narrowRad,0);
-    noNarrowBridges=imopen(imageInputGray, sel);
+    noTenuousBridges=imopen(imageInputGray, sel);
     
     if debug
-        imshow(noNarrowBridges);
+        imshow(noTenuousBridges);
     end
 
     % find islands of pixels 
-    connComps=bwconncomp(noNarrowBridges, 8);
-    connCompProps=regionprops(connComps,'Area','MinorAxisLength','MajorAxisLength','Extent','Centroid');
+    connComp=bwconncomp(noTenuousBridges, 8);
+    connCompProps=regionprops(connComp,'Area','MinorAxisLength','MajorAxisLength','Extent','Centroid');
 
     if debug
-        noNarrowBridgesDebug1 = utils.drawRegionProps(noNarrowBridges, connComps, 120);
-        imshow(noNarrowBridgesDebug1);
+        imgBlobs = utils.drawRegionProps(noTenuousBridges, connComp, 120);
+        imshow(imgBlobs);
     end
     
-    % remove too small or too big
+    % remove noise on a pixel level (too small/large components)
     % expect swimmer shape island to be in range
-    % 50 is too big; head of 40px is missed (16 frames avi, frame=11)
-    % TODO: blob size should depend on 2D ortho position in the pool
-    %swimmerShapeAreaMin = 50; % any patch below is noise
+    shapeMinAreaPixels = 6; % (in pixels) any patch below is noise
+    swimmerShapeAreaMax = 5000; % (in pixels) anything greater can't be a swimmer
     
-    swimmerShapeAreaMin = 6; % any patch below is noise
-    swimmerShapeAreaMax = 5000; % anything greater can't be a swimmer
-    
-    %
-    
-    %noiseIslands = [bodyConnCompAreas(:).Area] < swimmerShapeAreaMin;
-    blocksCount = length(connCompProps);
-    noiseIslands = zeros(1, blocksCount,'uint8');
-    for i=1:blocksCount
-        centroid = connCompProps(i).Centroid;
-        centroidWorld = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, centroid);
-        
-        actualArea = connCompProps(i).Area;
-
-        worldArea = 999; % unused
-        expArea = CameraDistanceCompensator.worldAreaToCamera(obj.distanceCompensator, centroidWorld, worldArea);
-        isNoise = actualArea < expArea/100;
-        noiseIslands(i) = isNoise;
-    end
-    noiseIslands = cast(noiseIslands,'logical'); % indices must be logical
-    
-    imageNoNoise = HumanDetector.removeIslands(connComps, noNarrowBridges, noiseIslands);
+    noiseIslands = [connCompProps(:).Area] < shapeMinAreaPixels;
+    imageNoNoise = HumanDetector.removeIslands(connComp, noTenuousBridges, noiseIslands);
 
     if debug
-        imshow(imageNoNoise), title('small islands removed');
+        imshow(imageNoNoise), title('small islands removed (pixel level)');
     end
 
     noiseIslands = [connCompProps(:).Area] > swimmerShapeAreaMax;
-    imageNoBigIslands = HumanDetector.removeIslands(connComps, imageNoNoise, noiseIslands);
+    imageNoBigIslands = HumanDetector.removeIslands(connComp, imageNoNoise, noiseIslands);
 
     if debug
         imshow(imageNoBigIslands), title('large islands removed');
@@ -130,7 +98,7 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     % [10.7585 242.3401]=0.044 = light reflection
     % remove alongated stripes created by lane markers and water 'blique' 
     noiseIslands = [connCompProps(:).MinorAxisLength]./[connCompProps(:).MajorAxisLength]<0.1;
-    imageNoSticks = HumanDetector.removeIslands(connComps, imageNoBigIslands, noiseIslands);
+    imageNoSticks = HumanDetector.removeIslands(connComp, imageNoBigIslands, noiseIslands);
 
     if debug
         imshow(imageNoSticks), title('minor/major axis');
@@ -138,7 +106,7 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     
     % remove 'outline' objects
     noiseIslands = [connCompProps(:).Extent] < 0.1;
-    imageNoOutlines = HumanDetector.removeIslands(connComps, imageNoSticks, noiseIslands);
+    imageNoOutlines = HumanDetector.removeIslands(connComp, imageNoSticks, noiseIslands);
 
     if debug
         imshow(imageNoOutlines), title('outline islands removed');
@@ -146,6 +114,8 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     
     % glue body parts
     % which can be disconnected by appearance of swimming clothes, lane markers etc.
+    % TODO: gluing radius should depend on distance from camera (further objects
+    % should be glued with smaller radius
     bodyApartMaxDist=20;
     sel=strel('disk',ceil(bodyApartMaxDist/2),0);
     imageGluedParts=imclose(imageNoOutlines, sel);
@@ -156,11 +126,16 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     end
     
     % gluing fix: gluing by closing may generate small islands; remove them
-    connComps = bwconncomp(imageGluedParts, 8);
-    connCompsProps = regionprops(connComps, 'Area','Centroid');
+    connComp = bwconncomp(imageGluedParts, 8);
+    connCompProps = regionprops(connComp, 'Area','Centroid');
     
-    smallIslands = [connCompsProps(:).Area] < swimmerShapeAreaMin;
-    imageGluedPartsNoSmall = HumanDetector.removeIslands(connComps, imageGluedParts, smallIslands);
+    if debug
+        imgBlobs = utils.drawRegionProps(imageGluedParts, connComp, 120);
+        imshow(imgBlobs);
+    end
+    
+    smallIslands = [connCompProps(:).Area] < shapeMinAreaPixels;
+    imageGluedPartsNoSmall = HumanDetector.removeIslands(connComp, imageGluedParts, smallIslands);
 
     if debug
         imshow(imageGluedPartsNoSmall), title('post glued parts: small islands removed');
@@ -169,91 +144,41 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     % remove swimmer shapes of unfeasible area
     % depends: parts of shape must be glued
     imageFeasAreaShapes = imageGluedPartsNoSmall;
-
-    centroidMat = reshape([connCompsProps(:).Centroid],2,[])';
-    centroidCells = mat2cell(centroidMat,ones(size(centroidMat, 1),1),2);
     
-    if ~isempty(centroidCells)
-        %isFeas = @(centroid,area) CameraDistanceCompensator.isFeasibleArea(obj.distanceCompensator, centroid, area);
-        %feasCmps = arrayfun(isFeas, centroidCells, [connCompsProps(:).Area]');
-        
-        blocksCount = length(centroidCells);
-        feasCmps = zeros(1, blocksCount);
+    blocksCount = connComp.NumObjects;
+    if blocksCount > 0
+        % 0.3 is too large - far away head is undetected 
+        % eg. head 20 cm x 20 cm = 0.04
+        bodyAreaMin = 0.04;
+        bodyAreaMax = 2; % man of size 1m x 2m
+
+        noiseIslands = zeros(1, blocksCount,'uint8');
         for i=1:blocksCount
-            actualArea = connCompsProps(i).Area;
-
-            centroid = centroidMat(i,:);
-            
+            centroid = connCompProps(i).Centroid;
             centroidWorld = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, centroid);
-            
-            worldArea = 999; % unused
-            expArea = CameraDistanceCompensator.worldAreaToCamera(obj.distanceCompensator, centroidWorld, worldArea);
-            
-            isFeasible = actualArea > expArea/4 && actualArea < expArea*4;
-            feasCmps(i) = isFeasible;
-        end
 
-        noiseIslands = ~feasCmps;
-        imageFeasAreaShapes = HumanDetector.removeIslands(connComps, imageGluedPartsNoSmall, noiseIslands);
+            actualArea = connCompProps(i).Area;
+
+            expectAreaMax = CameraDistanceCompensator.worldAreaToCamera(obj.distanceCompensator, centroidWorld, bodyAreaMax);
+            isNoise = actualArea > expectAreaMax;
+
+            if ~isNoise
+                expectAreaMim = CameraDistanceCompensator.worldAreaToCamera(obj.distanceCompensator, centroidWorld, bodyAreaMin);
+                isNoise = actualArea < expectAreaMim;
+            end
+
+            %isNoise = actualArea < expectAreaMax/100;
+            noiseIslands(i) = isNoise;
+        end
+        noiseIslands = cast(noiseIslands,'logical'); % indices must be logical
+
+        imageFeasAreaShapes = HumanDetector.removeIslands(connComp, imageGluedPartsNoSmall, noiseIslands);
 
         if debug
-            imshow(imageFeasAreaShapes), title('unfeasible area islands removed');
+            imshow(imageFeasAreaShapes), title('shape area (world)');
         end
     end
     
-    % remove swimmer shapes of unfeasible area: using orthogonal projection (Top) view
-%     connComps = bwconncomp(imageFeasAreaShapes, 8);
-%     connCompsProps = regionprops(connComps, 'Area','Centroid');
-% 
-%     desiredImageSize = [size(imageFeasAreaShapes,2), size(imageFeasAreaShapes,1)];
-%     imageGluedPartsNoSmallTop = CameraDistanceCompensator.convertCameraImageToTopView(obj.distanceCompensator, imageFeasAreaShapes, desiredImageSize);
-%     
-%     if debug
-%         imshow(imageGluedPartsNoSmallTop), title('top view');
-%     end
-%     
-%     connCompsTop = bwconncomp(imageGluedPartsNoSmallTop, 8);
-%     if connComps.NumObjects > 0 && connComps.NumObjects == connCompsTop.NumObjects
-%         connCompsTopProps = regionprops(connCompsTop, 'Area','Centroid');
-% 
-%         % 
-%         assert(connComps.NumObjects == connCompsTop.NumObjects, 'Original and Top images have different number of connected components');
-%         topToSkewed = CameraDistanceCompensator.findComponentMap(obj.distanceCompensator,connComps,connCompsProps,connCompsTop,connCompsTopProps);
-% 
-%         %
-%         swimmerShapeAreaMinM = 25*50/10000; % 25cm x 50cm
-%         swimmerShapeAreaMaxM = 100*200/10000; % anything greater can't be a swimmer
-% 
-%         %
-%         destImageSize = [size(imageGluedPartsNoSmallTop,1) size(imageGluedPartsNoSmallTop,2)];
-%         areaM = CameraDistanceCompensator.scaleTopViewImageToWorldArea([connCompsTopProps(:).Area], destImageSize);
-%         noiseIslands =  areaM < swimmerShapeAreaMinM;
-%         noiseIslandsInds = find(noiseIslands);
-%         noiseIslandsOriginInds = values(topToSkewed, num2cell(noiseIslandsInds));
-% 
-%         imageTopNoSmall = HumanDetector.removeIslands(connComps, imageFeasAreaShapes, noiseIslandsOriginInds);
-% 
-%         if debug
-%             imshow(imageTopNoSmall), title('top-small islands removed');
-%         end
-% 
-%         noiseIslands = areaM > swimmerShapeAreaMaxM;
-%         noiseIslandsInds = find(noiseIslands);
-%         noiseIslandsOriginInds = values(topToSkewed, num2cell(noiseIslandsInds));
-% 
-%         imageTopNoLarge = HumanDetector.removeIslands(connComps, imageTopNoSmall, noiseIslandsOriginInds);
-% 
-%         if debug
-%             imshow(imageTopNoLarge), title('top-large islands removed');
-%         end
-%     else
-%         imageTopNoLarge = imageFeasAreaShapes;
-% 
-%         if connComps.NumObjects > 0
-%             fprintf('Warning: Number of connected components in skewed (%d) and topView (%d) does not match',connComps.NumObjects, connCompsTop.NumObjects);
-%         end
-%     end
-% 
     resultImage = imageFeasAreaShapes;
         
     if debug
@@ -264,12 +189,12 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     end
 
     % return info about swimmer's shapes
-    connComps = bwconncomp(resultImage, 8); % TODO: 8 or 4?
-    connCompsProps = regionprops(connComps, 'BoundingBox','Centroid','FilledImage');
+    connComp = bwconncomp(resultImage, 8); % TODO: 8 or 4?
+    connCompProps = regionprops(connComp, 'BoundingBox','Centroid','FilledImage');
     resultCells = struct('BoundingBox',[],'Centroid',[],'FilledImage',[]);
     resultCells(1) = []; % make 1x0 struct
-    for i=1:length(connCompsProps)
-        props = connCompsProps(i);
+    for i=1:length(connCompProps)
+        props = connCompProps(i);
         imgFill = props.FilledImage;
         
         imgFillBoundaries = bwboundaries(imgFill,4,'noholes');

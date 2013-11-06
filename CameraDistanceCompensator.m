@@ -1,156 +1,127 @@
 classdef CameraDistanceCompensator
 
 properties
-%v.MRectPool % matrix to transform image to world coordinates
+%obj.v.cameraMatrix
+%obj.v.rvec
+%obj.v.tvec
+%obj.v.worldToCamera
 end
 
 methods(Static)
-
-function obj = create()
-    obj = utils.TypeErasedClass;
     
-    % matrix to transform 'MVI_3177_0127_640x476.png' image coordinates
-    % into rectangular [640x476] coordinate (origin is top left).
-
-    srcInitDimW = [480 357];
-    srcCoordScaled=[181 124; 387 117; 563 267; -417 196]; % on scaled image W480 x H357
-    
-    poolSize = CameraDistanceCompensator.poolSize;
-    expectCameraSizeW=CameraDistanceCompensator.expectCameraSize;
-    srcCoord=[srcCoordScaled(:,1)*expectCameraSizeW(1)/srcInitDimW(1) srcCoordScaled(:,2)*expectCameraSizeW(2)/srcInitDimW(2)]; % world coordinates
-    %dstCoord=[0 0; 640 0; 640 476; 0 476];
-    dstCoord=[0 0; poolSize(1) 0; poolSize(1) poolSize(2); 0 poolSize(2)];
-    obj.v.MRectPool=cv.getPerspectiveTransform(srcCoord, dstCoord); % image to world transformation
-
-    % fit line Area ~ Distance from camera
-%     areaClose = 2674;
-%     areaFar = 27;
-%     obj.areaVsDist = polyfit([0 476], [areaClose areaFar], 1); % = -0.1092d+58
-    %obj.areaVsDist = [0.2259 -163.6806 2.9617e+04]; % parabola
-end
-
 function poolSize = poolSize()
     poolSize = [10 25];
 end
 
+% TODO: remove
 function size = expectCameraSize()
     size=[640 476];
 end
 
-function areaM = scaleTopViewImageToWorldCoord(topViewPos, topViewImageSize)
-    poolSize = CameraDistanceCompensator.poolSize;
-    areaM = topViewPos .* poolSize ./ topViewImageSize;
+function obj = create()
+    obj = utils.TypeErasedClass;
+
+    CameraDistanceCompensator.initCameraPosition(obj);
 end
 
-% for now we analyze only 5 lanes, each 2m => 5*2=10m    
-function areaM = scaleTopViewImageToWorldArea(areaTopPix, destImageSize)
-    % 640x476    -- 50m x 25m
-    % areaTopPix -- ?
-    poolSize = CameraDistanceCompensator.poolSize;
-    areaM = areaTopPix * prod(poolSize) / prod(destImageSize);
-end
+function initCameraPosition(obj)
+    % Cannon D20 640x480
+    cx=323.07199373780122;
+    cy=241.16033688735058;
+    fx=526.96329424435044;
+    fy=527.46802103114874;
+    cameraMatrix = [fx 0 cx; 0 fy cy; 0 0 1];
+    obj.v.cameraMatrix = cameraMatrix;
+    
+    distCoeffs = [0 0 0 0];
+    obj.v.distCoeffs = distCoeffs;
 
-% used when we draw TopView image.
-function topViewImagePos = scaleWorldToTopViewImageCoord(worldPos, destImageSize)
-    poolSize = CameraDistanceCompensator.poolSize;
-    topViewImagePos = worldPos ./ poolSize .* destImageSize;
+    %
+    imagePoints = zeros(0,2);
+    worldPoints = zeros(0,3);
+
+    zeroHeight = 0;
+    
+    % top, origin (0,0)
+    imagePoints(end+1,:) = [242 166];
+    worldPoints(end+1,:) = [0 0 zeroHeight];
+%     % top, 3 marker
+%     imagePoints(end+1,:) = [454 169];
+%     worldPoints(end+1,:) = [0 8];
+    % top, 4 marker
+    imagePoints(end+1,:) = [516 156];
+    worldPoints(end+1,:) = [0 10 zeroHeight];
+    % bottom, 2 marker
+    imagePoints(end+1,:) = [-71 304];
+    worldPoints(end+1,:) = [25 6 zeroHeight];
+%     % bottom, 3 marker
+%     imagePoints(end+1,:) = [231 133];
+%     worldPoints(end+1,:) = [25 8];
+    % bottom, 4 marker
+    imagePoints(end+1,:) = [730 365];
+    worldPoints(end+1,:) = [25 10 zeroHeight];
+    
+    %
+    [rvec,tvec] = cv.solvePnP(worldPoints, imagePoints, cameraMatrix, distCoeffs);
+    obj.v.rvec = rvec;
+    obj.v.tvec = tvec;
+    
+    rotMat = cv.Rodrigues(rvec);
+    
+    worldToCamera = [rotMat tvec; [0 0 0 1]];
+    obj.v.worldToCamera = worldToCamera;
+    
 end
 
 function worldPos = cameraToWorld(obj, imagePos)
     num = size(imagePos,1);
-    rectPosHom = obj.v.MRectPool * [imagePos ones(num,1)]';
     
-    worldPos = utils.normalizeHomog(rectPosHom');
+    % image to camera coordinates
+    camPos = inv(obj.v.cameraMatrix)*[imagePos 1]'; % 3xN
+
+    cameraToWorld = inv(obj.v.worldToCamera); % 4x4
+
+    % find fourth homog component so that world z=0
+    zeroHeight = 0;
+    %homZ = (repmat(zeroHeight,1,num) - cameraToWorld(3,1:3)*camPos) ./ cameraToWorld(3,4); % 1xN
+    homZ = (zeroHeight - cameraToWorld(3,1:3)*camPos) ./ cameraToWorld(3,4); % 1xN
+
+    reW1 = cameraToWorld * [camPos; homZ];
+    worldPos = utils.normalizeHomog(reW1');
 end
 
 function imagePos = worldToCamera(obj, worldPos)
     num = size(worldPos,1);
-    %rectPosHomSlow = inv(obj.MRectPool) * [worldPos ones(num,1)]';
-    rectPosHom = obj.v.MRectPool \ [worldPos ones(num,1)]';
     
-    imagePos = utils.normalizeHomog(rectPosHom');
-end
-
-% finds Map which associates components from TopView image to components in original skewed image.
-function topToSkewed = findComponentMap(distanceCompensator,connComps,connCompsProps,connCompsTop,connCompsTopProps)
-    mappedCentroids = CameraDistanceCompensator.cameraToWorld(distanceCompensator, reshape([connCompsProps(:).Centroid],2,[])');
-
-    cost=zeros(connComps.NumObjects, connCompsTop.NumObjects);
-    for row=1:connComps.NumObjects
-    for col=1:connCompsTop.NumObjects
-        len = norm(mappedCentroids(row,:) - connCompsTopProps(col).Centroid);
-        cost(row,col)=len;
-    end
-    end
-    
-    [ass,unass1, unass2] = assignDetectionsToTracks(cost, 9999);
-    assert(isempty(unass1));
-    assert(isempty(unass2));
-    
-    % map old elements to new
-    topToSkewed = containers.Map(ass(:,2), ass(:,1));
-end
-
-function isFeas = isFeasibleArea(obj, swimmerImagePos, area)
-    % swimmerImagePos may be 2x1 matrix or 1x1 cell with such matrix
-    if iscell(swimmerImagePos)
-        swimmerImagePos = swimmerImagePos{1};
-    end
-    
-    rectPosHom = obj.v.MRectPool * [swimmerImagePos 1]';
-    rectPos = rectPosHom/rectPosHom(3); % normalize homog coordinate
-    
-    yrecWorld = rectPos(2);
-    poolSize = CameraDistanceCompensator.poolSize;
-    expectCameraSize=CameraDistanceCompensator.expectCameraSize;
-    yrec = yrecWorld / poolSize(2) * expectCameraSize(2); % TopView image coordinate
-    
-
-    % 3sig
-%     x1dw = [0.4857 -186.0575];
-%     x1up = [0.5917 -206.2034];
-    
-    % 4sig
-    x1dw = [0.4680 -182.6998-5]; % +-5 make somewhat wider
-    x1up = [0.6094 -209.5611+5];
-    
-    if yrec < 390 % limit far away objects to not diminish to zero
-        limDw = 3;
-        limUp = 24;
+    if length(worldPos) == 2
+        zeroHeight = 0;
+        worldPos3 = [worldPos zeroHeight];
     else
-        limDw = x1dw * [yrec 1]';
-        limUp = x1up * [yrec 1]';
+        worldPos3 = worldPos;
+        worldPos = worldPos(:,1:2);
     end
     
-    %
-    equivDiam = 2*sqrt(area/pi);
-    
-    % above x1dw and below x1up
-    f1 = limDw < equivDiam;
-    f2 = equivDiam < limUp;
-    
-    isFeas = f1 && f2;
+    imagePos = cv.projectPoints(worldPos3, obj.v.rvec, obj.v.tvec, obj.v.cameraMatrix, obj.v.distCoeffs);
+    imagePos = reshape(imagePos, num, []);
 end
 
-% finds what area would occupy the object in world position __worldPos__ (in m) if
-% it occupy __worldArea__ (in m^2) in world space.
+% finds the area of shape in image (in pixels^2) of an object with world position __worldPos__ (in m)
 function areaCam = worldAreaToCamera(obj, worldPos, worldArea)
-    expectCameraSize = CameraDistanceCompensator.expectCameraSize;
-    topViewPos = CameraDistanceCompensator.scaleWorldToTopViewImageCoord(worldPos, expectCameraSize);
+    widthHf = sqrt(worldArea) / 2;
     
-    % see AreaVsY_fit_parabola1.png
-    y = topViewPos(2);
+    % project body bounding box into camera
+    worldBounds = [
+        worldPos + [-widthHf -widthHf 0];
+        worldPos + [-widthHf  widthHf 0];
+        worldPos + [ widthHf  widthHf 0];
+        worldPos + [ widthHf -widthHf 0]];
     
-    if y < 390
-        areaCam = 20. + 0.310144 * y;
-    else
-        areaCam = 0.2259*y^2 - 163.6806*y + 29617;
-    end
-    
-    %areaCam = [0.2259 -163.6806 29617] * [ylim^2 ylim 1]';
+    camBounds = CameraDistanceCompensator.worldToCamera(obj, worldBounds);
+    areaCam = polyarea(camBounds(:,1), camBounds(:,2));
 end
 
 function imageRec = convertCameraImageToTopView(obj, image, outputImageSize)
+    error('not implemented');
     if ~exist('outputImageSize', 'var')
         outputImageSize = [size(image,2) size(image,1)];
     end

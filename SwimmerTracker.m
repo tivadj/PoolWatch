@@ -112,8 +112,10 @@ function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
             
             % project image position into TopView
             worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
+            worldPos2 = worldPos(1:2);
             
-            posEstimate = obj.tracks{trackInd}.KalmanFilter.correct(worldPos);
+            posEstimate = obj.tracks{trackInd}.KalmanFilter.correct(worldPos2);
+            posEstimate = [posEstimate 0]; % append zeroHeight = 0
             ass.EstimatedPos = posEstimate;
             
             obj.tracks{trackInd}.Assignments{frameInd} = ass;
@@ -156,6 +158,7 @@ function predictSwimmerPositions(obj, frameInd)
         track = obj.tracks{r};
 
         worldPos = track.KalmanFilter.predict();
+        worldPos = [worldPos 0]; % append zeroHeight = 0
 
         %
         ass = ShapeAssignment();
@@ -286,7 +289,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         imagePos = shape.Centroid;
         worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
 
-        cand.KalmanFilter = createCalmanPredictor(obj, worldPos);
+        cand.KalmanFilter = createCalmanPredictor(obj, worldPos(1:2));
 
         ass = ShapeAssignment();
         ass.IsDetectionAssigned = true;

@@ -8,31 +8,29 @@ end
 function run(obj)
     debug=1;
     %RunCameraDistanceCompensator.test1(debug);
-    %RunCameraDistanceCompensator.testBackProjection(obj, debug);
-    RunCameraDistanceCompensator.testWorldAreaToCamera(obj,debug);
+    RunCameraDistanceCompensator.testBackProjection(obj, debug);
+    %RunCameraDistanceCompensator.testWorldAreaToCamera(obj,debug);
 end    
 
-% shows how trace path would look in a camera view if a swimmer
+% shows how the trace path would look in a camera view if a swimmer
 % moves strictly vertically in a world coordinates (which 99% times true)
 function testBackProjection(obj, debug)
-    topViewSize = CameraDistanceCompensator.expectCameraSize;
-    maxY = topViewSize(2);
-    
-    comp = CameraDistanceCompensator.create;
-    obj.v.comp = comp;
-    
     i1 = imread('data/MVI_3177_0127_640x476.png');
     imshow(i1);
 
+    comp = CameraDistanceCompensator.create;
+    obj.v.comp = comp;
+
     cameraPosHist = [];
     prevCameraPos = [];
+    poolSize = CameraDistanceCompensator.poolSize;
+    laneLength = poolSize(2);
     hold on
-    for y=10:20:maxY
-        topViewPos = [502 y];
-        worldPos = CameraDistanceCompensator.scaleTopViewImageToWorldCoord(topViewPos, topViewSize);
+    for x=0:1:laneLength
+        worldPos = [x 5 0]; % put on arbitrary lane
         
         cameraPos = CameraDistanceCompensator.worldToCamera(comp, worldPos);
-        cameraPos
+        fprintf('worldPos=(%.2f,%.2f) cameraPos=(%.2f,%.2f)\n', worldPos(1),worldPos(2), cameraPos(1), cameraPos(2));
         
         plot(cameraPos(1), cameraPos(2), 'r.');
         if ~isempty(prevCameraPos)
@@ -41,6 +39,17 @@ function testBackProjection(obj, debug)
         
         prevCameraPos = cameraPos;
         cameraPosHist = [cameraPosHist; cameraPos];
+        
+        % check projection
+        worldPosGuess = CameraDistanceCompensator.cameraToWorld(comp, cameraPos);
+        errorDist = norm(worldPosGuess - worldPos);
+        fprintf('errorDist=%.2f\n', errorDist);
+
+        % check area unprojection
+        camArea = CameraDistanceCompensator.worldAreaToCamera(comp, worldPos, 1);
+        rad = sqrt(camArea/pi);
+        ang=0:pi/10:2*pi;
+        plot(cameraPos(1) + rad*cos(ang),cameraPos(2) - rad*sin(ang), 'g');
     end
     hold off
     
