@@ -21,6 +21,36 @@ function cleanedMat = matRemoveIf(mat, rowPred)
     cleanedMat = mat;
 end
 
+% Find distance from origin to line(p1,p2).
+function dist = distanceOriginToLine(p1,p2)
+    % implicit line equation Ax+By+C=0
+    A = p1(2) - p2(2);
+    B = - (p1(1) - p2(1));
+    C = p1(1)*p2(2) - p2(1)*p1(2);
+    
+    lineVec = p2 - p1;
+    len = norm(lineVec);
+    
+    % n(nx,ny) = direction of the perpendicular from origin to the line
+    nx = abs(lineVec(2)) / len;
+    ny = abs(lineVec(1)) / len;
+    
+    dist = - C / (A*nx + B*ny);
+end
+
+% Computes distance from point to line(p1,p2).
+function dist = distancePointLine(point, p1,p2)
+    A = p1(2) - p2(2); % y1-y2
+    B = - p1(1) + p2(1); % -x1+x2
+    C = p1(1)*p2(2) - p1(2)*p2(1); % x1 y2 - y1 x2
+    
+    dist = [A B C] * [point 1]' / norm([A B]);
+end
+
+function angle = angleTwoVectors(v1,v2)
+    angle = acos(v1 * v2' / (norm(v1)*norm(v2)));
+end
+
 end
     
 end

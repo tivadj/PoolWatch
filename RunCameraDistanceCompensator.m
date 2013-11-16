@@ -8,8 +8,9 @@ end
 function run(obj)
     debug=1;
     %RunCameraDistanceCompensator.test1(debug);
-    RunCameraDistanceCompensator.testBackProjection(obj, debug);
+    %RunCameraDistanceCompensator.testBackProjection(obj, debug);
     %RunCameraDistanceCompensator.testWorldAreaToCamera(obj,debug);
+    RunCameraDistanceCompensator.testAutomaticallyDetectedImageWorldCorrespondence(obj,debug);
 end    
 
 % shows how the trace path would look in a camera view if a swimmer
@@ -160,6 +161,51 @@ function testWorldAreaToCamera(obj,debug)
     end
     
     plot(ys, areaCamHist);
+end
+
+function testAutomaticallyDetectedImageWorldCorrespondence(obj, debug)
+        % Cannon D20 640x480
+    cx=323.07199373780122;
+    cy=241.16033688735058;
+    fx=526.96329424435044;
+    fy=527.46802103114874;
+    cameraMatrix = [fx 0 cx; 0 fy cy; 0 0 1];
+    obj.v.cameraMatrix = cameraMatrix;
+    
+    distCoeffs = [0 0 0 0];
+    obj.v.distCoeffs = distCoeffs;
+
+    %
+    imagePoints = [
+235.7063  163.0659...
+ -884.0259  250.1526...
+  398.7494  156.7639...
+ -271.0702  292.9780...
+  431.0967  155.5136...
+  -36.4020  309.3736...
+  456.8964  154.5163...
+  234.5043  328.3010...
+  488.4620  153.2963];
+    imagePoints = reshape(imagePoints, 2, [])';
+    
+    worldPoints = [...
+        0 0;  25 0;...
+        0 4;  25 4;...
+        0 6;  25 6;...
+        0 8;  25 8;...
+        0 10; 25 10];
+    worldPoints = [worldPoints zeros(length(worldPoints),1)]; % add Z=0
+    worldPoints = worldPoints(1:length(imagePoints), :);
+        
+    %
+    [rvec,tvec] = cv.solvePnP(worldPoints, imagePoints, cameraMatrix, distCoeffs);
+    obj.v.rvec = rvec;
+    obj.v.tvec = tvec;
+    
+    rotMat = cv.Rodrigues(rvec);
+    
+    worldToCamera = [rotMat tvec; [0 0 0 1]];
+    obj.v.worldToCamera = worldToCamera;
 end
 
 end

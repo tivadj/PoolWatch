@@ -8,12 +8,15 @@ end
 function run(obj)
     debug = 1;
    
-    RunHumanDetector.initHumanDetector(obj,debug);
+    %RunHumanDetector.initHumanDetector(obj,debug);
+    RunHumanDetector.initWaterClassifier(obj, debug);
 
-    RunHumanDetector.testHumanDetectorOnImage(obj,debug);
+    %RunHumanDetector.testHumanDetectorOnImage(obj,debug);
     %RunHumanDetector.testWaterClassifier(obj, debug);
     %RunHumanDetector.testCombiningSkinAndWaterClassifiers(obj,debug);
     %RunHumanDetector.testGluingBodyParts(obj, debug);
+    %RunHumanDetector.visualizeHeadPixelsAsVolume(obj, debug);
+    RunHumanDetector.testSegmentPoolBoundary(obj,debug);
 end
 
 % build human detector
@@ -44,6 +47,10 @@ function initHumanDetector(obj, debug)
 end
 
 function initWaterClassifier(obj, debug)
+    if isfield(obj.v, 'watClassifFun')
+        return;
+    end
+    
     I = imread('../dinosaur/MVI_3177_0127.png');
     imshow(I);
 
@@ -52,18 +59,19 @@ function initWaterClassifier(obj, debug)
     % cleanWatMask = cleanWat1;
     %save('data/Mask_CleanWat1.mat', 'cleanWatMask');
     load('data/Mask_CleanWat1.mat','cleanWatMask');
-    imshow(cleanWatMask);
+    figure(1), imshow(cleanWatMask);
     
     cleanWatImg = utils.applyMask(I, cleanWatMask);
-    imshow(cleanWatImg);
+    figure(1), imshow(cleanWatImg);
     
     cleanWatPixs = reshape(cleanWatImg, [], 3);
     cleanWatPixs = unique(cleanWatPixs, 'rows');
     cleanWatPixs = cleanWatPixs(cleanWatPixs(:,1) > 0 & cleanWatPixs(:,2) > 0 & cleanWatPixs(:,3) > 0, :); % remove 'black' (on axes) pixels
-    plot3(cleanWatPixs(:,1), cleanWatPixs(:,2),cleanWatPixs(:,3), 'b.');
+    figure(2), plot3(cleanWatPixs(:,1), cleanWatPixs(:,2),cleanWatPixs(:,3), 'b.');
 
     cleanWatPixsDbl = double(cleanWatPixs);
     cleanWatHullTri = convhulln(cleanWatPixsDbl);
+    figure(3);
     cleanWatSurf = trisurf(cleanWatHullTri, cleanWatPixs(:,1),cleanWatPixs(:,2),cleanWatPixs(:,3), 'FaceColor', 'c');
     alpha(cleanWatSurf, 0.8);
 
@@ -71,7 +79,7 @@ function initWaterClassifier(obj, debug)
     obj.v.cleanWatClassifFun = cleanWatClassifFun;
     cleanWatCfMask = utils.PixelClassifier.applyToImage(I, cleanWatClassifFun);
     cleanWatImg = utils.applyMask(I, cleanWatCfMask);
-    imshow(cleanWatImg);
+    figure(1), imshow(cleanWatImg);
     %utils.inhull([143 127 117], cleanWatPixsDbl, cleanWatK222)
     xlabel('R'); ylabel('G'); zlabel('B');
 
@@ -88,14 +96,15 @@ function initWaterClassifier(obj, debug)
     %}
     load('data/Mask_Water1.mat','waterMask');
     watImg = utils.applyMask(I, waterMask);
-    imshow(watImg);
+    figure(1), imshow(watImg);
     watPixs = reshape(watImg, [], 3);
     watPixs = unique(watPixs, 'rows');
     watPixs = watPixs(watPixs(:,1) > 0 & watPixs(:,2) > 0 & watPixs(:,3) > 0, :); % remove black
-    plot3(watPixs(:,1), watPixs(:,2),watPixs(:,3), 'b.');
+    figure(2), plot3(watPixs(:,1), watPixs(:,2),watPixs(:,3), 'b.');
 
     watPixsDbl = double(watPixs);
     watHullTri = convhulln(watPixsDbl);
+    figure(3)
     hold on
     watSurf = trisurf(watHullTri, watPixs(:,1),watPixs(:,2),watPixs(:,3), 'FaceColor', [0 0 1]);
     alpha(watSurf, 0.3);
@@ -106,7 +115,7 @@ function initWaterClassifier(obj, debug)
     obj.v.watClassifFun = watClassifFun;
     watMask = utils.PixelClassifier.applyToImage(I, watClassifFun);
     watImg = utils.applyMask(I, watMask);
-    imshow(watImg);
+    figure(1), imshow(watImg);
 
     % collect convex hull free boundary pixels
     cleanWatHullPixsDbl = cleanWatPixsDbl(unique(cleanWatHullTri(:)), :);
@@ -116,6 +125,7 @@ function initWaterClassifier(obj, debug)
     % free boundary pixels may be shifted so the convex hull is no longer valid
     % compute convex hull again
     waterHullInflTri = convhulln(waterHullInfl);
+    figure(3)
     hold on
     waterHullInflSurf = trisurf(waterHullInflTri, waterHullInfl(:,1),waterHullInfl(:,2),waterHullInfl(:,3), 'FaceColor', [0 1 0]);
     alpha(waterHullInflSurf, 0.3);
@@ -163,7 +173,8 @@ function testWaterClassifier(obj, debug)
     
     %
     %i1 = utils.VideoHelper.readFrameSingle('data/mvi3177_blueWomanLane3_16frames.avi', 16);
-    i1 = imread('../dinosaur/close_swimmer1.png');
+    %i1 = imread('../dinosaur/close_swimmer1.png');
+    i1 = utils.VideoHelper.readFrameSingle(fullfile('../output/mvi3177_blueWomanLane3.avi'),741)
     imshow(i1)
     
     i1WaterMask = utils.PixelClassifier.applyToImage(i1, obj.v.watClassifFun,debug);
@@ -241,6 +252,164 @@ function testGluingBodyParts(obj, debug)
     newBndPoints = circshift(newBndPoints,[0 1]);
     i3 = cv.polylines(i1, {num2cell(newBndPoints,2)}, 'Color', [255 255 255],'Closed',true);
     figure(gcf+1), imshow(i3);
+end
+
+% Show where head (swimmer's cap) pixels are located.
+function visualizeHeadPixelsAsVolume(obj, debug)
+    i1=utils.VideoHelper.readFrameSingle(fullfile('../output/mvi3177_blueWomanLane3.avi'),741);
+    headMask=roipoly(i1);
+    imgHead = utils.applyMask(i1, headMask);
+    imshow(imgHead)
+    headPixs = unique(reshape(imgHead,[],3),'rows');
+    headPixs(1,:) = []; % remove black
+    
+    headPixsDbl = double(headPixs);
+    
+    % draw volume around pixels
+    triInds = convhulln(headPixsDbl);
+    hold on
+    headSurf = trisurf(triInds, headPixsDbl(:,1),headPixsDbl(:,2),headPixsDbl(:,3), 'FaceColor', 'r');
+    alpha(headSurf,0.6)
+    hold off
+end
+
+function tryFindLaneDividers(imgNoHoles, lines2, vanishPoint, bndPolyline)
+    % extract divider polygons
+
+    numLines = size(lines2,1);
+    for i=1:numLines
+    for i1=i+1:numLines
+        p1 = [lines2(i,1) lines2(i,3)];
+        p2 = [lines2(i,2) lines2(i,4)];
+        p3 = [lines2(i1,1) lines2(i1,3)];
+        p4 = [lines2(i1,2) lines2(i1,4)];
+        dividerWidth = RunHumanDetector.estimateLaneDividerWidth(p1,p2, p3,p4, vanishPoint);
+        fprintf('#%d(%.2f,%.2f,%.2f,%.2f)-#%d(%.2f,%.2f,%.2f,%.2f) wid=%.2f\n', i, p1(1),p1(2),p2(1),p2(2), i1, p3(1),p3(2),p4(1),p4(2), dividerWidth);
+    end
+    end
+end
+
+function testSegmentPoolBoundary(obj, debug)
+    i1=utils.VideoHelper.readFrameSingle(fullfile('../output/mvi3177_blueWomanLane3.avi'),741);
+    %i1=imread(fullfile('../dinosaur/poolBoundary/MVI_3177_frame1.png'));
+    imshow(i1);
+
+    imageCalibPnts = PoolBoundaryDetector.getCalibrationPoints(i1, obj.v.watClassifFun);
+    
+    %RunHumanDetector.tryFindLaneDividers(imgNoHoles, lines2, vanishPoint, bndPolyline);
+end
+
+% Find cost of gluing segment(p1,p2) and segment(p3,p4).
+function cost = getTwoSegmentsGroupingCost(p1,p2, p3,p4)
+    % find shortest distance
+    allPoints = [p1; p2; p3; p4];
+    distInds = [1 3; 1 4; 2 3; 2 4]; % distances to calculate
+    
+    dists = arrayfun(@(seg1Ind, seg2Ind) norm(allPoints(seg1Ind,:)-allPoints(seg2Ind,:)), distInds(:,1), distInds(:,2));
+    
+    [minDist,minInd] = min(dists);
+    
+    closestPointPairInds = distInds(minInd,:);
+    
+    % segment1 = (closest1,further1)
+    closest1 = allPoints(closestPointPairInds(1),:);
+    further1 = allPoints(3 - closestPointPairInds(1),:);
+    
+    % segment2 = (closest2,further2)
+    closest2 = allPoints(closestPointPairInds(2),:);
+    further2 = allPoints(7 - closestPointPairInds(2),:);
+    
+    v1 = closest1 - further1;
+    connector = closest2 - closest1;
+    
+    ang1 = acos(v1 * connector' / (norm(v1)*norm(connector)));
+    
+    v2 = further2 - closest2;
+    ang2 = acos(v2 * connector' / (norm(v2)*norm(connector)));
+    
+    angCostFun = @(ang) -0.99+exp(1.47*ang);
+    
+    angCost1 = angCostFun(ang1);
+    angCost2 = angCostFun(ang2);
+    angCost = angCost1 + angCost2
+    
+    distCostFun = @(d) -0.99+exp(0.01*d);
+    
+    distCost = distCostFun(minDist)
+    
+    if minDist
+    end
+    cost = angCost * distCost;
+end
+
+% Finds the midpoint between closest points of two segments and returns
+% angle cost between two segments, approximately connected and midpoint.
+function cost = getTwoSegmentsAngleCostMidPoint(p1,p2, p3,p4)
+    % find shortest distance
+    allPoints = [p1; p2; p3; p4];
+    distInds = [1 3; 1 4; 2 3; 2 4]; % distances to calculate
+    
+    dists = arrayfun(@(seg1Ind, seg2Ind) norm(allPoints(seg1Ind,:)-allPoints(seg2Ind,:)), distInds(:,1), distInds(:,2));
+    
+    [~,minInd] = min(dists);
+    
+    closestPointPairInds = distInds(minInd,:);
+    
+    % segment1 = (closest1,further1)
+    closest1 = allPoints(closestPointPairInds(1),:);
+    further1 = allPoints(3 - closestPointPairInds(1),:);
+    
+    % segment2 = (closest2,further2)
+    closest2 = allPoints(closestPointPairInds(2),:);
+    further2 = allPoints(7 - closestPointPairInds(2),:);
+    
+    midPoint = mean([closest1; closest2], 1);
+    
+    v1 = midPoint - further1;
+    v2 = further2 - midPoint;
+    
+    ang = RunHumanDetector.angleTwoVectors(v1,v2);
+
+    angCostFun = @(ang) -0.99+exp(1.47*ang);
+    
+    angCost = angCostFun(ang);
+    cost = angCost;
+end
+
+% Calculate the width between line (p1,p2) and line (p3,p4) if vanishing
+% point vanishPoint is known.
+function width = estimateLaneDividerWidth(p1,p2, p3,p4, vanishPoint)
+    % find farthest point for each line segment
+    [maxDist1,line1PointInd] = max([norm(p1 - vanishPoint) norm(p2 - vanishPoint)]);
+    [maxDist2,line2PointInd] = max([norm(p3 - vanishPoint) norm(p4 - vanishPoint)]);
+    
+    if line1PointInd == 1
+        line1Point = p1;
+    else
+        line1Point = p2;
+    end
+    if line2PointInd == 1
+        line2Point = p3;
+    else
+        line2Point = p4;
+    end
+    
+    [maxDist,maxPointInd] = max([norm(line1Point - vanishPoint) norm(line2Point - vanishPoint)]);
+    if maxPointInd == 1
+        maxPoint1 = line1Point;
+        otherDirPoint = line2Point;
+    else
+        maxPoint1 = line2Point;
+        otherDirPoint = line1Point;
+    end
+    
+    % offset otherDirPoint to distance maxDist
+    dir1 = otherDirPoint - vanishPoint;
+    dir1 = dir1 ./ norm(dir1);
+    
+    maxPoint2 = vanishPoint + dir1 .* maxDist;
+    
+    width = norm(maxPoint2 - maxPoint1);
 end
 
 end
