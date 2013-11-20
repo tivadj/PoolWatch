@@ -16,7 +16,8 @@ function run(obj)
     %RunHumanDetector.testCombiningSkinAndWaterClassifiers(obj,debug);
     %RunHumanDetector.testGluingBodyParts(obj, debug);
     %RunHumanDetector.visualizeHeadPixelsAsVolume(obj, debug);
-    RunHumanDetector.testSegmentPoolBoundary(obj,debug);
+    %RunHumanDetector.testSegmentPoolBoundary(obj,debug);
+    RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
 end
 
 % build human detector
@@ -68,7 +69,8 @@ function initWaterClassifier(obj, debug)
     cleanWatPixs = unique(cleanWatPixs, 'rows');
     cleanWatPixs = cleanWatPixs(cleanWatPixs(:,1) > 0 & cleanWatPixs(:,2) > 0 & cleanWatPixs(:,3) > 0, :); % remove 'black' (on axes) pixels
     figure(2), plot3(cleanWatPixs(:,1), cleanWatPixs(:,2),cleanWatPixs(:,3), 'b.');
-
+    
+    %
     cleanWatPixsDbl = double(cleanWatPixs);
     cleanWatHullTri = convhulln(cleanWatPixsDbl);
     figure(3);
@@ -410,6 +412,129 @@ function width = estimateLaneDividerWidth(p1,p2, p3,p4, vanishPoint)
     maxPoint2 = vanishPoint + dir1 .* maxDist;
     
     width = norm(maxPoint2 - maxPoint1);
+end
+
+function testWaterClassifierAsMixtureOfGaussians(obj, debug)
+    %
+%     [image, waterMask1] = utils.getMaskAll('../dinosaur/waterMarkup/MVI_3177_0127_640x476_water.svg', '#0000FF');
+%     imshow(waterMask1);
+%     waterImg=utils.applyMask(image,waterMask1);
+%     imshow(waterImg)
+%     
+%     [image, nonWaterMask1] = utils.getMaskAll('../dinosaur/waterMarkup/MVI_3177_0127_640x476_water.svg', '#FFFF00');
+%     imshow(nonWaterMask1);
+%     waterImg=utils.applyMask(image,nonWaterMask1);
+%     imshow(waterImg)
+    
+    waterMarkupFiles = '../dinosaur/waterMarkup/*.svg';
+    waterMarkupColor='#0000FF';
+    waterPixs = utils.getPixelsDistinct(waterMarkupFiles, false, waterMarkupColor);
+    nonWaterMarkupColor='#FFFF00';
+    nonWaterPixs = utils.getPixelsDistinct(waterMarkupFiles, false, nonWaterMarkupColor);
+    
+    commonPixels = intersect(waterPixs, nonWaterPixs, 'rows');
+    
+    waterPixsExcl = setdiff(waterPixs, nonWaterPixs, 'rows');
+    nonWaterPixsExcl = setdiff(nonWaterPixs, waterPixs, 'rows');
+
+    waterPixsExclDbl = double(waterPixsExcl);
+    nonWaterPixsExclDbl = double(nonWaterPixsExcl);
+
+    waterPixsDbl = double(waterPixs);
+    nonWaterPixsDbl = double(nonWaterPixs);
+    commonPixelsDbl = double(commonPixels);
+    
+    % show pixels as 3d volume
+    % water pixels
+    waterPixsExclTriInd = convhulln(waterPixsExclDbl);
+    watSurf = trisurf(waterPixsExclTriInd , waterPixsExclDbl(:,1), waterPixsExclDbl(:,2), waterPixsExclDbl(:,3), 'FaceColor', 'b');
+    alpha(watSurf, 0.3)
+    xlabel('R'); ylabel('G'); zlabel('B');
+    
+    % non-water pixels
+    nonWaterPixsExclTriInd = convhulln(nonWaterPixsExclDbl);
+    hold on
+    nonWatSurf = trisurf(nonWaterPixsExclTriInd, nonWaterPixsExclDbl(:,1), nonWaterPixsExclDbl(:,2), nonWaterPixsExclDbl(:,3), 'FaceColor', 'y');
+    alpha(nonWatSurf,0.3);
+    hold off
+    
+    % common pixels
+    commonPixelsDblTriInd = convhulln(commonPixelsDbl);
+    hold on
+    nonWatSurf = trisurf(commonPixelsDblTriInd, commonPixelsDbl(:,1), commonPixelsDbl(:,2), commonPixelsDbl(:,3), 'FaceColor', 'g');
+    alpha(nonWatSurf,0.6);
+    hold off
+    
+    %
+    m11_ini=mean(waterPixsExclDbl)'; m12_ini=[0 255 255]';
+    m1_ini=[m11_ini m12_ini];
+    
+    varEst = Gaussian_ML_estimate(waterPixsExclDbl');
+    S1_ini=[varEst(1) varEst(1)];
+    w1_ini=[0.5 0.5];
+    
+    m21_ini=mean(nonWaterPixsExclDbl)'; m22_ini=[255 0 0]';
+    m2_ini=[m21_ini m22_ini];
+    
+    varEst = Gaussian_ML_estimate(nonWaterPixsExclDbl');
+    S2_ini=[varEst(1) varEst(1)];
+    w2_ini=[0.5 0.5];
+
+    clear m_ini S_ini w_ini
+    m_ini={m1_ini m2_ini};
+    S_ini={S1_ini S2_ini};
+    w_ini={w1_ini w2_ini};
+
+    tic;
+    expectY=[ones(1,length(waterPixsExclDbl)) 2*ones(1,length(nonWaterPixsExclDbl))];
+    [m_hat,S_hat,w_hat,P_hat]=EM_pdf_est([waterPixsExclDbl; nonWaterPixsExclDbl]',expectY,m_ini,S_ini,w_ini)
+    toc;
+    display(m_hat{1});
+    display(m_hat{2});
+    display(S_hat{1});
+    display(S_hat{2});
+    display(w_hat{1});
+    display(w_hat{2});
+    display(P_hat);
+    
+    hold on
+    surf1=utils.PixelClassifier.drawMixtureGaussians(m_hat{1}', S_hat{1}, w_hat{1}, 'c');
+    alpha(surf1, 0.6);
+    surf2=utils.PixelClassifier.drawMixtureGaussians(m_hat{2}', S_hat{2}, w_hat{2}, 'm');
+    alpha(surf2, 0.2);
+    hold off
+
+    % test
+    % expand variances S_hat into diagonal covariance matrices S
+    dimSpace=3; % RGB
+    clear S
+    for j=1:2
+        le=length(S_hat{j});
+        te=[];
+        for i=1:le
+            te(:,:,i)=S_hat{j}(i)*eye(dimSpace);
+        end
+        S{j}=te;
+    end
+    [y_est]=mixture_Bayes(m_hat,S,w_hat,P_hat,[waterPixsExclDbl; nonWaterPixsExclDbl]');
+    [y_est2]=utils.PixelClassifier.bayesClassifierMixtureGaussians([waterPixsExclDbl; nonWaterPixsExclDbl], m_hat,S,w_hat,P_hat);
+    
+    [classification_error]=compute_error(expectY,y_est)
+    [classification_error]=compute_error(expectY,y_est2)
+    
+    % why double?
+    mixtureFun=@(pix) double(utils.PixelClassifier.bayesClassifierMixtureGaussians(pix, m_hat,S,w_hat,P_hat))-1;
+    
+    i1 = imread('../dinosaur/MVI_3179_frame1.png');
+    imshow(i1)
+    i1Water=utils.PixelClassifier.applyAndGetImage(i1, mixtureFun);
+    imshow(i1Water);
+    
+    i2 = imread('../dinosaur/MVI_3177_frame1.png');
+    imshow(i2)
+    i2Water=utils.PixelClassifier.applyAndGetImage(i2, mixtureFun);
+    imshow(i2Water);
+
 end
 
 end
