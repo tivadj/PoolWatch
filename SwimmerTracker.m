@@ -38,8 +38,8 @@ function ensureInitialized(obj, debug)
         
         % init water classifer
         humanDetectorRunner = RunHumanDetector.create;
-        RunHumanDetector.initWaterClassifier(humanDetectorRunner, debug);
-        waterClassifierFun = humanDetectorRunner.v.watClassifFun;
+        %waterClassifierFun = RunHumanDetector.getWaterClassifierAsConvHull(humanDetectorRunner, debug);
+        waterClassifierFun = RunHumanDetector.getWaterClassifierAsMixtureOfGaussians(humanDetectorRunner,6,debug);
         obj.v.waterClassifierFun = waterClassifierFun;
         
         obj.v.det = HumanDetector(skinClassifier, waterClassifierFun, obj.v.distanceCompensator);

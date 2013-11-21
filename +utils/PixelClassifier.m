@@ -96,6 +96,31 @@ function clazz = bayesClassifierMixtureGaussians(X, mList, SList, weightsList, p
     end
 end
 
+% Classify pixels according to two given mixture of gaussians.
+function labels = expectMax(em1, em2, pix)
+    labels = utils.PixelClassifier.expectMaxByMatlab(em1, em2, pix);
+end
+
+function labels = expectMaxByOpenCV(em1, em2, pix)
+    [~,minInd] = max([em1.predict(pix), em2.predict(pix)], [], 2);
+    labels = minInd;
+end
+
+function labels = expectMaxByMatlab(em1, em2, pix)
+    covs1 = cell2mat(em1.Covs);
+    covs1 = reshape(covs1,3,3,[]);
+
+    covs2 = cell2mat(em2.Covs);
+    covs2 = reshape(covs2,3,3,[]);
+    
+    lab1 = utils.PixelClassifier.evalMixtureGaussians(pix, em1.Means, covs1, em1.Weights);
+    lab2 = utils.PixelClassifier.evalMixtureGaussians(pix, em2.Means, covs2, em2.Weights);
+
+    [~,minInd] = max([lab1 lab2], [], 2);
+    labels = minInd;
+end
+
+
 % hitProb=min prob of whether a point belongs to a gaussian.
 function surf = drawMixtureGaussians(m, S, weights, colorChar)
     [mixCount,l]=size(m);

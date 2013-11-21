@@ -17,7 +17,9 @@ function run(obj)
     %RunHumanDetector.testGluingBodyParts(obj, debug);
     %RunHumanDetector.visualizeHeadPixelsAsVolume(obj, debug);
     %RunHumanDetector.testSegmentPoolBoundary(obj,debug);
-    RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
+    RunHumanDetector.loadWaterNonWaterPixels(obj, debug);
+    %RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
+    RunHumanDetector.testHowExpectMaxAlgDependsOnNumberOfMixtureComponents(obj, debug);
 end
 
 % build human detector
@@ -136,6 +138,11 @@ function initWaterClassifier(obj, debug)
     % apply inflated convex hull classifier to image
     waterHullInflClassifFun = utils.PixelClassifier.getConvexHullClassifier(waterHullInfl, waterHullInflTri);
     obj.v.waterHullInflClassifFun = waterHullInflClassifFun;
+end
+
+function waterClassifFun = getWaterClassifierAsConvHull(obj, debug)
+    RunHumanDetector.initWaterClassifier(obj, debug);
+    waterClassifFun = obj.v.watClassifFun;
 end
 
 function testHumanDetectorOnImage(obj, debug)
@@ -414,7 +421,11 @@ function width = estimateLaneDividerWidth(p1,p2, p3,p4, vanishPoint)
     width = norm(maxPoint2 - maxPoint1);
 end
 
-function testWaterClassifierAsMixtureOfGaussians(obj, debug)
+function loadWaterNonWaterPixels(obj, debug)
+    if isfield(obj.v, 'waterPixsExclDbl')
+        return;
+    end
+    
     %
 %     [image, waterMask1] = utils.getMaskAll('../dinosaur/waterMarkup/MVI_3177_0127_640x476_water.svg', '#0000FF');
 %     imshow(waterMask1);
@@ -432,13 +443,20 @@ function testWaterClassifierAsMixtureOfGaussians(obj, debug)
     nonWaterMarkupColor='#FFFF00';
     nonWaterPixs = utils.getPixelsDistinct(waterMarkupFiles, false, nonWaterMarkupColor);
     
+    obj.v.waterPixs = waterPixs;
+    obj.v.nonWaterPixs=nonWaterPixs;
+    
     commonPixels = intersect(waterPixs, nonWaterPixs, 'rows');
+    obj.v.commonPixels=commonPixels;
     
     waterPixsExcl = setdiff(waterPixs, nonWaterPixs, 'rows');
     nonWaterPixsExcl = setdiff(nonWaterPixs, waterPixs, 'rows');
 
     waterPixsExclDbl = double(waterPixsExcl);
     nonWaterPixsExclDbl = double(nonWaterPixsExcl);
+    
+    obj.v.waterPixsExclDbl=waterPixsExclDbl;
+    obj.v.nonWaterPixsExclDbl=nonWaterPixsExclDbl;
 
     waterPixsDbl = double(waterPixs);
     nonWaterPixsDbl = double(nonWaterPixs);
@@ -464,6 +482,31 @@ function testWaterClassifierAsMixtureOfGaussians(obj, debug)
     nonWatSurf = trisurf(commonPixelsDblTriInd, commonPixelsDbl(:,1), commonPixelsDbl(:,2), commonPixelsDbl(:,3), 'FaceColor', 'g');
     alpha(nonWatSurf,0.6);
     hold off
+end
+
+function waterClassifFun = getWaterClassifierAsMixtureOfGaussians(obj, nClusters, debug)
+    % load pixels
+    RunHumanDetector.loadWaterNonWaterPixels(obj, debug);
+    
+    waterPixs = double(obj.v.waterPixs);
+    nonWaterPixs = double(setdiff(obj.v.nonWaterPixs, obj.v.commonPixels,'rows'));
+
+    %
+    covMatType='Spherical';
+    %covMatType='Diagonal';
+    em1=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType);
+    em1.train(nonWaterPixs);
+
+    em2=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType);
+    em2.train(waterPixs);
+
+    %
+    waterClassifFun=@(pix) utils.PixelClassifier.expectMax(em1,em2,pix) - 1;
+end
+
+function testWaterClassifierAsMixtureOfGaussians(obj, debug)
+    waterPixsExclDbl = obj.v.waterPixsExclDbl;
+    nonWaterPixsExclDbl = obj.v.nonWaterPixsExclDbl;
     
     %
     m11_ini=mean(waterPixsExclDbl)'; m12_ini=[0 255 255]';
@@ -484,9 +527,24 @@ function testWaterClassifierAsMixtureOfGaussians(obj, debug)
     m_ini={m1_ini m2_ini};
     S_ini={S1_ini S2_ini};
     w_ini={w1_ini w2_ini};
-
-    tic;
+    
     expectY=[ones(1,length(waterPixsExclDbl)) 2*ones(1,length(nonWaterPixsExclDbl))];
+
+    nbc1 = cv.NormalBayesClassifier();
+    nbc1.train([waterPixsExclDbl; nonWaterPixsExclDbl], expectY, 'Update', false);
+    y_est3 = nbc1.predict([waterPixsExclDbl; nonWaterPixsExclDbl]);
+    [classification_error]=compute_error(expectY,y_est3)
+    
+    em1=cv.EM('Nclusters', 4);
+    em1.train(waterPixsExclDbl);
+    em2=cv.EM();
+    em2.train(nonWaterPixsExclDbl);
+    em2Fun=@(pix) utils.PixelClassifier.emFun2(em1,em2,pix) - 1;
+    y_est4 = em2Fun([waterPixsExclDbl; nonWaterPixsExclDbl]);
+    [classification_error]=compute_error(expectY, y_est4)
+    
+    tic;
+    
     [m_hat,S_hat,w_hat,P_hat]=EM_pdf_est([waterPixsExclDbl; nonWaterPixsExclDbl]',expectY,m_ini,S_ini,w_ini)
     toc;
     display(m_hat{1});
@@ -523,18 +581,69 @@ function testWaterClassifierAsMixtureOfGaussians(obj, debug)
     [classification_error]=compute_error(expectY,y_est2)
     
     % why double?
-    mixtureFun=@(pix) double(utils.PixelClassifier.bayesClassifierMixtureGaussians(pix, m_hat,S,w_hat,P_hat))-1;
+    mixtureClassifFun=@(pix) double(utils.PixelClassifier.bayesClassifierMixtureGaussians(pix, m_hat,S,w_hat,P_hat))-1;
+    normalBayesClassifFun=@(pix) nbc1.predict(pix) - 1;
     
     i1 = imread('../dinosaur/MVI_3179_frame1.png');
     imshow(i1)
-    i1Water=utils.PixelClassifier.applyAndGetImage(i1, mixtureFun);
+    i1Water=utils.PixelClassifier.applyAndGetImage(i1, normalBayesClassifFun);
     imshow(i1Water);
     
     i2 = imread('../dinosaur/MVI_3177_frame1.png');
     imshow(i2)
-    i2Water=utils.PixelClassifier.applyAndGetImage(i2, mixtureFun);
+    i2Water=utils.PixelClassifier.applyAndGetImage(i2, normalBayesClassifFun);
     imshow(i2Water);
+end
 
+function testHowExpectMaxAlgDependsOnNumberOfMixtureComponents(obj, debug)
+    hist=[];
+    
+    waterPixs = double(obj.v.waterPixs);
+    nonWaterPixs = double(setdiff(obj.v.nonWaterPixs, obj.v.commonPixels,'rows'));
+    
+    expectY=[ones(1,length(waterPixs)) 2*ones(1,length(nonWaterPixs))];
+    
+    timeStampStr = utils.PW.timeStampNow;
+    for nClusters=1:10
+        tic;
+        covMatType='Spherical';
+        %covMatType='Diagonal';
+        em1=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType);
+        em1.train(waterPixs);
+
+        em2=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType);
+        em2.train(nonWaterPixs);
+        trainTime=toc;
+
+        em2Fun=@(pix) utils.PixelClassifier.emFun2New(em1,em2,pix);
+        
+        tic;
+        y_est4 = em2Fun([waterPixs; nonWaterPixs]);
+        testTime=toc;
+        [classification_error]=compute_error(expectY, y_est4)
+        
+        hist = [hist; [nClusters classification_error trainTime testTime]];
+        
+        %
+        
+        em2FunZeroOne=@(pix) utils.PixelClassifier.emFun2New(em1,em2,pix) - 1;
+    
+        i1 = imread('../dinosaur/MVI_3179_frame1.png');
+        imshow(i1)
+        i1Water=utils.PixelClassifier.applyAndGetImage(i1, em2FunZeroOne);
+        %imshow(i1Water);
+        imwrite(i1Water,sprintf('../output/mixGauss/%s_MVI_3179_frame1_nClusters%.2d_%s.png',timeStampStr,nClusters,covMatType));
+
+        i2 = imread('../dinosaur/MVI_3177_frame1.png');
+        imshow(i2)
+        i2Water=utils.PixelClassifier.applyAndGetImage(i2, em2FunZeroOne);
+        %imshow(i2Water);
+        imwrite(i2Water,sprintf('../output/mixGauss/%s_MVI_3177_frame1_nClusters%.2d_%s.png',timeStampStr,nClusters,covMatType));
+    end
+    obj.v.hist = hist;
+    plot(hist(:,1),  hist(:,2)), title('err ~ nClusters');
+    figure, plot(hist(:,1),  hist(:,3)), title('trainTime ~ nClusters');
+    figure, plot(hist(:,1),  hist(:,4)), title('testTime ~ nClusters');
 end
 
 end
