@@ -54,7 +54,7 @@ function purgeMemory(obj)
 end
 
 % elapsedTimeMs - time in milliseconds since last frame
-function nextFrame(obj, image, elapsedTimeMs, debug)
+function nextFrame(obj, image, elapsedTimeMs, fps, debug)
     ensureInitialized(obj, debug);
 
     obj.frameInd = obj.frameInd + 1;
@@ -68,16 +68,16 @@ function nextFrame(obj, image, elapsedTimeMs, debug)
     
     fprintf(1, 'track shapes\n');
 
-    processDetections(obj, obj.frameInd, elapsedTimeMs, bodyDescrs);
+    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs);
 end
 
-function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
+function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections)
     % remember tracks count at the beginning of current frame processing
     % because new tracks may be added
     %tracksCountPrevFrame = length(obj.tracks);
 
     %
-    predictSwimmerPositions(obj, frameInd);
+    predictSwimmerPositions(obj, frameInd, fps);
 
     trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections);
 
@@ -131,7 +131,7 @@ function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
 %        end
    end
 
-    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd);
+    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd, fps);
 
     driftUnassignedTracks(obj, unassignedTracks, frameInd);
 
@@ -152,7 +152,7 @@ function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
     end
 end
 
-function predictSwimmerPositions(obj, frameInd)
+function predictSwimmerPositions(obj, frameInd, fps)
     % predict pos for each tracked object
     for r=1:length(obj.tracks)
         track = obj.tracks{r};
@@ -166,6 +166,21 @@ function predictSwimmerPositions(obj, frameInd)
         ass.DetectionInd = -1;
         ass.PredictedPos = worldPos; % take pair (x,y)
         obj.tracks{r}.Assignments{frameInd} = ass;
+    end
+end
+
+function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
+    % 2.3m/s is max speed for swimmers
+    % let say 0.5m/s is an average speed
+    % estimate sigma as one third of difference between max and mean shift per frame
+    maxShiftM = 2.3 / fps;
+    meanShiftM = 0.5 / fps;
+    sigma = (maxShiftM - meanShiftM) / 3;
+
+    if strcmp(swimmerLocactionStr, 'normal')
+        kalman.ProcessNoise = sigma^2;
+    elseif strcmp(swimmerLocactionStr, 'nearBorder')
+        kalman.ProcessNoise = 999^2; % suppress process model
     end
 end
 
@@ -258,14 +273,15 @@ function promoteMatureTrackCandidates(obj, frameInd)
     end
 end
 
-function kalman = createCalmanPredictor(~, initPos)
+function kalman = createCalmanPredictor(obj, initPos, fps)
     % init Kalman Filter
     stateModel = [1 0 1 0; 0 1 0 1; 0 0 1 0; 0 0 0 1]; 
     measurementModel = [1 0 0 0; 0 1 0 0]; 
     kalman = vision.KalmanFilter(stateModel, measurementModel);
     
     % max shift per frame = 20cm
-    kalman.ProcessNoise = (0.2 / 3)^2;
+    %kalman.ProcessNoise = (0.2 / 3)^2;
+    obj.setTrackKalmanProcessNoise(kalman, 'normal', fps);
     
     % max measurment error per frame = 1m (far away it can be 5m)
     kalman.MeasurementNoise = (5 / 3)^2;
@@ -273,7 +289,7 @@ function kalman = createCalmanPredictor(~, initPos)
 end
 
 % associate unassigned detection with track candidate
-function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd)
+function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd, fps)
     for d=unassignedDetectionsByRow'
         % new track candidate
         
@@ -289,7 +305,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         imagePos = shape.Centroid;
         worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
 
-        cand.KalmanFilter = createCalmanPredictor(obj, worldPos(1:2));
+        cand.KalmanFilter = createCalmanPredictor(obj, worldPos(1:2), fps);
 
         ass = ShapeAssignment();
         ass.IsDetectionAssigned = true;
@@ -457,7 +473,8 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
             
             %
             % put text for the last frame
-            if ~track.v.IsTrackCandidate
+            labelTrackCandidates = true;
+            if labelTrackCandidates || ~track.v.IsTrackCandidate
                 estPos = lastAss.EstimatedPos;
                 estPosImage = obj.getViewCoord(estPos, coordType, lastAss);
                 textPos = estPosImage;
@@ -703,5 +720,6 @@ function tracks = testHumanBodyDetectorOnImage(obj, debug)
     hold off
 end
 
-end
+end % methods
+
 end
