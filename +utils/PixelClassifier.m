@@ -126,6 +126,7 @@ function surf = drawMixtureGaussians(m, S, weights, colorChar)
     [mixCount,l]=size(m);
     assert(l==3,'trisurf requires 3 dimensions');
     
+    % generate set of points according to distribution
     pointsCountMax=1000;
     pointsCount=0;
     X = zeros(pointsCount,l);
@@ -133,7 +134,13 @@ function surf = drawMixtureGaussians(m, S, weights, colorChar)
         pointsCountPerGaussian  = round(pointsCountMax * weights(i));
         
         if pointsCountPerGaussian > 0
-            S1 = S(i)*eye(l);
+            % determine covariance matrix
+            if iscell(S) % each cell contains covariance matrix
+                S1 = S{i};
+            else % cov mat = diagonal with same element
+                S1 = S1*eye(l);
+            end
+            
             X(pointsCount+1:pointsCount+pointsCountPerGaussian,:) = mvnrnd(m(i,:), S1, pointsCountPerGaussian);
             pointsCount = pointsCount + pointsCountPerGaussian;
         end
@@ -144,6 +151,46 @@ function surf = drawMixtureGaussians(m, S, weights, colorChar)
     % find convex hull
     triInd = convhulln(X);
     surf = trisurf(triInd, X(:,1), X(:,2), X(:,3), 'FaceColor', colorChar);
+    xlabel('R');
+    ylabel('G');
+    zlabel('B');
+end
+
+function surf = drawMixtureGaussiansEach(m, S, weights)
+    [mixCount,l]=size(m);
+    assert(l==3,'trisurf requires 3 dimensions');
+    
+    % generate set of points according to distribution
+    pointsCountMax=1000;
+    hold on;
+    for i=1:mixCount
+        pointsCountPerGaussian  = round(pointsCountMax * weights(i));
+        
+        if pointsCountPerGaussian > 0
+            % determine covariance matrix
+            if iscell(S) % each cell contains covariance matrix
+                S1 = S{i};
+            else % cov mat = diagonal with same element
+                S1 = S1*eye(l);
+            end
+            
+            X = mvnrnd(m(i,:), S1, pointsCountPerGaussian);
+            
+            % find convex hull
+            triInd = convhulln(X);
+            surf = trisurf(triInd, X(:,1), X(:,2), X(:,3), 'FaceColor', m(i,:)/255);
+        end
+    end
+    hold off;
+    
+    xlabel('R');
+    ylabel('G');
+    zlabel('B');
+end
+
+function recogRate = recognitionRate(confusMat)
+    diagSum = sum(diag(confusMat));
+    recogRate = diagSum / sum(confusMat(:));
 end
 
 end
