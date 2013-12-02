@@ -204,23 +204,34 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
         groupMixGaussList = obj.v.groupMixGaussList;
     else
         tic;
-        groupMixGaussList = RunEarthMoverDistance1.trainMixtureGaussians(classCount, obj.v.data, obj.v.trainMask, mixCount, covMatType, rgb2FeaturesFun, debug);
+        %groupMixGaussList = RunEarthMoverDistance1.trainMixtureGaussians(classCount, obj.v.data, obj.v.trainMask, mixCount, covMatType, rgb2FeaturesFun, debug);
+        groupMixGaussList = RunEarthMoverDistance1.trainMixtureGaussiansBatchMode(classCount, obj.v.data, obj.v.trainMask, mixCount, covMatType, rgb2FeaturesFun, debug);        
         learnTime = toc;
 
         if debug
             fprintf('mixture of Gaussians trained in %.2f sec\n', learnTime);
         end
         obj.v.groupMixGaussList = groupMixGaussList;
+        
+        if debug
+            for classInd=1:classCount
+                figure(classInd);
+                clf;
+                mix = groupMixGaussList{classInd};
+                utils.PixelClassifier.drawMixtureGaussiansEach(mix.Means,mix.Covs, mix.Weights);
+                title(num2str(classInd));
+            end
+        end
     end
 
     % test classifier
     if true
-        %mixGaussFun = @(pixsFore) RunEarthMoverDistance1.classifyMixGaussian(groupMixGaussList, pixsFore);
-        mixGaussFakeFun = @(pixsFore, clusts) RunEarthMoverDistance1.classifyMixGaussian(groupMixGaussList, pixsFore, clusts);
+        mixGaussFun = @(pixsFore) RunEarthMoverDistance1.classifyMixGaussian(groupMixGaussList, pixsFore, 1:classCount);
+        %mixGaussFakeFun = @(pixsFore, clusts) RunEarthMoverDistance1.classifyMixGaussian(groupMixGaussList, pixsFore, clusts);
         tic;
-        %confusMat = RunEarthMoverDistance1.simulateClassifier(classCount, obj.v.data, ~obj.v.trainMask, mixGaussFakeFun, rgb2FeaturesFun, debug);
+        confusMat = RunEarthMoverDistance1.simulateClassifier(classCount, obj.v.data, ~obj.v.trainMask, mixGaussFun, rgb2FeaturesFun, debug);
+        %confusMat = RunEarthMoverDistance1.simulateClassifierMixGaussisansClassifier(classCount, obj.v.data, ~obj.v.trainMask, obj.v.groupMixGaussList, mixGaussFakeFun, debug);
         testTime = toc;
-        confusMat = RunEarthMoverDistance1.simulateClassifierMixGaussisansClassifier(classCount, obj.v.data, ~obj.v.trainMask, obj.v.groupMixGaussList, mixGaussFakeFun, debug);
         %display(confusMat);
         obj.v.confusMat = confusMat;
 
@@ -540,13 +551,49 @@ function groupMixGaussList = trainMixtureGaussians(classCount, data, trainMask, 
 
         groupMixGauss.train(features);
     end
-    if false && debug
-        for classInd=1:classCount
-            figure(classInd);
-            mix = groupMixGaussList{classInd};
-            utils.PixelClassifier.drawMixtureGaussiansEach(mix.Means,mix.Covs, mix.Weights);
-            title(num2str(classInd));
+end
+
+% Train in a batch mode. Accumulate all available pixels for each cluster and 
+% only train after this step.
+function groupMixGaussList = trainMixtureGaussiansBatchMode(classCount, data, trainMask, nClusters, covMatType, rgb2FeaturesFun, debug)
+    % accumulate features
+    featsPerCluster = cell(1,classCount);
+    for itemInd=find(trainMask)
+        item = data(itemInd);
+        itemLabel = item.Label;
+        if debug
+            fprintf('C=%d file=%s\n', itemLabel, item.FilePath);
         end
+
+        %
+        image = imread(item.FilePath);
+        imshow(image);
+
+        pixs = reshape(image, [], 3);
+        pixs(sum(pixs,2) == 0, :) = []; % remove black pixels
+
+        % convert RGB to Luv or other domain
+        features = rgb2FeaturesFun(pixs);
+        
+        if isempty(featsPerCluster{itemLabel})
+            numFeat = size(features, 2);
+            accumFeats = zeros(0, numFeat);
+        else
+            accumFeats = featsPerCluster{itemLabel};
+        end
+        
+        featsPerCluster{itemLabel} = [accumFeats; features];
+    end
+    
+    % train
+    groupMixGaussList = cell(1,classCount);
+    for clustInd=1:classCount
+        maxIters=1000;
+        groupMixGauss = cv.EM('Nclusters', nClusters, 'CovMatType', covMatType, 'MaxIters', maxIters); % mexopencv
+        
+        features = featsPerCluster{clustInd};
+        groupMixGauss.train(features);
+        groupMixGaussList{clustInd} = groupMixGauss;
     end
 end
 
