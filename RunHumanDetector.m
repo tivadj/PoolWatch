@@ -494,7 +494,7 @@ function waterClassifFun = getWaterClassifierAsMixtureOfGaussians(obj, nClusters
     %
     covMatType='Spherical';
     %covMatType='Diagonal';
-    em1=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType);
+    em1=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType); % mexopencv
     em1.train(nonWaterPixs);
 
     em2=cv.EM('Nclusters', nClusters, 'CovMatType', covMatType);
