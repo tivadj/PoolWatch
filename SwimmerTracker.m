@@ -1,10 +1,10 @@
 classdef SwimmerTracker < handle
 properties
-    detectionsPerFrame;
-    tracks;
+    detectionsPerFrame; % type: List<ShapeAssignment>
+    tracks; % type: List<TrackedObject>
     %v.nextTrackId;
     %trackCandidates;
-    frameInd;                 % number of processed frames
+    frameInd;                 % type:int, number of processed frames
     v;
     % v.nextTrackCandidateId;
     % v.distanceCompensator;
@@ -68,10 +68,10 @@ function nextFrame(obj, image, elapsedTimeMs, fps, debug)
     
     fprintf(1, 'track shapes\n');
 
-    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs);
+    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs, image, debug);
 end
 
-function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections)
+function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
     % remember tracks count at the beginning of current frame processing
     % because new tracks may be added
     %tracksCountPrevFrame = length(obj.tracks);
@@ -79,28 +79,32 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections)
     %
     predictSwimmerPositions(obj, frameInd, fps);
 
-    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections);
+    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug);
 
     % make assignment using Hungarian algo
     % all unassigned detectoins and unprocessed tracks
 
     % TODO: how to estimate these parameters?
-    unassignedTrackCost = 50;
-    unassignedDetectionCost = 50; % detections are noisy => cost is small
+    unassignedTrackCost = 10000;
+    unassignedDetectionCost = 10000; % detections are noisy => cost is small
     [assignment, unassignedTracks, unassignedDetections] = assignDetectionsToTracks(trackDetectCost, unassignedTrackCost, unassignedDetectionCost);
+    
+    if isempty(assignment)
+        display(trackDetectCost);
+    end
 
     for i=1:size(assignment,1)
         trackInd = assignment(i,1);
         detectInd = assignment(i,2);
 
-        shape=frameDetections(detectInd);
+        detect=frameDetections(detectInd);
 
         ass = obj.tracks{trackInd}.Assignments{frameInd};
         ass.IsDetectionAssigned = true;
         ass.DetectionInd = detectInd;
 
         % estimate position
-        imagePos = shape.Centroid;
+        imagePos = detect.Centroid;
         ass.v.EstimatedPosImagePix = imagePos;
 
         % project image position into TopView
@@ -113,9 +117,12 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections)
         ass.EstimatedPos = posEstimate;
 
         obj.tracks{trackInd}.Assignments{frameInd} = ass;
+        
+        %
+        obj.onAssignDetectionToTrackedObject(obj.tracks{trackInd}, detect, image);
    end
 
-    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd, fps);
+    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd, image, fps);
 
     driftUnassignedTracks(obj, unassignedTracks, frameInd);
 
@@ -168,7 +175,7 @@ function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
     end
 end
 
-function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections)
+function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug)
     % 2.3m/s is max speed for swimmers
     shapeCentroidNoise = 1.5; % shape may change significantly
     swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000 + shapeCentroidNoise;
@@ -181,30 +188,56 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameIn
     
     trackDetectCost=zeros(trackObjCount, detectCount);
     for r=1:trackObjCount
-        trackedObjPos = obj.tracks{r}.Assignments{frameInd}.PredictedPos;
-%         if r <= tracksCountBefore % track
-%             trackedObjPos = obj.tracks{r}.Assignments{frameInd}.PredictedPos;
-%         else % track candidate
-%             candInd = r - tracksCountBefore;
-%             cand = obj.trackCandidates{candInd};            
-%             
-%             posInd = frameInd - cand.FirstAppearanceFrameIdx + 1;            
-%             trackedObjPos = cand.PredictedPosList{posInd};
-%         end
+        track = obj.tracks{r};
+        trackedObjPos = track.Assignments{frameInd}.PredictedPos;
+        
+        % calculate cost of assigning detection to track
         
         for d=1:detectCount
-            centrPix = frameDetections(d).Centroid;
+            detect = frameDetections(d);
+
+            maxCost = 99999;
+            
+            centrPix = detect.Centroid;
             centrWorld = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, centrPix);
             
             dist=norm(centrWorld-trackedObjPos);
             
+            % keep swimmers inside the area of max possible shift per frame
             if dist > swimmerMaxShiftPerFrameM
-                dist = 9999;
+                dist = maxCost;
+            else
+                assert(track.v.AppearanceMixtureGaussians.IsTrained);
+                
+                pixs = obj.getDetectionPixels(detect, image);
+                logProbs = track.v.AppearanceMixtureGaussians.predict(pixs);
+
+                % BUG: OpenCV, sometimes predict method returns positive log probabilities (may be due to overflows)
+                probs = zeros(size(logProbs));
+                probs(logProbs < 0) = exp(logProbs(logProbs < 0)); % use only logProb < 0
+
+                avgProb = mean(probs);
+                dist = min([1/avgProb maxCost]);
+                if debug
+                    fprintf('calcTrackToDetectionAssignmentCostMatrix: avgProb=%.4f dist=%.4f\n', avgProb, dist);
+                end
             end
+            
             trackDetectCost(r,d) = dist;
         end
     end
+end
 
+function forePixs = getDetectionPixels(obj, detect, image)
+    bnd = floor(detect.BoundingBox);
+    shapeImage = image(bnd(2):bnd(2)+bnd(4)-1,bnd(1):bnd(1)+bnd(3)-1,:);
+    forePixs = reshape(shapeImage, [], 3);
+
+    shapeMask = detect.FilledImage;
+    shapeMask = reshape(shapeMask, [], 1);
+    
+    assert(length(shapeMask) == size(forePixs,1));
+    forePixs = forePixs(shapeMask,:);
 end
 
 function promoteMatureTrackCandidates(obj, frameInd)
@@ -277,7 +310,7 @@ function resetKalmanState(obj, kalmanObj)
 end
 
 % associate unassigned detection with track candidate
-function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd, fps)
+function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd, image, fps)
     for d=unassignedDetectionsByRow'
         % new track candidate
         
@@ -287,10 +320,10 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         cand.FirstAppearanceFrameIdx = frameInd;
         
         %
-        shape = frameDetections(d);
+        detect = frameDetections(d);
         
         % project image position into TopView
-        imagePos = shape.Centroid;
+        imagePos = detect.Centroid;
         worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
 
         cand.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
@@ -303,6 +336,8 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         ass.EstimatedPos = worldPos;
 
         cand.Assignments{frameInd} = ass;
+        
+        obj.onAssignDetectionToTrackedObject(cand, detect, image);
 
         obj.tracks{end+1} = cand;
     end
@@ -338,6 +373,25 @@ function driftUnassignedTracks(obj, unassignedTracksByRow, frameInd)
             kalmanObj.State(3:end)=0; % zero vx and vy
         end
     end
+end
+
+function onAssignDetectionToTrackedObject(obj, track, detect, image)
+    pixs = obj.getDetectionPixels(detect, image);
+    
+    allPixs = [track.v.AppearancePixels; pixs];
+    numPixs = size(allPixs, 1);
+    
+    % there must be enough pixels for training
+    nClust = min([16 numPixs]);
+    track.v.AppearanceMixtureGaussians.Nclusters = nClust;
+    track.v.AppearanceMixtureGaussians.train(allPixs);
+    
+    % keep pixels buffer from overflowing
+    appearPixMax = 3000;
+    if numPixs > appearPixMax
+        allPixs(1:numPixs-appearPixMax,:) = [];
+    end
+    track.v.AppearancePixels = allPixs;
 end
 
 function batchTrackSwimmersInVideo(obj, debug)

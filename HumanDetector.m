@@ -186,6 +186,7 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
         bodyNoIslandsMask=im2uint8(resultImage);
         bodyNoIslandsRGB=utils.applyMask(image, bodyNoIslandsMask);
         imshow(bodyNoIslandsRGB);
+        %imwrite(imageBody, sprintf('../dinosaur/appear1/mvi3177_whaleMan_%s.png', utils.PW.timeStampNow))
     end
 
     % return info about swimmer's shapes
@@ -206,6 +207,7 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
         resultCells(i).BoundingBox = props.BoundingBox;
         resultCells(i).Centroid = props.Centroid;
         resultCells(i).OutlinePixels = imgOutlinePixels;
+        resultCells(i).FilledImage = imgFill;
     end
     BodyDescr = resultCells;
 end

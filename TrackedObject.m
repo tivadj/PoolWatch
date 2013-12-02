@@ -9,6 +9,8 @@ properties
     KalmanFilter; % used to predict position of track candidate
     Assignments;
     v;
+    %v.AppearanceMixtureGaussians; % type: cv.EM, accumulated color signature up to the last frame
+    %v.AppearancePixels;
 end
 methods(Static)
     function obj = NewTrackCandidate(trackCandidateId)
@@ -17,6 +19,8 @@ methods(Static)
         obj.TrackCandidateId = trackCandidateId;
         obj.Id = -1;
         obj.Assignments = cell(1,1);
+        obj.v.AppearanceMixtureGaussians = cv.EM('Nclusters', 16, 'CovMatType', 'Spherical');
+        obj.v.AppearancePixels = zeros(0,3,'uint8');
     end
 end
 
