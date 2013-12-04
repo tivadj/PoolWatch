@@ -35,6 +35,7 @@ function ensureInitialized(obj, debug)
         %svmClassifierFun=@(XByRow) utils.SvmClassifyHelper(obj.v.skinClassif, XByRow, 1000);
         skinHullClassifierFun=@(XByRow) utils.inhull(XByRow, obj.v.cl2.v.skinHullClassifHullPoints, obj.v.cl2.v.skinHullClassifHullTriInds, 0.2);
         skinClassifier=skinHullClassifierFun;
+        obj.v.skinClassifierFun = skinClassifier;
         
         % init water classifer
         humanDetectorRunner = RunHumanDetector.create;
@@ -61,14 +62,38 @@ function nextFrame(obj, image, elapsedTimeMs, fps, debug)
 
     if debug
     end
+    
+    if ~isfield(obj.v, 'poolMask')
+        [poolMask,waterMask] = PoolBoundaryDetector.getPoolMask(image, obj.v.waterClassifierFun, false, debug);
+        if debug
+            imshow(utils.applyMask(image, poolMask));
+        end
+        obj.v.poolMask = poolMask;
+        obj.v.waterMask = waterMask;
+    end
+    
+    if true || ~isfield(obj.v, 'dividersMask')
+        dividersMask = PoolBoundaryDetector.getLaneDividersMask(image, obj.v.poolMask, obj.v.waterMask, obj.v.skinClassifierFun, debug);
+        if debug
+            imshow(utils.applyMask(image, dividersMask));
+        end
+        obj.v.dividersMask = dividersMask;
+    end
+    
+    % narrow observable area to pool boundary
+    % remove lane dividers from observation
+    imageSwimmers = utils.applyMask(image, obj.v.poolMask & ~obj.v.dividersMask);
+    if debug
+        imshow(imageSwimmers);
+    end
 
     fprintf(1, 'find shapes\n');
-    bodyDescrs = obj.v.det.GetHumanBodies(image, debug);
+    bodyDescrs = obj.v.det.GetHumanBodies(imageSwimmers, debug);
     obj.detectionsPerFrame{obj.frameInd} = bodyDescrs;
     
     fprintf(1, 'track shapes\n');
 
-    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs, image, debug);
+    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
 end
 
 function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)

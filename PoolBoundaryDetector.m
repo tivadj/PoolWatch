@@ -1,19 +1,47 @@
 classdef PoolBoundaryDetector
 methods(Static)
 
-function imageCalibPnts = getCalibrationPoints(poolImage, watClassifFun)
-    [imgNoHoles,waterMask] = PoolBoundaryDetector.getPoolMask(poolImage, watClassifFun,false);
-    imshow(imgNoHoles)
-    imshow(waterMask)
+% Radius of the circle to separate lane divider from water or pool tiles.
+function pad = dividerPadding()
+    pad = 3;
+end
+
+function dividersMask = getLaneDividersMask(image, imagePoolBnd, waterMask, fleshClassifierFun, debug)
+    % remove water and flesh from pool boundary
     
-    % determine lane markers
-    laneMarkerMask = imgNoHoles & ~waterMask;
-    imshow(laneMarkerMask);
+    fleshMask = utils.PixelClassifier.applyToImage(image, fleshClassifierFun);
+    dividersMask = imagePoolBnd & ~(waterMask | fleshMask);
+    if debug
+        imshow(utils.applyMask(image, dividersMask))
+    end
+
+    connComp = bwconncomp(dividersMask);
+    connCompProps = regionprops(dividersMask, 'Eccentricity');
+    almostLinesMask = [connCompProps.Eccentricity] > 0.99;
+    mask = HumanDetector.removeIslands(connComp, dividersMask, ~almostLinesMask);
+    if debug
+        imshow(mask);
+    end
+    
+    % slightly enlarge dividers
+    sel = strel('diamond', PoolBoundaryDetector.dividerPadding);
+    dividersMaskEnl = imdilate(mask, sel);
+    if debug
+        imshow(dividersMaskEnl);
+        imshow(utils.applyMask(image,dividersMaskEnl))
+    end
+    
+    dividersMask = dividersMaskEnl;    
+end
+
+function imageCalibPnts = getCalibrationPoints(poolImage, watClassifFun, debug)
+    [imgNoHoles,waterMask] = PoolBoundaryDetector.getPoolMask(poolImage, watClassifFun, [], false, debug);
+    if debug
+        imshow(imgNoHoles)
+        imshow(waterMask)
+    end
     
     % try to clean the mask
-%     sel = strel('disk', 1, 0);
-%     laneMarkerSmoothMask = imclose(laneMarkerMask, sel);
-%     imshow(laneMarkerSmoothMask);
     connComp = bwconncomp(laneMarkerMask);
     connCompProps = regionprops(connComp, 'Area');
     smallBlobs = [connCompProps.Area] < 10;
@@ -21,25 +49,34 @@ function imageCalibPnts = getCalibrationPoints(poolImage, watClassifFun)
     imshow(laneMarkerSmoothMask);
     
     [vanishPoint,lines2] = PoolBoundaryDetector.getVanishingPoint(laneMarkerSmoothMask);
+    if debug
+        hold on
+        plot(lines2(:, [1 2])', lines2(:, [3 4])')
+        hold off
+    end
     
     bndPolyline = PoolBoundaryDetector.getPoolBoundaryPolyline(imgNoHoles, vanishPoint);
+
     
     imageCalibPnts = PoolBoundaryDetector.getCalibrationPointsHelper(imgNoHoles, lines2, vanishPoint, bndPolyline);
-    fprintf('Image calibration points\n');
-    display(imageCalibPnts);
+    if debug
+        fprintf('Image calibration points\n');
+        display(imageCalibPnts);
+    end
 end
 
-function [poolMask,waterMask] = getPoolMask(image, waterClassifierFun, forceSingleBlob)
-    i1=image;
-    waterMask = utils.PixelClassifier.applyToImage(i1, waterClassifierFun);
-    imgWater = utils.applyMask(i1, waterMask);
-    imshow(imgWater);
+function [poolMask,waterMask] = getPoolMask(image, waterClassifierFun, forceSingleBlob, debug)
+    waterMask = utils.PixelClassifier.applyToImage(image, waterClassifierFun);
+    imgWater = utils.applyMask(image, waterMask);
+    if debug
+        imshow(imgWater);
+    end
     
-    sel = strel('disk', 9, 0);
-    imgSmooth = imclose(imgWater, sel);
-    imshow(imgSmooth);
+%     sel = strel('disk', 11, 0);
+%     imgSmooth = imclose(imgWater, sel);
+%     imshow(imgSmooth);
     
-    imgSmoothGray = rgb2gray(imgSmooth);
+    imgSmoothGray = rgb2gray(imgWater);
     connComp = bwconncomp(imgSmoothGray);
     connCompProps = regionprops(connComp, 'Area');
     
@@ -47,34 +84,72 @@ function [poolMask,waterMask] = getPoolMask(image, waterClassifierFun, forceSing
     poolAreaMinPix = 5000;
     smallBlobs = [connCompProps.Area] < poolAreaMinPix;
     imgSmoothNoSmall = HumanDetector.removeIslands(connComp, imgSmoothGray, smallBlobs);
-    imshow(imgSmoothNoSmall);
-    
-    
+    if debug
+        imshow(imgSmoothNoSmall);
+    end
+
+    %
+    sel = strel('disk', 9, 0);
+    imgSmooth = imclose(imgSmoothNoSmall, sel);
+    if debug
+        imshow(imgSmooth);
+    end
+
 %     imgBlobInfo = utils.drawRegionProps(imgSmoothGray, connComp, 50);
 %     imshow(imgBlobInfo);
     
-    imgNoHoles = imfill(imgSmoothNoSmall,'holes');
-    imshow(imgNoHoles)
+    imgNoHoles = imfill(imgSmooth,'holes');
+    if debug
+        imshow(imgNoHoles)
+    end
     
-    % convert too mask (to avoid lines inside the pool)
+    % convert to mask (to avoid lines inside the pool)
     imgNoHoles(imgNoHoles > 0)=255;
-    imshow(imgNoHoles)
+    if debug
+        imshow(imgNoHoles)
+    end
     
-    poolMask = imgNoHoles;
+    % leave some padding between water and pool tiles to avoid stripes of 
+    % tiles to be associated with a swimmer
+    sel = strel('diamond', PoolBoundaryDetector.dividerPadding);
+    poolMaskIndent = imerode(imgNoHoles, sel);
+    if debug
+        imshow(poolMaskIndent);
+    end
+    
+    poolMaskSingle = poolMaskIndent;
 
     % leave only largest blob
-    if true%forceSingleBlob
+    if forceSingleBlob
+        poolMaskTmp = poolMaskIndent;
         compIndToArea = [1:connComp.NumObjects; connCompProps.Area]';
         compIndToArea = compIndToArea(~smallBlobs,:);
         compIndToArea = sortrows(compIndToArea, -2); % -2=descending by Area
 
         removeBlobMask = true(1,connComp.NumObjects);
         removeBlobMask(compIndToArea(1,1)) = 0; % leave largest blob
-        imgLargestBlob = HumanDetector.removeIslands(connComp, imgNoHoles, removeBlobMask);
-        imshow(imgLargestBlob)
+        imgLargestBlob = HumanDetector.removeIslands(connComp, poolMaskTmp, removeBlobMask);
+        if debug
+            imshow(imgLargestBlob)
+        end
         
-        %poolMask = imgLargestBlob;
+        poolMaskSingle = imgLargestBlob;
     end
+    
+    % pool boundary is convex (to avoid erasing swimmer shape by pool boundary with unexpected cavities)
+    connComps = bwconncomp(poolMaskSingle);
+    connCompProps = regionprops(connComps, 'BoundingBox', 'ConvexImage')
+    convexPoolMask = false(size(image,1), size(image,2));
+    for i=1:connComps.NumObjects
+        bnd = connCompProps(i).BoundingBox;
+        convexPoolMask(bnd(2):bnd(2)+bnd(4)-1, bnd(1):bnd(1)+bnd(3)-1) = connCompProps(i).ConvexImage;
+    end
+    
+    if debug
+        imshow(convexPoolMask);
+    end
+    
+    poolMask = convexPoolMask;
 end
 
 function [vanishPoint,lines2] = getVanishingPoint(laneMarkerSmoothMask)
