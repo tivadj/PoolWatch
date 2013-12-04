@@ -229,7 +229,7 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
 end
 
 function forePixs = getDetectionPixels(obj, detect, image)
-    bnd = floor(detect.BoundingBox);
+    bnd = ceil(detect.BoundingBox); % ceil to get positive index for pos=0.5
     shapeImage = image(bnd(2):bnd(2)+bnd(4)-1,bnd(1):bnd(1)+bnd(3)-1,:);
     forePixs = reshape(shapeImage, [], 3);
 
