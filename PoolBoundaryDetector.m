@@ -65,8 +65,7 @@ function imageCalibPnts = getCalibrationPoints(poolImage, watClassifFun, debug)
     end
 end
 
-function [poolMask,waterMask] = getPoolMask(image, waterClassifierFun, forceSingleBlob, debug)
-    waterMask = utils.PixelClassifier.applyToImage(image, waterClassifierFun);
+function poolMask = getPoolMask(image, waterMask, forceSingleBlob, debug)
     imgWater = utils.applyMask(image, waterMask);
     if debug
         imshow(imgWater);

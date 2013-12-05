@@ -63,13 +63,15 @@ function nextFrame(obj, image, elapsedTimeMs, fps, debug)
     if debug
     end
     
+    %
+    waterMask = utils.PixelClassifier.applyToImage(image, obj.v.waterClassifierFun);
+
     if ~isfield(obj.v, 'poolMask')
-        [poolMask,waterMask] = PoolBoundaryDetector.getPoolMask(image, obj.v.waterClassifierFun, false, debug);
+        poolMask = PoolBoundaryDetector.getPoolMask(image, waterMask, false, debug);
         if debug
             imshow(utils.applyMask(image, poolMask));
         end
         obj.v.poolMask = poolMask;
-        obj.v.waterMask = waterMask;
     end
     
     if true || ~isfield(obj.v, 'dividersMask')
@@ -87,11 +89,12 @@ function nextFrame(obj, image, elapsedTimeMs, fps, debug)
         imshow(imageSwimmers);
     end
 
-    fprintf(1, 'find shapes\n');
-    bodyDescrs = obj.v.det.GetHumanBodies(imageSwimmers, debug);
+    % find shapes
+    
+    bodyDescrs = obj.v.det.GetHumanBodies(imageSwimmers, waterMask, debug);
     obj.detectionsPerFrame{obj.frameInd} = bodyDescrs;
     
-    fprintf(1, 'track shapes\n');
+    % track shapes
 
     processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
 end

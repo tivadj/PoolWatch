@@ -30,7 +30,7 @@ function obj = HumanDetector(skinClassifierFun, waterClassifierFun, distanceComp
     obj.distanceCompensator = distanceCompensator;
 end
 
-function BodyDescr = GetHumanBodies(obj, image, debug)
+function BodyDescr = GetHumanBodies(this, image, waterMask, debug)
     if debug
         imshow(image), title('Original image');
     end
@@ -39,7 +39,6 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
     
     %imageBody = obj.IsolateBodyShapes(image, debug);
     
-    waterMask = utils.PixelClassifier.applyToImage(image, obj.v.waterClassifierFun);
     imageBody = utils.applyMask(image, ~waterMask);
     %imageBody = utils.PixelClassifier.applyAndGetImage(image, obj.v.watClassifFun, debug);
     
@@ -155,15 +154,15 @@ function BodyDescr = GetHumanBodies(obj, image, debug)
         noiseIslands = zeros(1, blocksCount,'uint8');
         for i=1:blocksCount
             centroid = connCompProps(i).Centroid;
-            centroidWorld = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, centroid);
+            centroidWorld = CameraDistanceCompensator.cameraToWorld(this.distanceCompensator, centroid);
 
             actualArea = connCompProps(i).Area;
 
-            expectAreaMax = CameraDistanceCompensator.worldAreaToCamera(obj.distanceCompensator, centroidWorld, bodyAreaMax);
+            expectAreaMax = CameraDistanceCompensator.worldAreaToCamera(this.distanceCompensator, centroidWorld, bodyAreaMax);
             isNoise = actualArea > expectAreaMax;
 
             if ~isNoise
-                expectAreaMim = CameraDistanceCompensator.worldAreaToCamera(obj.distanceCompensator, centroidWorld, bodyAreaMin);
+                expectAreaMim = CameraDistanceCompensator.worldAreaToCamera(this.distanceCompensator, centroidWorld, bodyAreaMin);
                 isNoise = actualArea < expectAreaMim;
             end
 
