@@ -110,11 +110,11 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
     % all unassigned detectoins and unprocessed tracks
 
     % TODO: how to estimate these parameters?
-    unassignedTrackCost = 10000;
-    unassignedDetectionCost = 10000; % detections are noisy => cost is small
+    unassignedTrackCost = 500000;
+    unassignedDetectionCost = 50000; % detections are noisy => cost is small
     [assignment, unassignedTracks, unassignedDetections] = assignDetectionsToTracks(trackDetectCost, unassignedTrackCost, unassignedDetectionCost);
     
-    if isempty(assignment)
+    if debug && isempty(assignment)
         display(trackDetectCost);
     end
 
@@ -232,15 +232,9 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
             if dist > swimmerMaxShiftPerFrameM
                 dist = maxCost;
             else
-                assert(track.v.AppearanceMixtureGaussians.IsTrained);
-                
                 pixs = obj.getDetectionPixels(detect, image);
-                logProbs = track.v.AppearanceMixtureGaussians.predict(pixs);
-
-                % BUG: OpenCV, sometimes predict method returns positive log probabilities (may be due to overflows)
-                probs = zeros(size(logProbs));
-                probs(logProbs < 0) = exp(logProbs(logProbs < 0)); % use only logProb < 0
-
+                
+                probs = track.predict(pixs);
                 avgProb = mean(probs);
                 dist = min([1/avgProb maxCost]);
                 if debug
@@ -401,22 +395,13 @@ function driftUnassignedTracks(obj, unassignedTracksByRow, frameInd)
 end
 
 function onAssignDetectionToTrackedObject(obj, track, detect, image)
-    pixs = obj.getDetectionPixels(detect, image);
-    
-    allPixs = [track.v.AppearancePixels; pixs];
-    numPixs = size(allPixs, 1);
-    
-    % there must be enough pixels for training
-    nClust = min([16 numPixs]);
-    track.v.AppearanceMixtureGaussians.Nclusters = nClust;
-    track.v.AppearanceMixtureGaussians.train(allPixs);
-    
-    % keep pixels buffer from overflowing
-    appearPixMax = 3000;
-    if numPixs > appearPixMax
-        allPixs(1:numPixs-appearPixMax,:) = [];
+    % retraining GMM on each frame is too costly
+    % => retrain it during the initial time until enough pixels is accumulated
+    % then we assume swimmer's shape doesn't change
+    if track.canAcceptAppearancePixels
+        pixs = obj.getDetectionPixels(detect, image);
+        track.pushAppearancePixels(pixs);
     end
-    track.v.AppearancePixels = allPixs;
 end
 
 function batchTrackSwimmersInVideo(obj, debug)

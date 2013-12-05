@@ -51,16 +51,34 @@ end
 % result=value of a function in each point X
 function result = evalMixtureGaussians(X, m, S, weights)
     [N,l]=size(X);
-    [mixCount,l2]=size(m);
-    [l3,l4,c2]=size(S);
-    c3 = length(weights);
     
-    assert(mixCount==c2 && mixCount==c3);
-    assert(l==l2 && l==l3 && l==l4); 
+    [mixCount,l2]=size(m);
+    assert(l==l2); 
+    
+    isSphericalCov = iscell(S);
+    if isSphericalCov
+        c2 = length(S);
+    else
+        % diagonal cov
+        assert(isnumeric(S));
+        [l3,l4,c2]=size(S);
+        assert(l==l3 && l==l4); 
+    end
+    assert(mixCount == c2);
 
+    c3 = length(weights);
+    assert(mixCount==c3);
+
+    %
+    XDbl = double(X);
     result = zeros(N,1);
     for gaussInd=1:mixCount
-        result = result + weights(gaussInd) * mvnpdf(X, m(gaussInd,:), S(:,:,gaussInd));
+        if isSphericalCov
+            cov = S{gaussInd};
+        else
+            cov = S(:,:,gaussInd);
+        end
+        result = result + weights(gaussInd) * mvnpdf(XDbl, m(gaussInd,:), cov);
     end
 end
 
