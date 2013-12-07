@@ -75,7 +75,7 @@ function nextFrame(obj, image, elapsedTimeMs, fps, debug)
     end
     
     if true || ~isfield(obj.v, 'dividersMask')
-        dividersMask = PoolBoundaryDetector.getLaneDividersMask(image, obj.v.poolMask, obj.v.waterMask, obj.v.skinClassifierFun, debug);
+        dividersMask = PoolBoundaryDetector.getLaneDividersMask(image, obj.v.poolMask, waterMask, obj.v.skinClassifierFun, debug);
         if debug
             imshow(utils.applyMask(image, dividersMask));
         end
@@ -113,8 +113,13 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
     % all unassigned detectoins and unprocessed tracks
 
     % TODO: how to estimate these parameters?
-    unassignedTrackCost = 500000;
-    unassignedDetectionCost = 50000; % detections are noisy => cost is small
+    minAppearPerPixSimilarity = 0.00015; % shapes with lesser proximity should not be assigned
+    
+    %unassignedTrackCost = 500000;
+    unassignedTrackCost = 1 / minAppearPerPixSimilarity; % = 6666
+    
+    %unassignedDetectionCost = 50000; % detections are noisy => cost is small
+    unassignedDetectionCost = unassignedTrackCost;
     [assignment, unassignedTracks, unassignedDetections] = assignDetectionsToTracks(trackDetectCost, unassignedTrackCost, unassignedDetectionCost);
     
     if debug && isempty(assignment)
@@ -205,7 +210,7 @@ end
 
 function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug)
     % 2.3m/s is max speed for swimmers
-    shapeCentroidNoise = 1.5; % shape may change significantly
+    shapeCentroidNoise = 0.5; % shape may change significantly
     swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000 + shapeCentroidNoise;
     
     % calculate distance from predicted pos of each tracked object
@@ -241,7 +246,7 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
                 avgProb = mean(probs);
                 dist = min([1/avgProb maxCost]);
                 if debug
-                    fprintf('calcTrackToDetectionAssignmentCostMatrix: avgProb=%.4f dist=%.4f\n', avgProb, dist);
+                    fprintf('calcTrackCost: [%d-%d] Blob(%.0f %.0f) dist=%d avgProb=%d \n', r, d, centrPix(1), centrPix(2), dist, avgProb);
                 end
             end
             
