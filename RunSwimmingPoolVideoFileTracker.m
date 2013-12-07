@@ -25,6 +25,7 @@ function init(obj, renderTopView)
     %videoFilePath = fullfile('data/mvi3177_blueWomanLane3_16frames.avi');
     videoFilePath = fullfile('../output/mvi3177_blueWomanLane3.avi');
     %videoFilePath = fullfile('../rawdata/MVI_3177.mov');
+    %videoFilePath = fullfile('../dinosaur/mvi3177_1461_2041_kid1_lane4.avi');
     
     videoReader = VideoReader(videoFilePath);
     obj.v.videoReader = videoReader;
@@ -33,19 +34,23 @@ function init(obj, renderTopView)
     procFrames=videoReader.NumberOfFrames;
     fprintf('video FrameRate=%d NumberOfFrames=%d\n', frameRate, procFrames);
     
-    %obj.v.elapsedTimePerFrameMs = 1000 / videoReader.FrameRate;
-    obj.v.elapsedTimePerFrameMs = 1000 / videoReader.FrameRate * 29; % for /mvi3177_blueWomanLane3.avi
 
-
+    %
     toFrame=Inf;
     framesToTakeLast = min([procFrames toFrame]);
     fprintf('analysis of first %d frames\n', framesToTakeLast);
     
-    %framesToTake=1:20:procFrames;
-    framesToTake=285:framesToTakeLast;
+    takeEachNthFrame = 10;
+    framesToTake=1:takeEachNthFrame:framesToTakeLast;
     %framesToTake=2476;
     %framesToTake=16;
     obj.v.framesToTake = framesToTake;
+
+    % fps
+    fps = videoReader.FrameRate / double(takeEachNthFrame);
+    obj.v.fps = fps;
+    obj.v.elapsedTimePerFrameMs = 1000 / fps;
+    %obj.v.elapsedTimePerFrameMs = 1000 / videoReader.FrameRate * 29; % for /mvi3177_blueWomanLane3_16frames.avi
 
     %
     framesCount=length(framesToTake);
@@ -54,8 +59,10 @@ function init(obj, renderTopView)
 
     % temporary mask to highlight lane3
     lane3Mask = [];
-    load(fullfile('data/Mask_lane3Mask.mat'), 'lane3Mask')
-    obj.v.lane3Mask = lane3Mask;
+    %load(fullfile('data/Mask_lane3Mask.mat'), 'lane3Mask'); obj.v.lane3Mask = lane3Mask;
+    %load(fullfile('../dinosaur/Mask_lane3_blackMan1.mat'), 'lane3_blackMan1'); obj.v.lane3Mask = lane3_blackMan1;
+    load(fullfile('../dinosaur/Mask_lane4_1.mat'), 'lane4_1'); obj.v.lane3Mask = lane4_1;
+    
 
     %
     outWidth = videoReader.Width;
@@ -103,7 +110,7 @@ function processFrames(obj, renderTopView, debug)
 
         % do frame analysis
         
-        obj.v.tr.nextFrame(image, obj.v.elapsedTimePerFrameMs, debug);
+        obj.v.tr.nextFrame(image, obj.v.elapsedTimePerFrameMs, obj.v.fps, debug);
 
         % get debug image
 

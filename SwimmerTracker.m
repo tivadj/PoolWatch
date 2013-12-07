@@ -1,10 +1,10 @@
 classdef SwimmerTracker < handle
 properties
-    detectionsPerFrame;
-    tracks;
+    detectionsPerFrame; % type: List<ShapeAssignment>
+    tracks; % type: List<TrackedObject>
     %v.nextTrackId;
     %trackCandidates;
-    frameInd;                 % number of processed frames
+    frameInd;                 % type:int, number of processed frames
     v;
     % v.nextTrackCandidateId;
     % v.distanceCompensator;
@@ -35,11 +35,12 @@ function ensureInitialized(obj, debug)
         %svmClassifierFun=@(XByRow) utils.SvmClassifyHelper(obj.v.skinClassif, XByRow, 1000);
         skinHullClassifierFun=@(XByRow) utils.inhull(XByRow, obj.v.cl2.v.skinHullClassifHullPoints, obj.v.cl2.v.skinHullClassifHullTriInds, 0.2);
         skinClassifier=skinHullClassifierFun;
+        obj.v.skinClassifierFun = skinClassifier;
         
         % init water classifer
         humanDetectorRunner = RunHumanDetector.create;
-        RunHumanDetector.initWaterClassifier(humanDetectorRunner, debug);
-        waterClassifierFun = humanDetectorRunner.v.watClassifFun;
+        %waterClassifierFun = RunHumanDetector.getWaterClassifierAsConvHull(humanDetectorRunner, debug);
+        waterClassifierFun = RunHumanDetector.getWaterClassifierAsMixtureOfGaussians(humanDetectorRunner,6,debug);
         obj.v.waterClassifierFun = waterClassifierFun;
         
         obj.v.det = HumanDetector(skinClassifier, waterClassifierFun, obj.v.distanceCompensator);
@@ -54,84 +55,107 @@ function purgeMemory(obj)
 end
 
 % elapsedTimeMs - time in milliseconds since last frame
-function nextFrame(obj, image, elapsedTimeMs, debug)
+function nextFrame(obj, image, elapsedTimeMs, fps, debug)
     ensureInitialized(obj, debug);
 
     obj.frameInd = obj.frameInd + 1;
 
     if debug
     end
+    
+    %
+    waterMask = utils.PixelClassifier.applyToImage(image, obj.v.waterClassifierFun);
 
-    fprintf(1, 'find shapes\n');
-    bodyDescrs = obj.v.det.GetHumanBodies(image, debug);
+    if ~isfield(obj.v, 'poolMask')
+        poolMask = PoolBoundaryDetector.getPoolMask(image, waterMask, false, debug);
+        if debug
+            imshow(utils.applyMask(image, poolMask));
+        end
+        obj.v.poolMask = poolMask;
+    end
+    
+    if true || ~isfield(obj.v, 'dividersMask')
+        dividersMask = PoolBoundaryDetector.getLaneDividersMask(image, obj.v.poolMask, waterMask, obj.v.skinClassifierFun, debug);
+        if debug
+            imshow(utils.applyMask(image, dividersMask));
+        end
+        obj.v.dividersMask = dividersMask;
+    end
+    
+    % narrow observable area to pool boundary
+    % remove lane dividers from observation
+    imageSwimmers = utils.applyMask(image, obj.v.poolMask & ~obj.v.dividersMask);
+    if debug
+        imshow(imageSwimmers);
+    end
+
+    % find shapes
+    
+    bodyDescrs = obj.v.det.GetHumanBodies(imageSwimmers, waterMask, debug);
     obj.detectionsPerFrame{obj.frameInd} = bodyDescrs;
     
-    fprintf(1, 'track shapes\n');
+    % track shapes
 
-    processDetections(obj, obj.frameInd, elapsedTimeMs, bodyDescrs);
+    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
 end
 
-function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
+function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
     % remember tracks count at the beginning of current frame processing
     % because new tracks may be added
     %tracksCountPrevFrame = length(obj.tracks);
 
     %
-    predictSwimmerPositions(obj, frameInd);
+    predictSwimmerPositions(obj, frameInd, fps);
 
-    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections);
+    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug);
 
     % make assignment using Hungarian algo
     % all unassigned detectoins and unprocessed tracks
 
     % TODO: how to estimate these parameters?
-    unassignedTrackCost = 50;
-    unassignedDetectionCost = 50; % detections are noisy => cost is small
+    minAppearPerPixSimilarity = 0.00015; % shapes with lesser proximity should not be assigned
+    
+    %unassignedTrackCost = 500000;
+    unassignedTrackCost = 1 / minAppearPerPixSimilarity; % = 6666
+    
+    %unassignedDetectionCost = 50000; % detections are noisy => cost is small
+    unassignedDetectionCost = unassignedTrackCost;
     [assignment, unassignedTracks, unassignedDetections] = assignDetectionsToTracks(trackDetectCost, unassignedTrackCost, unassignedDetectionCost);
+    
+    if debug && isempty(assignment)
+        display(trackDetectCost);
+    end
 
     for i=1:size(assignment,1)
         trackInd = assignment(i,1);
         detectInd = assignment(i,2);
 
-        shape=frameDetections(detectInd);
+        detect=frameDetections(detectInd);
 
-%        if trackInd <= tracksCountPrevFrame % track
-            % make an assignment
-            ass = obj.tracks{trackInd}.Assignments{frameInd};
-            ass.IsDetectionAssigned = true;
-            ass.DetectionInd = detectInd;
+        ass = obj.tracks{trackInd}.Assignments{frameInd};
+        ass.IsDetectionAssigned = true;
+        ass.DetectionInd = detectInd;
 
-            %obj.tracks{trackInd}.Assignments{frameInd}.DetectionCentroid = shape.Centroid;
-%             if isfield(shape,'BoundingBox')
-%                 obj.tracks{trackInd}.Assignments{frameInd}.DetectionBoundingBox = shape.BoundingBox;
-%             end
+        % estimate position
+        imagePos = detect.Centroid;
+        ass.v.EstimatedPosImagePix = imagePos;
 
-            % estimate position
-            imagePos = shape.Centroid;
-            ass.v.EstimatedPosImagePix = imagePos;
-            
-            % project image position into TopView
-            worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
-            worldPos2 = worldPos(1:2);
-            
-            posEstimate = obj.tracks{trackInd}.KalmanFilter.correct(worldPos2);
-            posEstimate = [posEstimate 0]; % append zeroHeight = 0
-            ass.EstimatedPos = posEstimate;
-            
-            obj.tracks{trackInd}.Assignments{frameInd} = ass;
-%         else % track candidate
-%             candInd = trackInd - tracksCountPrevFrame;
-%             cand=obj.trackCandidates{candInd};
-% 
-%             obj.trackCandidates{candInd}.DetectionIdList{end+1} = detectInd;
-% 
-%             % estimate position
-%             posEstimate = cand.KalmanFilter.correct(shape.Centroid);
-%             obj.trackCandidates{candInd}.EstimatedPosList{end+1} = posEstimate;
-%        end
+        % project image position into TopView
+        worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
+        
+        worldPos2 = worldPos(1:2);
+        posEstimate2 = obj.tracks{trackInd}.KalmanFilter.correct(worldPos2);
+        posEstimate = [posEstimate2 worldPos(3)];
+        
+        ass.EstimatedPos = posEstimate;
+
+        obj.tracks{trackInd}.Assignments{frameInd} = ass;
+        
+        %
+        obj.onAssignDetectionToTrackedObject(obj.tracks{trackInd}, detect, image);
    end
 
-    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd);
+    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd, image, fps);
 
     driftUnassignedTracks(obj, unassignedTracks, frameInd);
 
@@ -152,14 +176,14 @@ function processDetections(obj, frameInd, elapsedTimeMs, frameDetections)
     end
 end
 
-function predictSwimmerPositions(obj, frameInd)
+function predictSwimmerPositions(obj, frameInd, fps)
     % predict pos for each tracked object
     for r=1:length(obj.tracks)
         track = obj.tracks{r};
 
-        worldPos = track.KalmanFilter.predict();
-        worldPos = [worldPos 0]; % append zeroHeight = 0
-
+        worldPos2 = track.KalmanFilter.predict();
+        worldPos = [worldPos2 0]; % append zeroHeight = 0
+        
         %
         ass = ShapeAssignment();
         ass.IsDetectionAssigned = false;
@@ -169,7 +193,22 @@ function predictSwimmerPositions(obj, frameInd)
     end
 end
 
-function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameInd, elapsedTimeMs, frameDetections)
+function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
+    % 2.3m/s is max speed for swimmers
+    % let say 0.5m/s is an average speed
+    % estimate sigma as one third of difference between max and mean shift per frame
+    maxShiftM = 2.3 / fps;
+    meanShiftM = 0.5 / fps;
+    sigma = (maxShiftM - meanShiftM) / 3;
+
+    if strcmp(swimmerLocactionStr, 'normal')
+        kalman.ProcessNoise = sigma^2;
+    elseif strcmp(swimmerLocactionStr, 'nearBorder')
+        kalman.ProcessNoise = 999^2; % suppress process model
+    end
+end
+
+function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug)
     % 2.3m/s is max speed for swimmers
     shapeCentroidNoise = 0.5; % shape may change significantly
     swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000 + shapeCentroidNoise;
@@ -182,30 +221,50 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, frameIn
     
     trackDetectCost=zeros(trackObjCount, detectCount);
     for r=1:trackObjCount
-        trackedObjPos = obj.tracks{r}.Assignments{frameInd}.PredictedPos;
-%         if r <= tracksCountBefore % track
-%             trackedObjPos = obj.tracks{r}.Assignments{frameInd}.PredictedPos;
-%         else % track candidate
-%             candInd = r - tracksCountBefore;
-%             cand = obj.trackCandidates{candInd};            
-%             
-%             posInd = frameInd - cand.FirstAppearanceFrameIdx + 1;            
-%             trackedObjPos = cand.PredictedPosList{posInd};
-%         end
+        track = obj.tracks{r};
+        trackedObjPos = track.Assignments{frameInd}.PredictedPos;
+        
+        % calculate cost of assigning detection to track
         
         for d=1:detectCount
-            centrPix = frameDetections(d).Centroid;
+            detect = frameDetections(d);
+
+            maxCost = 99999;
+            
+            centrPix = detect.Centroid;
             centrWorld = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, centrPix);
             
             dist=norm(centrWorld-trackedObjPos);
             
+            % keep swimmers inside the area of max possible shift per frame
             if dist > swimmerMaxShiftPerFrameM
-                dist = 9999;
+                dist = maxCost;
+            else
+                pixs = obj.getDetectionPixels(detect, image);
+                
+                probs = track.predict(pixs);
+                avgProb = mean(probs);
+                dist = min([1/avgProb maxCost]);
+                if debug
+                    fprintf('calcTrackCost: [%d-%d] Blob(%.0f %.0f) dist=%d avgProb=%d \n', r, d, centrPix(1), centrPix(2), dist, avgProb);
+                end
             end
+            
             trackDetectCost(r,d) = dist;
         end
     end
+end
 
+function forePixs = getDetectionPixels(obj, detect, image)
+    bnd = ceil(detect.BoundingBox); % ceil to get positive index for pos=0.5
+    shapeImage = image(bnd(2):bnd(2)+bnd(4)-1,bnd(1):bnd(1)+bnd(3)-1,:);
+    forePixs = reshape(shapeImage, [], 3);
+
+    shapeMask = detect.FilledImage;
+    shapeMask = reshape(shapeMask, [], 1);
+    
+    assert(length(shapeMask) == size(forePixs,1));
+    forePixs = forePixs(shapeMask,:);
 end
 
 function promoteMatureTrackCandidates(obj, frameInd)
@@ -219,11 +278,11 @@ function promoteMatureTrackCandidates(obj, frameInd)
 
     for candInd=1:length(obj.tracks)
         cand=obj.tracks{candInd};
-        if ~cand.v.IsTrackCandidate
+        if ~cand.IsTrackCandidate
             continue;
         end
 
-        lifeTime = frameInd - cand.v.FirstAppearanceFrameIdx + 1;
+        lifeTime = frameInd - cand.FirstAppearanceFrameIdx + 1;
         detectCount = cand.getDetectionsCount(frameInd);
         detectRatio = detectCount / lifeTime;
 
@@ -244,7 +303,7 @@ function promoteMatureTrackCandidates(obj, frameInd)
 
                 % promote TrackCandidiate into Track
                 obj.tracks{candInd}.Id = newTrackId;
-                obj.tracks{candInd}.v.IsTrackCandidate = false;
+                obj.tracks{candInd}.IsTrackCandidate = false;
                 obj.tracks{candInd}.PromotionFramdInd = frameInd;
             end 
         end        
@@ -258,38 +317,43 @@ function promoteMatureTrackCandidates(obj, frameInd)
     end
 end
 
-function kalman = createCalmanPredictor(~, initPos)
+function kalman = createKalmanPredictor(obj, initPos2D, fps)
     % init Kalman Filter
     stateModel = [1 0 1 0; 0 1 0 1; 0 0 1 0; 0 0 0 1]; 
     measurementModel = [1 0 0 0; 0 1 0 0]; 
     kalman = vision.KalmanFilter(stateModel, measurementModel);
     
     % max shift per frame = 20cm
-    kalman.ProcessNoise = (0.2 / 3)^2;
+    %kalman.ProcessNoise = (0.2 / 3)^2;
+    obj.setTrackKalmanProcessNoise(kalman, 'normal', fps);
     
     % max measurment error per frame = 1m (far away it can be 5m)
     kalman.MeasurementNoise = (5 / 3)^2;
-    kalman.State = [initPos 0 0]; % v0=0
+    kalman.State = [initPos2D 0 0]; % v0=0
+end
+
+function resetKalmanState(obj, kalmanObj)
+    kalmanObj.StateTransitionModel = [1 0 1 0; 0 1 0 1; 0 0 1 0; 0 0 0 1];
 end
 
 % associate unassigned detection with track candidate
-function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd)
+function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd, image, fps)
     for d=unassignedDetectionsByRow'
         % new track candidate
         
         cand = TrackedObject.NewTrackCandidate(obj.v.nextTrackCandidateId);
         obj.v.nextTrackCandidateId = obj.v.nextTrackCandidateId + 1;
 
-        cand.v.FirstAppearanceFrameIdx = frameInd;
+        cand.FirstAppearanceFrameIdx = frameInd;
         
         %
-        shape = frameDetections(d);
+        detect = frameDetections(d);
         
         % project image position into TopView
-        imagePos = shape.Centroid;
+        imagePos = detect.Centroid;
         worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
 
-        cand.KalmanFilter = createCalmanPredictor(obj, worldPos(1:2));
+        cand.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
 
         ass = ShapeAssignment();
         ass.IsDetectionAssigned = true;
@@ -299,6 +363,8 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         ass.EstimatedPos = worldPos;
 
         cand.Assignments{frameInd} = ass;
+        
+        obj.onAssignDetectionToTrackedObject(cand, detect, image);
 
         obj.tracks{end+1} = cand;
     end
@@ -307,26 +373,42 @@ end
 function driftUnassignedTracks(obj, unassignedTracksByRow, frameInd)
     % for unassigned tracks initialize EstimatedPos = PredictedPos by default
     for trackInd=unassignedTracksByRow'
-       % if trackInd <= tracksCountBefore % track
-            a = obj.tracks{trackInd}.Assignments{frameInd};
-            assert(~isempty(a.PredictedPos), 'Kalman Predictor must have initialized the PredictedPos (track=%d assignment=%d)', trackInd, frameInd);
+        a = obj.tracks{trackInd}.Assignments{frameInd};
+        assert(~isempty(a.PredictedPos), 'Kalman Predictor must have initialized the PredictedPos (track=%d assignment=%d)', trackInd, frameInd);
 
-            a.EstimatedPos = a.PredictedPos;
-            obj.tracks{trackInd}.Assignments{frameInd} = a;
+        estPos = a.PredictedPos;
+        a.EstimatedPos = estPos;
+        obj.tracks{trackInd}.Assignments{frameInd} = a;
 
-            % TODO: finish track if detections lost for some time
-%         else
-%             candInd = trackInd - tracksCountBefore;
-%             cand = obj.trackCandidates{candInd};
-%             
-%             obj.trackCandidates{candInd}.DetectionIdList{end+1} = 0;
-%             
-%             posInd = frameInd - cand.FirstAppearanceFrameIdx + 1;
-%             predPos = cand.PredictedPosList{posInd};
-%             assert(~isempty(predPos), 'candidate.PredictedPos is not initialized by Kalman predictor(candidate=%d assignment=%d)', candInd, frameInd);
-% 
-%             obj.trackCandidates{candInd}.EstimatedPosList{end+1} = predPos;
-%        end
+        % TODO: finish track if detections lost for some time
+        
+        %
+        x = estPos(1);
+        poolSize = CameraDistanceCompensator.poolSize;
+        if x < 1 || x > poolSize(2) - 1
+            isNearBorder = true;
+        else
+            isNearBorder = false;
+        end
+
+        % we don't use Kalman filter near pool boundary as swimmers
+        % usually reverse their direction here
+        if isNearBorder
+            kalmanObj = obj.tracks{trackInd}.KalmanFilter;
+            
+            % after zeroing velocity, Kalman predictions would aim single position
+            kalmanObj.State(3:end)=0; % zero vx and vy
+        end
+    end
+end
+
+function onAssignDetectionToTrackedObject(obj, track, detect, image)
+    % retraining GMM on each frame is too costly
+    % => retrain it during the initial time until enough pixels is accumulated
+    % then we assume swimmer's shape doesn't change
+    if track.canAcceptAppearancePixels
+        pixs = obj.getDetectionPixels(detect, image);
+        track.pushAppearancePixels(pixs);
     end
 end
 
@@ -457,7 +539,8 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
             
             %
             % put text for the last frame
-            if ~track.v.IsTrackCandidate
+            labelTrackCandidates = true;
+            if labelTrackCandidates || ~track.IsTrackCandidate
                 estPos = lastAss.EstimatedPos;
                 estPosImage = obj.getViewCoord(estPos, coordType, lastAss);
                 textPos = estPosImage;
@@ -468,8 +551,8 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
                     textPos = [max(boxMat(:,1)) min(boxMat(:,2))];
                 end
 
-                if track.v.IsTrackCandidate
-                    text1 = sprintf('-%d', track.v.TrackCandidateId);
+                if track.IsTrackCandidate
+                    text1 = sprintf('-%d', track.TrackCandidateId);
                 else
                     text1 = int2str(track.Id);
                 end
@@ -478,67 +561,6 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
             end
         end
     end
-    
-%     % show each track candidate
-%     for r=1:length(obj.trackCandidates)
-%         cand=obj.trackCandidates{r};
-%         
-%         % construct track path as polyline to draw by single command
-%         localStart = max([1, fromTime - cand.FirstAppearanceFrameIdx + 1]);
-%         localEnd = min([length(cand.EstimatedPosList), toTimeInc - cand.FirstAppearanceFrameIdx + 1]);
-% 
-%         candPolyline = cell(0,0);
-%         for timeInd=localStart:localEnd
-%             pos = cand.EstimatedPosList{timeInd};
-%             candPolyline{end+1} = pos;
-%         end
-% 
-%         % pick track color
-%         %colInd = length(obj.tracks)+r-1;
-%         candColor = c_list(1+mod(cand.TrackCandidateId, length(c_list)),:);
-% 
-%         % draw candidate path
-%         if ~isempty(candPolyline)
-%             image = cv.polylines(image, candPolyline, 'Closed', false, 'Color', candColor);
-%         end
-%         
-%         % draw initial position
-%         if localStart == 1
-%             initialCandPos = cand.EstimatedPosList{1};
-%             image=cv.circle(image, initialCandPos, 3, 'Color', candColor);
-%         end
-%         
-%         % process last frame
-%         det = cand.DetectionIdList{localEnd};
-%         box = [];
-%         if det > 0
-%             % draw shape contour
-%             frameDetects = detectionsPerFrame{toTimeInc};
-%             detect = frameDetects(det);
-%             outlinePixels = detect.OutlinePixels;
-% 
-%             % convert (Row,Col) into (X,Y)
-%             outlinePixels = circshift(outlinePixels, [0 1]);
-% 
-%             % packs (X,Y) into cell array for cv.polyline
-%             outlinePixelsCell = mat2cell(outlinePixels, ones(length(outlinePixels),1),2);
-% 
-%             image = cv.polylines(image, outlinePixelsCell, 'Closed', true, 'Color', candColor);
-% 
-%             % draw box in the last frame
-%             box=detect.BoundingBox;
-%             image=cv.rectangle(image, box, 'Color', candColor);
-%         end
-% 
-%         %
-%         % put text for the last frame
-%         textPos = cand.EstimatedPosList{localEnd};
-%         if ~isempty(box)
-%             textPos = [max(box(1),box(1) + box(3) - 26), box(2) - 13];
-%         end
-%         candText = sprintf('-%d', cand.TrackCandidateId);
-%         image = cv.putText(image, candText, textPos, 'Color', candColor);
-%     end
     
     imageAdorned = image;
 end
@@ -626,12 +648,6 @@ function imageTopView = adornImageWithTrackedBodiesTopView(obj, image)
         if ~isempty(initialCandPos)
             imageTopView=cv.circle(imageTopView, initialCandPos, 3, 'Color', trackColor);
         end
-
-        
-%         worldPos = track.Assignments{obj.frameInd}.EstimatedPos;
-%         estPosTopView = CameraDistanceCompensator.scaleWorldToTopViewImageCoord(worldPos, desiredImageSize);
-%         %imageTopView = cv.rectangle(imageTopView, box, 'Color', candColor);
-%         imageTopView=cv.circle(imageTopView, estPosTopView, 3, 'Color', trackColor);
     end
 end
 
@@ -645,7 +661,7 @@ function color = getTrackColor(obj, track)
 
     % pick track color
     % color should be the same for track candidate and later for the track
-    color = c_list(1+mod(track.v.TrackCandidateId, length(c_list)),:);
+    color = c_list(1+mod(track.TrackCandidateId, length(c_list)),:);
 end
 
 function imageWithDetects = drawDetections(obj, image, detects)
@@ -703,5 +719,6 @@ function tracks = testHumanBodyDetectorOnImage(obj, debug)
     hold off
 end
 
-end
+end % methods
+
 end
