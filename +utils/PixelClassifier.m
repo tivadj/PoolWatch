@@ -82,6 +82,46 @@ function result = evalMixtureGaussians(X, m, S, weights)
     end
 end
 
+% Computes logarithm of probability of picking X from GMM with mean m, covariance S and mixture components weights.
+function result = logMixtureGaussians(X, m, S, weights)
+    [N,l]=size(X);
+    
+    [mixCount,l2]=size(m);
+    assert(l==l2); 
+    
+    isSphericalCov = iscell(S);
+    if isSphericalCov
+        c2 = length(S);
+    else
+        % diagonal cov
+        assert(isnumeric(S));
+        [l3,l4,c2]=size(S);
+        assert(l==l3 && l==l4); 
+    end
+    assert(mixCount == c2);
+
+    c3 = length(weights);
+    assert(mixCount==c3);
+
+    %
+    XDbl = double(X);
+    
+    % compute log-probabilities for each mixture component
+
+    mixLogProbs = zeros(N,mixCount);
+    for gaussInd=1:mixCount
+        if isSphericalCov
+            cov = S{gaussInd};
+        else
+            cov = S(:,:,gaussInd);
+        end
+        mixLogProbs(:,gaussInd) = log(weights(gaussInd)) + utils.PixelClassifier.logMvnPdf(XDbl, m(gaussInd,:), cov);
+    end
+    
+    % compute sum of weighted probabilities of all mixture components
+    result = utils.PixelClassifier.logSumLogProbs(mixLogProbs);
+end
+
 function result = evalMixtureGaussiansNoLoops(X, m, S, weights)
     [~,l]=size(X);
     [mixCount,l2]=size(m);
@@ -138,6 +178,37 @@ function labels = expectMaxByMatlab(em1, em2, pix)
     labels = minInd;
 end
 
+% Computes logarithm of sum of probabilities (given as log-probabilities) in a numerically stable fashion.
+% Note, direct computation is:
+% result = log(sum(exp(logProbs)))
+function result = logSumLogProbs(logProbs)
+    assert(all(all(logProbs <= 0)));
+    maxLProbCol = max(logProbs, [], 2);
+    
+    probsCount = size(logProbs, 2);
+    
+    % repeat mean (in column) for each log prob column
+    maxLProbMat = repmat(maxLProbCol, 1, probsCount);
+    
+    result = maxLProbCol + log(sum(exp(logProbs - maxLProbMat), 2));
+end
+
+% evaluates logarithm of multinormal distribution = log(mvnpdf(X,m,S))
+% N=number of points
+% X[NxDim] = data points
+% m[1xDim] = mean
+% S[DimxDim] = sigma
+function result = logMvnPdf(X, m, S)
+    [n,dim] = size(X);
+
+    centrX = X - repmat(m, n, 1);
+    detS = det(S);
+    invS = inv(S);
+    
+    gauss = @(x) -0.5 * (dim*log(2*pi) + log(detS) + (x * invS * x'));
+    
+    result = arrayfun(@(i) gauss(centrX(i,:)), (1:n)');
+end
 
 % hitProb=min prob of whether a point belongs to a gaussian.
 function surf = drawMixtureGaussians(m, S, weights, colorChar)

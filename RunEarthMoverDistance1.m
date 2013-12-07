@@ -16,7 +16,8 @@ function run(obj)
     %RunEarthMoverDistance1.analyzeHistogramDistributions(obj,debug);
     %RunEarthMoverDistance1.testColorAppearModelHistEarthMoverDistance1(obj, debug);
     %RunEarthMoverDistance1.testColorAppearModelHistBackProjection(obj, debug);
-    RunEarthMoverDistance1.testColorAppearModelMixtureOfGaussians(obj, debug);
+    %RunEarthMoverDistance1.testColorAppearModelMixtureOfGaussians(obj, debug);
+    RunEarthMoverDistance1.testAppearModelRecognitionVersusNumberOfPixelsForTraining(obj, debug);
 end
 
 function simple1(obj, debug)
@@ -555,7 +556,7 @@ end
 
 % Train in a batch mode. Accumulate all available pixels for each cluster and 
 % only train after this step.
-function groupMixGaussList = trainMixtureGaussiansBatchMode(classCount, data, trainMask, nClusters, covMatType, rgb2FeaturesFun, debug)
+function [groupMixGaussList, trainPixsCount] = trainMixtureGaussiansBatchMode(classCount, data, trainMask, nClusters, covMatType, rgb2FeaturesFun, debug)
     % accumulate features
     featsPerCluster = cell(1,classCount);
     for itemInd=find(trainMask)
@@ -567,7 +568,9 @@ function groupMixGaussList = trainMixtureGaussiansBatchMode(classCount, data, tr
 
         %
         image = imread(item.FilePath);
-        imshow(image);
+        if debug
+            imshow(image);
+        end
 
         pixs = reshape(image, [], 3);
         pixs(sum(pixs,2) == 0, :) = []; % remove black pixels
@@ -587,13 +590,17 @@ function groupMixGaussList = trainMixtureGaussiansBatchMode(classCount, data, tr
     
     % train
     groupMixGaussList = cell(1,classCount);
+    trainPixsCount = zeros(1,classCount);
     for clustInd=1:classCount
         maxIters=1000;
         groupMixGauss = cv.EM('Nclusters', nClusters, 'CovMatType', covMatType, 'MaxIters', maxIters); % mexopencv
         
         features = featsPerCluster{clustInd};
-        groupMixGauss.train(features);
-        groupMixGaussList{clustInd} = groupMixGauss;
+        if ~isempty(features) % allow non trained GMM
+            groupMixGauss.train(features);
+            groupMixGaussList{clustInd} = groupMixGauss;
+            trainPixsCount(clustInd) = size(features, 1);
+        end
     end
 end
 
@@ -603,10 +610,14 @@ function postLabel = classifyMixGaussian(groupMixGaussList, pixsFore, clustInds)
     %for classInd=1:classCount
     for classInd=clustInds
         groupMixGauss = groupMixGaussList{classInd};
-        out1=groupMixGauss.predict(pixsFore);
-        probs = exp(out1);
-        %dist1 = mean(probs);
-        dist1 = sum(probs);
+        logProbs=groupMixGauss.predict(pixsFore);
+        probs = exp(logProbs);
+
+        %probs2=utils.PixelClassifier.evalMixtureGaussians(pixsFore, groupMixGauss.Means, groupMixGauss.Covs, groupMixGauss.Weights);
+        %logProbs3=utils.PixelClassifier.logMixtureGaussians(pixsFore, groupMixGauss.Means, groupMixGauss.Covs, groupMixGauss.Weights);
+        
+        dist1 = mean(probs);
+        %dist1 = sum(probs);
         dists(classInd) = dist1;
 
         % visualize
@@ -693,6 +704,69 @@ function confusMat = simulateClassifierMixGaussisansClassifier(classCount, data,
 
         confusMat(item.Label, postLabel) = confusMat(item.Label, postLabel) + 1;
     end
+end
+
+function testAppearModelRecognitionVersusNumberOfPixelsForTraining(obj, debug)
+    RunEarthMoverDistance1.prepareTrainTestData(obj, debug);
+    
+    labelNames = obj.v.labelNames;
+    classCount = length(labelNames);
+    
+    histList = {};
+    mixCount = 1;
+    covMatType = 'Spherical';
+    %figure
+    clf;
+    for classToScrutinize = 1:classCount
+    fprintf('classToScrutinize=%d\n', classToScrutinize);
+    
+    data = obj.v.data;
+    inds = find([data.Label] == classToScrutinize);
+    %rng(100); % sync generator
+    inds = inds(randperm(length(inds)));
+    
+    % select first item as a target to compare
+    targetItem = data(inds(1));
+    targetImg = imread(targetItem.FilePath);
+    targetPixs = reshape(targetImg, [], 3);
+    targetPixs(sum(targetPixs,2) == 0,:) = []; % remove blacks
+    
+    % learn GMM appearance model on increasing subset of data and look how recognition improves
+    hist = [];
+    for lastItemToTrainInd = 2:length(inds)-1
+        trainItemsCount = lastItemToTrainInd - 1;
+        fprintf('trainItemsCount = %d\n', trainItemsCount);
+        
+        subData = data(inds(2:lastItemToTrainInd));
+        
+        rgb2FeaturesFun = @(rgb) rgb;
+        [groupMixGaussList,trainPixsCountList] = RunEarthMoverDistance1.trainMixtureGaussiansBatchMode(classCount, subData, true(1,trainItemsCount), mixCount, covMatType, rgb2FeaturesFun, false);
+        mixGauss = groupMixGaussList{classToScrutinize};
+        trainPixsCount = trainPixsCountList(classToScrutinize);
+        
+        logProbs = mixGauss.predict(targetPixs);
+        probs = exp(logProbs);
+        avgProb = mean(probs);
+        probsMy = utils.PixelClassifier.evalMixtureGaussians(targetPixs, mixGauss.Means, mixGauss.Covs, mixGauss.Weights);
+        logProbsMy = utils.PixelClassifier.logMixtureGaussians(targetPixs, mixGauss.Means, mixGauss.Covs, mixGauss.Weights);
+        hist = [hist; trainItemsCount trainPixsCount avgProb];
+    end
+    
+    histList{end+1} = hist;
+    
+    for i=1:length(histList)
+        hist = histList{i};
+        hold on;
+        plot(hist(:,2), hist(:,3));
+        hold off;
+    end
+    drawnow;
+    
+    end
+    
+
+    obj.v.histList = histList;
+    title('recog VS train items count');
 end
 
 function analyzeHistogramDistributions(obj, debug)

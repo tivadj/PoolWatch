@@ -71,12 +71,12 @@ function probs = predict(this, testPixs)
         this.v.AppearanceGmm.train(trainPixs);
         this.v.AppearanceGmmTrained = true;
     end
-    %logProbs = this.v.AppearanceGmm.predict(testPixs);
+    logProbs = this.v.AppearanceGmm.predict(testPixs);
     % BUG: OpenCV, sometimes predict method returns positive log probabilities (may be due to overflows)
-    %probs = zeros(size(logProbs));
-    %probs(logProbs < 0) = exp(logProbs(logProbs < 0)); % use only logProb < 0
+    probs = zeros(size(logProbs));
+    probs(logProbs < 0) = exp(logProbs(logProbs < 0)); % use only logProb < 0
 
-    probs = utils.PixelClassifier.evalMixtureGaussians(testPixs, this.v.AppearanceGmm.Means, this.v.AppearanceGmm.Covs, this.v.AppearanceGmm.Weights);
+    %probs = utils.PixelClassifier.evalMixtureGaussians(testPixs, this.v.AppearanceGmm.Means, this.v.AppearanceGmm.Covs, this.v.AppearanceGmm.Weights);
     %logProbs2 = log(probs);
     %fprintf('logProb error %d\n', sum((logProbs-logProbs2).^2));
 end
