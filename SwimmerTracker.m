@@ -1,51 +1,30 @@
 classdef SwimmerTracker < handle
 properties
+    frameInd;                 % type:int, number of processed frames
     detectionsPerFrame; % type: List<ShapeAssignment>
     tracks; % type: List<TrackedObject>
     %v.nextTrackId;
-    %trackCandidates;
-    frameInd;                 % type:int, number of processed frames
-    v;
     % v.nextTrackCandidateId;
-    % v.distanceCompensator;
+    poolRegionDetector;
+    distanceCompensator;
+    humanDetector;
+    v;
 end
 
 methods
     
-function obj = SwimmerTracker()
-    purgeMemory(obj);
+function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDetector)
+    assert(~isempty(poolRegionDetector));
+    assert(~isempty(distanceCompensator));
+    assert(~isempty(humanDetector));    
+    
+    this.poolRegionDetector = poolRegionDetector;
+    this.distanceCompensator = distanceCompensator;
+    this.humanDetector = humanDetector;
+    
+    purgeMemory(this);
 end
 
-function ensureInitialized(obj, debug)
-    if ~isfield(obj.v, 'distanceCompensator')
-        obj.v.distanceCompensator = CameraDistanceCompensator.create;
-    end
-    
-    % initialize classifier
-    if ~isfield(obj.v, 'cl2')
-         obj.v.cl2=SkinClassifierStatics.create;
-         SkinClassifierStatics.populateSurfPixels(obj.v.cl2);
-        SkinClassifierStatics.prepareTrainingDataMakeNonoverlappingHulls(obj.v.cl2, debug);
-        SkinClassifierStatics.findSkinPixelsConvexHullWithMinError(obj.v.cl2, debug);
-    end
-    
-    % human detector
-    if ~isfield(obj.v, 'det')
-        clear det;
-        %svmClassifierFun=@(XByRow) utils.SvmClassifyHelper(obj.v.skinClassif, XByRow, 1000);
-        skinHullClassifierFun=@(XByRow) utils.inhull(XByRow, obj.v.cl2.v.skinHullClassifHullPoints, obj.v.cl2.v.skinHullClassifHullTriInds, 0.2);
-        skinClassifier=skinHullClassifierFun;
-        obj.v.skinClassifierFun = skinClassifier;
-        
-        % init water classifer
-        humanDetectorRunner = RunHumanDetector.create;
-        %waterClassifierFun = RunHumanDetector.getWaterClassifierAsConvHull(humanDetectorRunner, debug);
-        waterClassifierFun = RunHumanDetector.getWaterClassifierAsMixtureOfGaussians(humanDetectorRunner,6,debug);
-        obj.v.waterClassifierFun = waterClassifierFun;
-        
-        obj.v.det = HumanDetector(skinClassifier, waterClassifierFun, obj.v.distanceCompensator);
-    end
-end
 
 function purgeMemory(obj)
     obj.tracks=cell(0,0);
@@ -55,48 +34,54 @@ function purgeMemory(obj)
 end
 
 % elapsedTimeMs - time in milliseconds since last frame
-function nextFrame(obj, image, elapsedTimeMs, fps, debug)
-    ensureInitialized(obj, debug);
+function nextFrame(this, image, elapsedTimeMs, fps, debug)
+    this.frameInd = this.frameInd + 1;
 
-    obj.frameInd = obj.frameInd + 1;
-
-    if debug
-    end
-    
     %
-    waterMask = utils.PixelClassifier.applyToImage(image, obj.v.waterClassifierFun);
+    waterMask = this.poolRegionDetector.getWaterMask(image);
+    if debug
+        imshow(utils.applyMask(image, waterMask));
+    end
 
-    if ~isfield(obj.v, 'poolMask')
-        poolMask = PoolBoundaryDetector.getPoolMask(image, waterMask, false, debug);
+    if isfield(this.v, 'poolMask')
+        poolMask = this.v.poolMask;
+    else
+        poolMask = this.poolRegionDetector.getPoolMask(image, waterMask, false, debug);
         if debug
             imshow(utils.applyMask(image, poolMask));
         end
-        obj.v.poolMask = poolMask;
+        this.v.poolMask = poolMask;
     end
     
-    if true || ~isfield(obj.v, 'dividersMask')
-        dividersMask = PoolBoundaryDetector.getLaneDividersMask(image, obj.v.poolMask, waterMask, obj.v.skinClassifierFun, debug);
+    if true || ~isfield(this.v, 'dividersMask')
+        dividersMask = this.poolRegionDetector.getLaneDividersMask(image, poolMask, waterMask, debug);
         if debug
             imshow(utils.applyMask(image, dividersMask));
         end
-        obj.v.dividersMask = dividersMask;
     end
     
     % narrow observable area to pool boundary
     % remove lane dividers from observation
-    imageSwimmers = utils.applyMask(image, obj.v.poolMask & ~obj.v.dividersMask);
+    imageSwimmers = utils.applyMask(image, poolMask & ~dividersMask);
     if debug
         imshow(imageSwimmers);
     end
 
     % find shapes
     
-    bodyDescrs = obj.v.det.GetHumanBodies(imageSwimmers, waterMask, debug);
-    obj.detectionsPerFrame{obj.frameInd} = bodyDescrs;
+    bodyDescrs = this.humanDetector.GetHumanBodies(imageSwimmers, waterMask, debug);
+    this.detectionsPerFrame{this.frameInd} = bodyDescrs;
+    
+    if debug
+        for i=1:length(bodyDescrs)
+            centr = bodyDescrs(i).Centroid;
+            fprintf('Blob[%d] Centroid=[%.0f %.0f]\n', i, centr(1), centr(2));
+        end
+    end
     
     % track shapes
 
-    processDetections(obj, obj.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
+    processDetections(this, this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
 end
 
 function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
@@ -112,14 +97,11 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
     % make assignment using Hungarian algo
     % all unassigned detectoins and unprocessed tracks
 
-    % TODO: how to estimate these parameters?
-    minAppearPerPixSimilarity = 0.00015; % shapes with lesser proximity should not be assigned
+    minAppearPerPixSimilarity = 0.00005; % shapes with lesser proximity should not be assigned
     
-    %unassignedTrackCost = 500000;
-    unassignedTrackCost = 1 / minAppearPerPixSimilarity; % = 6666
-    
-    %unassignedDetectionCost = 50000; % detections are noisy => cost is small
+    unassignedTrackCost = 1 / minAppearPerPixSimilarity;
     unassignedDetectionCost = unassignedTrackCost;
+    
     [assignment, unassignedTracks, unassignedDetections] = assignDetectionsToTracks(trackDetectCost, unassignedTrackCost, unassignedDetectionCost);
     
     if debug && isempty(assignment)
@@ -141,7 +123,7 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
         ass.v.EstimatedPosImagePix = imagePos;
 
         % project image position into TopView
-        worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
+        worldPos = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, imagePos);
         
         worldPos2 = worldPos(1:2);
         posEstimate2 = obj.tracks{trackInd}.KalmanFilter.correct(worldPos2);
@@ -220,19 +202,25 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
     detectCount = length(frameDetections);
     
     trackDetectCost=zeros(trackObjCount, detectCount);
-    for r=1:trackObjCount
-        track = obj.tracks{r};
+    for trackInd=1:trackObjCount
+        track = obj.tracks{trackInd};
         trackedObjPos = track.Assignments{frameInd}.PredictedPos;
+        
+        if debug
+            % recover track pos
+            trackImgPos = obj.getPrevFrameDetectionOrPredictedImagePos(track, frameInd);
+            fprintf('Track Id=%d ImgPos=[%.0f %.0f]\n', track.idOrCandidateId, trackImgPos(1), trackImgPos(2));
+        end
         
         % calculate cost of assigning detection to track
         
-        for d=1:detectCount
-            detect = frameDetections(d);
+        for blobInd=1:detectCount
+            detect = frameDetections(blobInd);
 
             maxCost = 99999;
             
             centrPix = detect.Centroid;
-            centrWorld = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, centrPix);
+            centrWorld = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, centrPix);
             
             dist=norm(centrWorld-trackedObjPos);
             
@@ -246,11 +234,11 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
                 avgProb = mean(probs);
                 dist = min([1/avgProb maxCost]);
                 if debug
-                    fprintf('calcTrackCost: [%d-%d] Blob(%.0f %.0f) dist=%d avgProb=%d \n', r, d, centrPix(1), centrPix(2), dist, avgProb);
+                    fprintf('calcTrackCost: Blob[%d] [%.0f %.0f] dist=%d avgProb=%d\n', blobInd, centrPix(1), centrPix(2), dist, avgProb);
                 end
             end
             
-            trackDetectCost(r,d) = dist;
+            trackDetectCost(trackInd,blobInd) = dist;
         end
     end
 end
@@ -277,7 +265,7 @@ function trackImgPos = getPrevFrameDetectionOrPredictedImagePos(this, track, cur
         prevBlob = prevFrameBlobs(prevFrameAssign.DetectionInd);
         trackImgPos = prevBlob.Centroid;
     else
-        trackImgPos = CameraDistanceCompensator.worldToCamera(this.v.distanceCompensator, prevFrameAssign.EstimatedPos);
+        trackImgPos = CameraDistanceCompensator.worldToCamera(this.distanceCompensator, prevFrameAssign.EstimatedPos);
     end
 end
 
@@ -392,7 +380,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         
         % project image position into TopView
         imagePos = detect.Centroid;
-        worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, imagePos);
+        worldPos = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, imagePos);
 
         cand.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
 
@@ -453,30 +441,6 @@ function onAssignDetectionToTrackedObject(obj, track, detect, image)
     end
 end
 
-function batchTrackSwimmersInVideo(obj, debug)
-    
-    ensureInitialized(obj, debug);
-    
-    videoFilePath = fullfile('output/mvi3177_blueWomanLane3.avi');
-    obj.v.detectionsPerFrame = detectHumanBodies(obj,videoFilePath,Inf,debug);
-    obj.v.tracks = trackThroughFrames(obj, obj.v.detectionsPerFrame, debug);
-    obj.v.videoTracks = generateVideoWithTrackedBodies(obj, obj.v.mmReader, obj.v.framesToTake, obj.v.detectionsPerFrame, obj.v.tracks);
-
-     % status
-     fprintf(1, 'tracks count=%d\n', length(obj.v.tracks));
-    
-    % write output
-%     writerObj = VideoWriter('output/mvi3177_741t_kalman1.avi');
-%     writerObj.open();
-%     writerObj.writeVideo(obj.v.videoTracks);
-%     writerObj.close();
-    
-
-    % play movie
-     new_movie = immovie(obj.v.videoTracks);
-     implay(new_movie);
-end
-
 function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType)
     pathStartFrame = max([1, obj.frameInd - 250]);
     
@@ -485,7 +449,7 @@ function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType)
 
     if strcmp('TopView', coordType)
         desiredImageSize = [size(image,2), size(image,1)];
-        image = CameraDistanceCompensator.convertCameraImageToTopView(obj.v.distanceCompensator, image, desiredImageSize);
+        image = CameraDistanceCompensator.convertCameraImageToTopView(obj.distanceCompensator, image, desiredImageSize);
     end
 
     imageWithTracks = adornTracks(obj, image, pathStartFrame, obj.frameInd, obj.detectionsPerFrame, obj.tracks, coordType);
@@ -580,7 +544,7 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
             
             %
             % put text for the last frame
-            labelTrackCandidates = true;
+            labelTrackCandidates = false;
             if labelTrackCandidates || ~track.IsTrackCandidate
                 estPos = lastAss.EstimatedPos;
                 estPosImage = obj.getViewCoord(estPos, coordType, lastAss);
@@ -592,12 +556,7 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
                     textPos = [max(boxMat(:,1)) min(boxMat(:,2))];
                 end
 
-                if track.IsTrackCandidate
-                    text1 = sprintf('-%d', track.TrackCandidateId);
-                else
-                    text1 = int2str(track.Id);
-                end
-
+                text1 = int2str(track.idOrCandidateId);
                 image = cv.putText(image, text1, textPos, 'Color', candColor);            
             end
         end
@@ -642,10 +601,10 @@ end
 
 function pos = getViewCoord(obj, worldPos, coordType, assignment)
     if strcmp('camera', coordType)
-        pos = CameraDistanceCompensator.worldToCamera(obj.v.distanceCompensator, worldPos);
+        pos = CameraDistanceCompensator.worldToCamera(obj.distanceCompensator, worldPos);
 
         if assignment.IsDetectionAssigned && norm(assignment.v.EstimatedPosImagePix - pos) > 10
-            warning('image and back projected coord diverge too much Expect=%d Actual=%d',assignment.v.EstimatedPosImagePix ,pos);
+            %warning('image and back projected coord diverge too much Expect=%d Actual=%d',assignment.v.EstimatedPosImagePix ,pos);
         end
     elseif strcmp('TopView', coordType)
         expectCameraSize = CameraDistanceCompensator.expectCameraSize;
@@ -659,7 +618,7 @@ function posTopView = cameraToTopView(obj, XByRowCell)
     posTopView = cell(1,length(XByRowCell));
     
     for i=1:length(XByRowCell)
-        worldPos = CameraDistanceCompensator.cameraToWorld(obj.v.distanceCompensator, XByRowCell{i});
+        worldPos = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, XByRowCell{i});
 
         expectCameraSize = CameraDistanceCompensator.expectCameraSize;
         pos = CameraDistanceCompensator.scaleWorldToTopViewImageCoord(worldPos, expectCameraSize);
@@ -670,7 +629,7 @@ end
 
 function imageTopView = adornImageWithTrackedBodiesTopView(obj, image)
     desiredImageSize = [size(image,2), size(image,1)];
-    imageTopView = CameraDistanceCompensator.convertCameraImageToTopView(obj.v.distanceCompensator, image, desiredImageSize);
+    imageTopView = CameraDistanceCompensator.convertCameraImageToTopView(obj.distanceCompensator, image, desiredImageSize);
     
     pathStartFrame = max([1, obj.frameInd - 100]);
     
@@ -729,37 +688,5 @@ function imageWithDetects = drawDetections(obj, image, detects)
     imageWithDetects = image;
 end
 
-function tracks = testHumanBodyDetectorOnImage(obj, debug)
-    I = read(obj.v.mmReader, 282);
-    imshow(I);
-    
-    % temporary mask to highlight lane3
-    load(fullfile('data/Mask_lane3Mask.mat'), 'lane3Mask')
-    I = utils.applyMask(I, lane3Mask);
-
-    %
-    bodyDescrs = obj.v.det.GetHumanBodies(I, debug);
-
-    imshow(I);
-    hold on
-    k=1;
-    for shapeInfo=bodyDescrs
-        box=shapeInfo.BoundingBox;
-        boxXs = [box(1), box(1) + box(3), box(1) + box(3), box(1), box(1)];
-        boxYs = [box(2), box(2), box(2) + box(4), box(2) + box(4), box(2)];
-        plot(boxXs, boxYs, 'g');
-
-        % draw outline
-        plot(shapeInfo.OutlinePixels(:,2), shapeInfo.OutlinePixels(:,1), 'g');
-
-        % draw dot in the center of bounding box
-        plot(shapeInfo.Centroid(1), shapeInfo.Centroid(2), 'g.');
-        text(max(box(1),box(1) + box(3) - 26), box(2) - 13, int2str(k), 'Color', 'g');
-        k=k+1;
-    end
-    hold off
 end
-
-end % methods
-
 end
