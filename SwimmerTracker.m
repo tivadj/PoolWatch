@@ -267,6 +267,20 @@ function forePixs = getDetectionPixels(obj, detect, image)
     forePixs = forePixs(shapeMask,:);
 end
 
+function trackImgPos = getPrevFrameDetectionOrPredictedImagePos(this, track, curFrameInd)
+    assert(curFrameInd >= 2, 'There is no previous frame for the first frame');
+    
+    prevFrameAssign = track.Assignments{curFrameInd-1};
+
+    if prevFrameAssign.IsDetectionAssigned
+        prevFrameBlobs = this.detectionsPerFrame{curFrameInd-1};
+        prevBlob = prevFrameBlobs(prevFrameAssign.DetectionInd);
+        trackImgPos = prevBlob.Centroid;
+    else
+        trackImgPos = CameraDistanceCompensator.worldToCamera(this.v.distanceCompensator, prevFrameAssign.EstimatedPos);
+    end
+end
+
 function promoteMatureTrackCandidates(obj, frameInd)
     % One period of breaststroke=90 frames for 30fps video
     % at least half of frames should have detected the human
@@ -338,7 +352,34 @@ end
 
 % associate unassigned detection with track candidate
 function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByRow, frameDetections, frameInd, image, fps)
-    for d=unassignedDetectionsByRow'
+    blobInds=unassignedDetectionsByRow';
+    
+    farAwayBlobsMask = true(1, length(blobInds));
+    
+    % avoid creating new tracks for blobs which lie too close to existent tracks
+    if frameInd > 1
+        for trackInd=1:length(obj.tracks)
+            track = obj.tracks{trackInd};
+
+            trackImgPos = obj.getPrevFrameDetectionOrPredictedImagePos(track, frameInd);
+            
+            
+            for blobInd=blobInds(farAwayBlobsMask)
+                blob = frameDetections(blobInd);
+                dist = norm(trackImgPos - blob.Centroid);
+                
+                % new tracks are allocated for detections further from any existent tracks by this distance
+                minDistToNewTrack = 0.5;
+                if dist < minDistToNewTrack
+                    farAwayBlobsMask(blobInd) = false;
+                end
+            end
+        end
+    end
+    
+    farAwayBlobs = blobInds(farAwayBlobsMask);
+    
+    for blobInd=farAwayBlobs
         % new track candidate
         
         cand = TrackedObject.NewTrackCandidate(obj.v.nextTrackCandidateId);
@@ -347,7 +388,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         cand.FirstAppearanceFrameIdx = frameInd;
         
         %
-        detect = frameDetections(d);
+        detect = frameDetections(blobInd);
         
         % project image position into TopView
         imagePos = detect.Centroid;
@@ -357,7 +398,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
 
         ass = ShapeAssignment();
         ass.IsDetectionAssigned = true;
-        ass.DetectionInd = d;
+        ass.DetectionInd = blobInd;
         ass.v.EstimatedPosImagePix = imagePos;
         ass.PredictedPos = worldPos;
         ass.EstimatedPos = worldPos;
