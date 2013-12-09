@@ -2,21 +2,22 @@ classdef RunSwimmingPoolVideoFileTracker
 methods(Static)
 
 function obj = create()
-    obj = utils.TypeErasedClass;
-    obj.v.debug = false;
-    obj.v.tr=SwimmerTracker;
-    
-    % for debugging
-    obj.v.keepTrackHistory = false;
+    obj = utils.TypeErasedClass;   
 end
 
 function run(obj)
-    debug = 1;
+    debug = 0;
     renderTopView = false;
+    % for debugging
     obj.v.keepTrackHistory = false;
+    
+    if ~isfield(obj.v, 'tracker')
+        obj.v.tracker=utils.PW.createSwimmerTracker(debug);
+    end
     
     RunSwimmingPoolVideoFileTracker.init(obj,renderTopView);
     RunSwimmingPoolVideoFileTracker.processFrames(obj, renderTopView, debug);
+    %RunSwimmingPoolVideoFileTracker.testSwimmerShapeAreaVsDistance(obj, debug);
 end
 
 function init(obj, renderTopView)
@@ -40,8 +41,9 @@ function init(obj, renderTopView)
     framesToTakeLast = min([procFrames toFrame]);
     fprintf('analysis of first %d frames\n', framesToTakeLast);
     
-    takeEachNthFrame = 10;
+    takeEachNthFrame = 1;
     framesToTake=1:takeEachNthFrame:framesToTakeLast;
+    %framesToTake=floor(10/1100*procFrames):takeEachNthFrame:framesToTakeLast;
     %framesToTake=2476;
     %framesToTake=16;
     obj.v.framesToTake = framesToTake;
@@ -58,10 +60,10 @@ function init(obj, renderTopView)
     fprintf('framesCount=%d\n', framesCount);
 
     % temporary mask to highlight lane3
-    lane3Mask = [];
-    %load(fullfile('data/Mask_lane3Mask.mat'), 'lane3Mask'); obj.v.lane3Mask = lane3Mask;
-    %load(fullfile('../dinosaur/Mask_lane3_blackMan1.mat'), 'lane3_blackMan1'); obj.v.lane3Mask = lane3_blackMan1;
-    load(fullfile('../dinosaur/Mask_lane4_1.mat'), 'lane4_1'); obj.v.lane3Mask = lane4_1;
+    load(fullfile('data/Mask_lane3Mask.mat'), 'lane3Mask'); obj.v.laneMask = lane3Mask;
+    %load(fullfile('../dinosaur/Mask_lane3_blackMan1.mat'), 'lane3_blackMan1'); obj.v.laneMask = lane3_blackMan1;
+    %load(fullfile('../dinosaur/Mask_lane4_1.mat'), 'lane4_1'); obj.v.laneMask = lane4_1;
+    %load(fullfile('../dinosaur/Mask_lane2_2.mat'), 'lane2Mask'); obj.v.laneMask = lane2Mask;
     
 
     %
@@ -77,11 +79,14 @@ end
 function processFrames(obj, renderTopView, debug)
     
     if ~obj.v.keepTrackHistory
-        obj.v.tr.purgeMemory();
+        obj.v.tracker.purgeMemory();
     end    
     
     if ~renderTopView
-        subplot(1,1,1); % reset subplotting
+        % reset subplotting
+        if ~isempty(get(0, 'Children'))
+            subplot(1,1,1);
+        end
     end
     
     % track video
@@ -98,31 +103,35 @@ function processFrames(obj, renderTopView, debug)
         
         if obj.v.keepTrackHistory
             rewindToFrame = frameInd - 1; % is incremented when started processing frame
-            %obj.v.tr.rewindToFrameDebug(rewindToFrame, debug);
-            obj.v.tr.frameInd = rewindToFrame;
+            %obj.v.tracker.rewindToFrameDebug(rewindToFrame, debug);
+            obj.v.tracker.frameInd = rewindToFrame;
         end
 
         %image=video(:,:,:,num);
         image = read(obj.v.videoReader, frameInd);
         %imshow(image)
-
-        image = utils.applyMask(image, obj.v.lane3Mask);
+        
+        %
+        %image = utils.applyMask(image, obj.v.subPoolMask);
+        %imshow(image)
 
         % do frame analysis
         
-        obj.v.tr.nextFrame(image, obj.v.elapsedTimePerFrameMs, obj.v.fps, debug);
+        obj.v.tracker.nextFrame(image, obj.v.elapsedTimePerFrameMs, obj.v.fps, debug);
 
         % get debug image
 
-        imageWithTracks = obj.v.tr.adornImageWithTrackedBodies(image, 'camera');
+        imageWithTracks = obj.v.tracker.adornImageWithTrackedBodies(image, 'camera');
         if renderTopView
             subplot(2,1,1);
         end
-        imshow(imageWithTracks)
+        if true || debug
+            imshow(imageWithTracks)
+        end
         
         if renderTopView
-            %imageWithTracksTopView = obj.v.tr.adornImageWithTrackedBodiesTopView(image);
-            imageWithTracksTopView =obj.v.tr.adornImageWithTrackedBodies(image, 'TopView');
+            %imageWithTracksTopView = obj.v.tracker.adornImageWithTrackedBodiesTopView(image);
+            imageWithTracksTopView =obj.v.tracker.adornImageWithTrackedBodies(image, 'TopView');
             subplot(2,1,2);
             imshow(imageWithTracksTopView)
         end
@@ -140,7 +149,7 @@ function processFrames(obj, renderTopView, debug)
     end
     
     % status
-    fprintf(1, 'tracks count=%d\n', length(obj.v.tr.tracks));
+    fprintf(1, 'tracks count=%d\n', length(obj.v.tracker.tracks));
 
     %{
     % write output
@@ -158,22 +167,21 @@ function processFrames(obj, renderTopView, debug)
     videoWithTracksMovie = immovie(obj.v.videoWithTracksDual);
     implay(videoWithTracksMovie, obj.v.videoReader.FrameRate);
 end
-    
+
 % Check how shape area changes when it moves far away from camera.
-function testSwimmerShapeAreaVsDistance(obj)
-    %obj.v.tr.detectionsPerFrame{1:
-    theTrackInd = -1;
-    for trackInd=1:length(obj.v.tr.tracks)
-        if obj.v.tr.tracks{trackInd}.Id == 1
-            theTrackInd = trackInd;
+function testSwimmerShapeAreaVsDistance(obj, debug)
+    %obj.v.tracker.detectionsPerFrame{1:
+    theTrack = [];
+    for trackInd=1:length(obj.v.tracker.tracks)
+        track = obj.v.tracker.tracks{trackInd};
+        if track.TrackCandidateId == 1
+            theTrack = track;
             break;
         end            
     end
-    assert(theTrackInd > 0);
+    assert(~isempty(theTrack));
     
-    track=obj.v.tr.tracks{theTrackInd};
     shapeHist = [];
-    %track.Assignments
     
     for frameInd=1:length(track.Assignments)
         ass=track.Assignments{frameInd};
@@ -184,7 +192,7 @@ function testSwimmerShapeAreaVsDistance(obj)
         
         %
         
-        detect = obj.v.tr.detectionsPerFrame{frameInd}(ass.DetectionInd);
+        detect = obj.v.tracker.detectionsPerFrame{frameInd}(ass.DetectionInd);
 
         im1 = zeros(obj.v.mmReader.Height, obj.v.mmReader.Width, 'uint8');
         %im1(detect.OutlinePixels(:,1), detect.OutlinePixels(:,2)) = 255;

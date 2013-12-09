@@ -1,4 +1,5 @@
 function maskedImage = applyMask(image, mask)
+assert(isa(image,'int8') || isa(image,'uint8'));
 
 maskInt=im2uint8(mask);
 

@@ -8,19 +8,22 @@ properties
     poolRegionDetector;
     distanceCompensator;
     humanDetector;
+    colorAppearance;
     v;
 end
 
 methods
     
-function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDetector)
+function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDetector, colorAppearance)
     assert(~isempty(poolRegionDetector));
     assert(~isempty(distanceCompensator));
-    assert(~isempty(humanDetector));    
+    assert(~isempty(humanDetector));
+    assert(~isempty(colorAppearance));    
     
     this.poolRegionDetector = poolRegionDetector;
     this.distanceCompensator = distanceCompensator;
     this.humanDetector = humanDetector;
+    this.colorAppearance = colorAppearance;
     
     purgeMemory(this);
 end
@@ -69,7 +72,7 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
 
     % find shapes
     
-    bodyDescrs = this.humanDetector.GetHumanBodies(imageSwimmers, waterMask, debug);
+    bodyDescrs = this.humanDetector.GetHumanBodies(this.frameInd, imageSwimmers, waterMask, debug);
     this.detectionsPerFrame{this.frameInd} = bodyDescrs;
     
     if debug
@@ -97,7 +100,8 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
     % make assignment using Hungarian algo
     % all unassigned detectoins and unprocessed tracks
 
-    minAppearPerPixSimilarity = 0.00005; % shapes with lesser proximity should not be assigned
+    % shapes with lesser proximity should not be assigned
+    minAppearPerPixSimilarity = obj.colorAppearance.minAppearanceSimilarityScore;
     
     unassignedTrackCost = 1 / minAppearPerPixSimilarity;
     unassignedDetectionCost = unassignedTrackCost;
@@ -123,7 +127,7 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
         ass.v.EstimatedPosImagePix = imagePos;
 
         % project image position into TopView
-        worldPos = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, imagePos);
+        worldPos = obj.distanceCompensator.cameraToWorld(imagePos);
         
         worldPos2 = worldPos(1:2);
         posEstimate2 = obj.tracks{trackInd}.KalmanFilter.correct(worldPos2);
@@ -190,7 +194,7 @@ function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
     end
 end
 
-function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug)
+function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image, frameInd, elapsedTimeMs, frameDetections, debug)
     % 2.3m/s is max speed for swimmers
     shapeCentroidNoise = 0.5; % shape may change significantly
     swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000 + shapeCentroidNoise;
@@ -198,17 +202,17 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
     % calculate distance from predicted pos of each tracked object
     % to each detection
 
-    trackObjCount = length(obj.tracks);
+    trackObjCount = length(this.tracks);
     detectCount = length(frameDetections);
     
     trackDetectCost=zeros(trackObjCount, detectCount);
     for trackInd=1:trackObjCount
-        track = obj.tracks{trackInd};
+        track = this.tracks{trackInd};
         trackedObjPos = track.Assignments{frameInd}.PredictedPos;
         
         if debug
             % recover track pos
-            trackImgPos = obj.getPrevFrameDetectionOrPredictedImagePos(track, frameInd);
+            trackImgPos = this.getPrevFrameDetectionOrPredictedImagePos(track, frameInd);
             fprintf('Track Id=%d ImgPos=[%.0f %.0f]\n', track.idOrCandidateId, trackImgPos(1), trackImgPos(2));
         end
         
@@ -220,7 +224,7 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
             maxCost = 99999;
             
             centrPix = detect.Centroid;
-            centrWorld = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, centrPix);
+            centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
             
             dist=norm(centrWorld-trackedObjPos);
             
@@ -228,10 +232,8 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
             if dist > swimmerMaxShiftPerFrameM
                 dist = maxCost;
             else
-                pixs = obj.getDetectionPixels(detect, image);
-                
-                probs = track.predict(pixs);
-                avgProb = mean(probs);
+                avgProb = this.colorAppearance.similarityScore(track, detect, image);
+
                 dist = min([1/avgProb maxCost]);
                 if debug
                     fprintf('calcTrackCost: Blob[%d] [%.0f %.0f] dist=%d avgProb=%d\n', blobInd, centrPix(1), centrPix(2), dist, avgProb);
@@ -241,18 +243,6 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, 
             trackDetectCost(trackInd,blobInd) = dist;
         end
     end
-end
-
-function forePixs = getDetectionPixels(obj, detect, image)
-    bnd = ceil(detect.BoundingBox); % ceil to get positive index for pos=0.5
-    shapeImage = image(bnd(2):bnd(2)+bnd(4)-1,bnd(1):bnd(1)+bnd(3)-1,:);
-    forePixs = reshape(shapeImage, [], 3);
-
-    shapeMask = detect.FilledImage;
-    shapeMask = reshape(shapeMask, [], 1);
-    
-    assert(length(shapeMask) == size(forePixs,1));
-    forePixs = forePixs(shapeMask,:);
 end
 
 function trackImgPos = getPrevFrameDetectionOrPredictedImagePos(this, track, curFrameInd)
@@ -265,7 +255,7 @@ function trackImgPos = getPrevFrameDetectionOrPredictedImagePos(this, track, cur
         prevBlob = prevFrameBlobs(prevFrameAssign.DetectionInd);
         trackImgPos = prevBlob.Centroid;
     else
-        trackImgPos = CameraDistanceCompensator.worldToCamera(this.distanceCompensator, prevFrameAssign.EstimatedPos);
+        trackImgPos = this.distanceCompensator.worldToCamera(prevFrameAssign.EstimatedPos);
     end
 end
 
@@ -380,7 +370,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         
         % project image position into TopView
         imagePos = detect.Centroid;
-        worldPos = CameraDistanceCompensator.cameraToWorld(obj.distanceCompensator, imagePos);
+        worldPos = obj.distanceCompensator.cameraToWorld(imagePos);
 
         cand.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
 
@@ -399,21 +389,21 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
     end
 end
 
-function driftUnassignedTracks(obj, unassignedTracksByRow, frameInd)
+function driftUnassignedTracks(this, unassignedTracksByRow, frameInd)
     % for unassigned tracks initialize EstimatedPos = PredictedPos by default
     for trackInd=unassignedTracksByRow'
-        a = obj.tracks{trackInd}.Assignments{frameInd};
+        a = this.tracks{trackInd}.Assignments{frameInd};
         assert(~isempty(a.PredictedPos), 'Kalman Predictor must have initialized the PredictedPos (track=%d assignment=%d)', trackInd, frameInd);
 
         estPos = a.PredictedPos;
         a.EstimatedPos = estPos;
-        obj.tracks{trackInd}.Assignments{frameInd} = a;
+        this.tracks{trackInd}.Assignments{frameInd} = a;
 
         % TODO: finish track if detections lost for some time
         
         %
         x = estPos(1);
-        poolSize = CameraDistanceCompensator.poolSize;
+        poolSize = this.distanceCompensator.poolSize;
         if x < 1 || x > poolSize(2) - 1
             isNearBorder = true;
         else
@@ -423,7 +413,7 @@ function driftUnassignedTracks(obj, unassignedTracksByRow, frameInd)
         % we don't use Kalman filter near pool boundary as swimmers
         % usually reverse their direction here
         if isNearBorder
-            kalmanObj = obj.tracks{trackInd}.KalmanFilter;
+            kalmanObj = this.tracks{trackInd}.KalmanFilter;
             
             % after zeroing velocity, Kalman predictions would aim single position
             kalmanObj.State(3:end)=0; % zero vx and vy
@@ -431,14 +421,8 @@ function driftUnassignedTracks(obj, unassignedTracksByRow, frameInd)
     end
 end
 
-function onAssignDetectionToTrackedObject(obj, track, detect, image)
-    % retraining GMM on each frame is too costly
-    % => retrain it during the initial time until enough pixels is accumulated
-    % then we assume swimmer's shape doesn't change
-    if track.canAcceptAppearancePixels
-        pixs = obj.getDetectionPixels(detect, image);
-        track.pushAppearancePixels(pixs);
-    end
+function onAssignDetectionToTrackedObject(this, track, detect, image)
+    this.colorAppearance.onAssignDetectionToTrackedObject(track, detect, image);
 end
 
 function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType)
@@ -449,7 +433,7 @@ function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType)
 
     if strcmp('TopView', coordType)
         desiredImageSize = [size(image,2), size(image,1)];
-        image = CameraDistanceCompensator.convertCameraImageToTopView(obj.distanceCompensator, image, desiredImageSize);
+        image = obj.distanceCompensator.convertCameraImageToTopView(image, desiredImageSize);
     end
 
     imageWithTracks = adornTracks(obj, image, pathStartFrame, obj.frameInd, obj.detectionsPerFrame, obj.tracks, coordType);
@@ -601,7 +585,7 @@ end
 
 function pos = getViewCoord(obj, worldPos, coordType, assignment)
     if strcmp('camera', coordType)
-        pos = CameraDistanceCompensator.worldToCamera(obj.distanceCompensator, worldPos);
+        pos = obj.distanceCompensator.worldToCamera(worldPos);
 
         if assignment.IsDetectionAssigned && norm(assignment.v.EstimatedPosImagePix - pos) > 10
             %warning('image and back projected coord diverge too much Expect=%d Actual=%d',assignment.v.EstimatedPosImagePix ,pos);
@@ -686,6 +670,31 @@ function imageWithDetects = drawDetections(obj, image, detects)
     end
     
     imageWithDetects = image;
+end
+
+% Internal method (for testing). Dumps position information for all tracks.
+function trackPosInfo = getTracksInfo(this)
+    trackPosInfo = struct('TrackId', [], 'WorldPos', [], 'ImagePos', []);
+    trackPosInfo(1) = [];
+    
+    if this.frameInd < 1
+        return;
+    end
+    
+    for trackInd=1:length(this.tracks)
+        track = this.tracks{trackInd};
+        
+        trackInfo = struct;
+        trackInfo.TrackId = track.idOrCandidateId;
+        
+        ass = track.Assignments{this.frameInd};
+        trackInfo.WorldPos = ass.EstimatedPos;
+        if ass.IsDetectionAssigned
+            trackInfo.ImagePos = this.detectionsPerFrame{this.frameInd}.Centroid;
+        end
+        
+        trackPosInfo(end+1) = trackInfo;
+    end
 end
 
 end

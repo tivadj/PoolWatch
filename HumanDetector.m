@@ -30,7 +30,7 @@ function obj = HumanDetector(skinClassifierFun, waterClassifierFun, distanceComp
     obj.distanceCompensator = distanceCompensator;
 end
 
-function BodyDescr = GetHumanBodies(this, image, waterMask, debug)
+function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
     if debug
         imshow(image), title('Original image');
     end
@@ -154,15 +154,15 @@ function BodyDescr = GetHumanBodies(this, image, waterMask, debug)
         noiseIslands = zeros(1, blocksCount,'uint8');
         for i=1:blocksCount
             centroid = connCompProps(i).Centroid;
-            centroidWorld = CameraDistanceCompensator.cameraToWorld(this.distanceCompensator, centroid);
+            centroidWorld = this.distanceCompensator.cameraToWorld(centroid);
 
             actualArea = connCompProps(i).Area;
 
-            expectAreaMax = CameraDistanceCompensator.worldAreaToCamera(this.distanceCompensator, centroidWorld, bodyAreaMax);
+            expectAreaMax = this.distanceCompensator.worldAreaToCamera(centroidWorld, bodyAreaMax);
             isNoise = actualArea > expectAreaMax;
 
             if ~isNoise
-                expectAreaMim = CameraDistanceCompensator.worldAreaToCamera(this.distanceCompensator, centroidWorld, bodyAreaMin);
+                expectAreaMim = this.distanceCompensator.worldAreaToCamera(centroidWorld, bodyAreaMin);
                 isNoise = actualArea < expectAreaMim;
             end
 
@@ -191,7 +191,7 @@ function BodyDescr = GetHumanBodies(this, image, waterMask, debug)
     % return info about swimmer's shapes
     connComp = bwconncomp(resultImage, 8); % TODO: 8 or 4?
     connCompProps = regionprops(connComp, 'BoundingBox','Centroid','FilledImage');
-    resultCells = struct('BoundingBox',[],'Centroid',[],'FilledImage',[]);
+    resultCells = struct(DetectedBlob);
     resultCells(1) = []; % make 1x0 struct
     for i=1:length(connCompProps)
         props = connCompProps(i);
@@ -203,10 +203,12 @@ function BodyDescr = GetHumanBodies(this, image, waterMask, debug)
         bndBox = floor(props.BoundingBox);
         imgOutlinePixels = [imgOutlinePixelsLocal(:,1) + bndBox(2), imgOutlinePixelsLocal(:,2) + bndBox(1)];
         
-        resultCells(i).BoundingBox = props.BoundingBox;
-        resultCells(i).Centroid = props.Centroid;
-        resultCells(i).OutlinePixels = imgOutlinePixels;
-        resultCells(i).FilledImage = imgFill;
+        blob = DetectedBlob;
+        blob.Centroid = props.Centroid;
+        blob.BoundingBox = props.BoundingBox;
+        blob.OutlinePixels = imgOutlinePixels;
+        blob.FilledImage = imgFill;
+        resultCells(i) = struct(blob);
     end
     BodyDescr = resultCells;
 end

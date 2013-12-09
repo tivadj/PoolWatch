@@ -1,27 +1,26 @@
-classdef CameraDistanceCompensator
+classdef CameraDistanceCompensator < handle
 
 properties
+v;
 %obj.v.cameraMatrix
 %obj.v.rvec
 %obj.v.tvec
 %obj.v.worldToCamera
 end
 
-methods(Static)
+methods
     
-function poolSize = poolSize()
+function this = CameraDistanceCompensator()
+    this.initCameraPosition();
+end
+
+function poolSize = poolSize(this)
     poolSize = [10 25];
 end
 
 % TODO: remove
-function size = expectCameraSize()
+function size = expectCameraSize(this)
     size=[640 476];
-end
-
-function obj = create()
-    obj = utils.TypeErasedClass;
-
-    CameraDistanceCompensator.initCameraPosition(obj);
 end
 
 function initCameraPosition(obj)
@@ -116,7 +115,7 @@ function areaCam = worldAreaToCamera(obj, worldPos, worldArea)
         worldPos + [ widthHf  widthHf 0];
         worldPos + [ widthHf -widthHf 0]];
     
-    camBounds = CameraDistanceCompensator.worldToCamera(obj, worldBounds);
+    camBounds = obj.worldToCamera(worldBounds);
     areaCam = polyarea(camBounds(:,1), camBounds(:,2));
 end
 
@@ -128,7 +127,7 @@ function imageRec = convertCameraImageToTopView(obj, image, outputImageSize)
     
     % 1. camera coord to world coordinate
     % 2. scale world coordinate into outputImageSize
-    poolSize = CameraDistanceCompensator.poolSize;
+    poolSize = obj.poolSize;
     M = diag([outputImageSize(1)/poolSize(1) outputImageSize(2)/poolSize(2) 1]) * obj.v.MRectPool;
     
 	imageRec = cv.warpPerspective(image, M, 'DSize', outputImageSize);
