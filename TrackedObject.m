@@ -91,5 +91,8 @@ function probs = predict(this, testPixs)
     %fprintf('logProb error %d\n', sum((logProbs-logProbs2).^2));
 end
 
+function SetVelocity(this, worldVelocity)
+    this.KalmanFilter.State(3:4) = worldVelocity;
+end
 end
 end

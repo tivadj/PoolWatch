@@ -27,6 +27,11 @@ function BodyDescr = GetHumanBodies(this, frameId, varargin)
     end
 end
 
+function distError = shapeCentroidNoise(this)
+    % detection are provided precisely so there is no error in shape estimation
+    distError = 0;
+end
+
 end
 end
 

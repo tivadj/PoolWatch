@@ -11,7 +11,7 @@ function worldPos = cameraToWorld(obj, imagePos)
 end
 
 function imagePos = worldToCamera(obj, worldPos)
-    imagePos = worldPos;
+    imagePos = worldPos(1:2);
 end
 
 end    

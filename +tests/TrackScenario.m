@@ -21,17 +21,29 @@ function play(this, tracker, debug)
     for frameSyncPointInd=1:length(this.ScenarioFrameList)
         frame = this.ScenarioFrameList(frameSyncPointInd);
         
-        nextFrame = @(image) tracker.nextFrame(image, 1/this.Fps, this.Fps,  debug);
+        nextFrameFun = @(image) tracker.nextFrame(image, 1000/this.Fps, this.Fps,  debug);
         
         % play all frames which have occured before sync point
         for ind=frameInd:frame.SeqNum-1
             fprintf('f=%d\n', ind);
-            nextFrame(image);
+            nextFrameFun(image);
         end
         
         % process sync frame
         fprintf('f=%d\n', frame.SeqNum);
-        nextFrame(image);
+        nextFrameFun(image);
+        
+        % update speed for newly created track
+        %tracker.getTrack(frame.SeqNum, 
+        for blobInd=1:length(frame.Blobs)
+            blob = frame.Blobs(blobInd);
+            if isfield(blob,'WorldVelocity')
+                track = tracker.getTrackByBlobId(frame.SeqNum, blob.Id);
+                assert(~isempty(track));
+                track.SetVelocity(blob.WorldVelocity);
+            end
+        end
+            
         
         frameInd = frame.SeqNum + 1;
     end

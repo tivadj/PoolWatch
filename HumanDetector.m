@@ -213,6 +213,11 @@ function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
     BodyDescr = resultCells;
 end
 
+% Max distance from real center of the swimmer to corresponding center of detected shape.
+function distError = shapeCentroidNoise(this)
+    distError = 0.5;
+end
+
 function SetWeight(obj, weight)
    obj.Weight = weight;
 end

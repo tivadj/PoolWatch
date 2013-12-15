@@ -10,6 +10,7 @@ properties
     humanDetector;
     colorAppearance;
     v;
+    %v.swimmerMaxSpeed;
 end
 
 methods
@@ -25,6 +26,12 @@ function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDet
     this.humanDetector = humanDetector;
     this.colorAppearance = colorAppearance;
     
+    % configure tracker
+    this.v.swimmerMaxSpeed = 2.3; % max speed for swimmers 2.3m/s
+
+    % new tracks are allocated for detections further from any existent tracks by this distance
+    this.v.minDistToNewTrack = 0.5;
+
     purgeMemory(this);
 end
 
@@ -195,9 +202,7 @@ function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
 end
 
 function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image, frameInd, elapsedTimeMs, frameDetections, debug)
-    % 2.3m/s is max speed for swimmers
-    shapeCentroidNoise = 0.5; % shape may change significantly
-    swimmerMaxShiftPerFrameM = elapsedTimeMs * 2.3 / 1000 + shapeCentroidNoise;
+    swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
     
     % calculate distance from predicted pos of each tracked object
     % to each detection
@@ -347,8 +352,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
                 dist = norm(trackImgPos - blob.Centroid);
                 
                 % new tracks are allocated for detections further from any existent tracks by this distance
-                minDistToNewTrack = 0.5;
-                if dist < minDistToNewTrack
+                if dist < obj.v.minDistToNewTrack
                     farAwayBlobsMask(blobInd) = false;
                 end
             end
@@ -673,7 +677,23 @@ function imageWithDetects = drawDetections(obj, image, detects)
 end
 
 % Internal method (for testing). Dumps position information for all tracks.
-function trackPosInfo = getTracksInfo(this)
+function result = getTrackById(this, trackId)
+    result = [];
+    for trackInd=1:length(this.tracks)
+        curTrack = this.tracks{trackInd};
+        if curTrack.idOrCandidateId == trackId
+            result = curTrack;
+            break;
+        end
+    end
+end
+
+% Internal method (for testing). Dumps position information for all tracks.
+function trackPosInfo = trackInfo(this, trackId, queryFrameInd)
+    if ~exist('queryFrameInd', 'var')
+        queryFrameInd = this.frameInd; % take last frame
+    end
+    
     trackPosInfo = struct('TrackId', [], 'WorldPos', [], 'ImagePos', []);
     trackPosInfo(1) = [];
     
@@ -681,19 +701,67 @@ function trackPosInfo = getTracksInfo(this)
         return;
     end
     
-    for trackInd=1:length(this.tracks)
-        track = this.tracks{trackInd};
+    track = this.getTrackById(trackId);
+    if isempty(track)
+        return;
+    end
+
+    %
+
+    trackInfo = struct;
+    trackInfo.TrackId = track.idOrCandidateId;
+
+    ass = track.Assignments{queryFrameInd};
+    trackInfo.WorldPos = ass.EstimatedPos;
+    trackInfo.ImagePos = [];
+    if ass.IsDetectionAssigned
+        blobs = this.detectionsPerFrame{queryFrameInd};
+        trackInfo.ImagePos = blobs(ass.DetectionInd).Centroid;
+    end
+
+    trackPosInfo(end+1) = trackInfo;
+end
+
+function trackPosInfo = trackInfoOne(this)
+    assert(length(this.tracks) == 1, 'Expected single track but were %d tracks', length(this.tracks));
+    track = this.tracks{1};
+    trackPosInfo = this.trackInfo(track.Id);
+end
+
+function result = tracksCount(this)
+    result = length(this.tracks);
+end
+
+function blob = getBlobInFrame(this, frameId, blobId)
+    blob = [];
+    
+    blobs = this.detectionsPerFrame{frameId};
+    for blobInd=1:length(blobs)
+        curBlob = blobs(blobInd);
         
-        trackInfo = struct;
-        trackInfo.TrackId = track.idOrCandidateId;
-        
-        ass = track.Assignments{this.frameInd};
-        trackInfo.WorldPos = ass.EstimatedPos;
-        if ass.IsDetectionAssigned
-            trackInfo.ImagePos = this.detectionsPerFrame{this.frameInd}.Centroid;
+        if curBlob.Id == blobId
+            blob = cubBlob;
+            break;
         end
+    end
+end
+
+% Gets track which was associated with detection blobId in frame frameId.
+function track = getTrackByBlobId(this, frameId, blobId)
+    track = [];
+    blobs = this.detectionsPerFrame{frameId};
+    
+    for trackInd=1:length(this.tracks)
+        curTrack = this.tracks{trackInd};
         
-        trackPosInfo(end+1) = trackInfo;
+        ass = curTrack.Assignments{frameId};
+        if ass.IsDetectionAssigned
+            blob = blobs(ass.DetectionInd);
+            if blob.Id == blobId
+                track = curTrack;
+                return;
+            end
+        end
     end
 end
 
