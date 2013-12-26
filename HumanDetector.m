@@ -5,6 +5,7 @@ properties
   skinDetector;
   skinClassifierFun;
   distanceCompensator;
+  labTransformation;
   v;
 end
 
@@ -28,6 +29,7 @@ function obj = HumanDetector(skinClassifierFun, waterClassifierFun, distanceComp
     obj.v.waterClassifierFun = waterClassifierFun;
     
     obj.distanceCompensator = distanceCompensator;
+    obj.labTransformation = makecform('srgb2lab');
 end
 
 function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
@@ -111,38 +113,34 @@ function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
         imshow(imageNoOutlines), title('outline islands removed');
     end
     
-    % glue body parts
+    imageNoOutlines(imageNoOutlines > 0) = 255;
+
+    % merge body parts (close blobs of similar color)
     % which can be disconnected by appearance of swimming clothes, lane markers etc.
     % TODO: gluing radius should depend on distance from camera (further objects
     % should be glued with smaller radius
-    bodyApartMaxDist=20;
-    sel=strel('disk',ceil(bodyApartMaxDist/2),0);
-    imageGluedParts=imclose(imageNoOutlines, sel);
-    imageGluedParts(imageGluedParts > 0) = 255; % make a BW mask
-
-    if debug
-        imshow(imageGluedParts), title('parts glued');
-    end
     
-    % gluing fix: gluing by closing may generate small islands; remove them
-    connComp = bwconncomp(imageGluedParts, 8);
+    bodyApartMaxDistPix=20;
+    maxBlobColorMergeDist = 15; % may be 15 for EMD impl and 27 for euclidian impl
+    mergedBlobsMask = this.mergeBlobsWithSimilarColor(connComp, connCompProps, image, bodyApartMaxDistPix, maxBlobColorMergeDist, debug);
+    
+    imageMergedParts = bitor(imageNoOutlines, mergedBlobsMask);
+    
+    if debug
+        imshow(imageMergedParts), title('merged body parts');
+    end
+        
+    connComp = bwconncomp(imageMergedParts, 8);
     connCompProps = regionprops(connComp, 'Area','Centroid');
     
     if debug
-        imgBlobs = utils.drawRegionProps(imageGluedParts, connComp, 120);
+        imgBlobs = utils.drawRegionProps(imageMergedParts, connComp, 120);
         imshow(imgBlobs);
-    end
-    
-    smallIslands = [connCompProps(:).Area] < shapeMinAreaPixels;
-    imageGluedPartsNoSmall = HumanDetector.removeIslands(connComp, imageGluedParts, smallIslands);
-
-    if debug
-        imshow(imageGluedPartsNoSmall), title('post glued parts: small islands removed');
     end
     
     % remove swimmer shapes of unfeasible area
     % depends: parts of shape must be glued
-    imageFeasAreaShapes = imageGluedPartsNoSmall;
+    imageFeasAreaShapes = imageMergedParts;
     
     blocksCount = connComp.NumObjects;
     if blocksCount > 0
@@ -171,7 +169,7 @@ function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
         end
         noiseIslands = cast(noiseIslands,'logical'); % indices must be logical
 
-        imageFeasAreaShapes = HumanDetector.removeIslands(connComp, imageGluedPartsNoSmall, noiseIslands);
+        imageFeasAreaShapes = HumanDetector.removeIslands(connComp, imageFeasAreaShapes, noiseIslands);
 
         if debug
             imshow(imageFeasAreaShapes), title('shape area (world)');
@@ -224,7 +222,7 @@ end
 
 end
 
-methods (Access = private)
+methods (Access = public)
 function bodyI = IsolateBodyShapes(obj,image, debug)
     % apply skin classifier to input image
 
@@ -268,9 +266,87 @@ function bodyI = IsolateBodyShapes(obj,image, debug)
         imshow(bodyI)
     end
 end
+
+function mergeBlobsRecipe = mergeBlobsRecipeViaColorSimilarity(this, connComp, connCompPropsOrNull, imageRgb, maxDistBetweenBlobs, maxBlobColorMergeDist, debug)
+    mergeBlobsRecipe = zeros(0,2,'int32');
+    blobsCount = connComp.NumObjects;
+    
+    pixelsRgbByRow = reshape(imageRgb, [], 3);
+    
+    % learn GMM of colors for each blob
+    mixGaussList = cell(1,blobsCount);
+    for blobInd=1:blobsCount
+        pixInds = connComp.PixelIdxList{blobInd};
+        blobPixs = pixelsRgbByRow(pixInds, :);
+        blobPixsLab = applycform(blobPixs, this.labTransformation);
+
+        % limit number of clusters to be at least the number of pixels
+        nclust = min([8 size(blobPixsLab,1)]);
+        
+        mixGauss = cv.EM('Nclusters', nclust, 'CovMatType', 'Spherical');
+        mixGauss.train(blobPixsLab);
+        mixGaussList{blobInd} = mixGauss;
+    end
+
+    for blobInd1=1:blobsCount
+
+        blob1Center = [];
+        if ~isempty(connCompPropsOrNull)
+            blob1Center = connCompPropsOrNull(blobInd1).Centroid;
+        end
+        
+        for blobInd2=blobInd1+1:blobsCount
+
+            % skip distant blobs
+            
+            if ~isempty(connCompPropsOrNull)
+                assert(~isempty(blob1Center));
+
+                blob2Center = connCompPropsOrNull(blobInd2).Centroid;
+                
+                centrDist = norm(blob1Center - blob2Center);
+                if centrDist > maxDistBetweenBlobs
+                    continue;
+                end
+            end
+
+            % skip distant blobs
+            
+            colorDist = utils.PixelClassifier.distanceTwoMixtureGaussiansEmd(mixGaussList{blobInd1}.Means, mixGaussList{blobInd1}.Weights,mixGaussList{blobInd2}.Means, mixGaussList{blobInd2}.Weights);
+            
+            if debug
+                fprintf('blobs[%d-%d] colorDist=%.2f\n', blobInd1,blobInd2,colorDist);
+            end
+            
+            if colorDist > maxBlobColorMergeDist
+                continue;
+            end
+            
+            mergeBlobsRecipe(end+1,:) = [blobInd1, blobInd2];
+        end
+    end
+end
+
+% Merges blobs with similar color. Returns mask of merged blobs.
+function mergedBlobsMask = mergeBlobsWithSimilarColor(this, connComp, connCompPropsOrNull, imageRgb, maxDistBetweenBlobs, maxBlobColorMergeDist, debug)
+    mergeRecipe = this.mergeBlobsRecipeViaColorSimilarity(connComp, connCompPropsOrNull, imageRgb, maxDistBetweenBlobs, maxBlobColorMergeDist, debug);
+    
+    % merge masks
+    mergedBlobsMask = false(size(imageRgb,1), size(imageRgb,2));
+    for i=1:size(mergeRecipe,1)
+        blobInd1 = mergeRecipe(i,1);
+        blobInd2 = mergeRecipe(i,2);
+        mask1 = utils.BlobsHelper.mergeBlobs(connComp, blobInd1, blobInd2);
+        mergedBlobsMask = mergedBlobsMask | mask1;
+    end
+    
+    mergedBlobsMask = im2uint8(mergedBlobsMask);
+end
+
 end
 
 methods(Static)
+
 function resultGray = removeIslands(connComps, imageGray, islandsToRemoveMask)
     resultGray = imageGray;
     
