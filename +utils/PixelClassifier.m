@@ -210,6 +210,49 @@ function result = logMvnPdf(X, m, S)
     result = arrayfun(@(i) gauss(centrX(i,:)), (1:n)');
 end
 
+% Calculate distance between two GMMs using weighted euclidian distance.
+% Some distances for similar blobs (32.63 28.75 53.90)
+% Some distances for non-similar blobs (40.32 40.96 57.73)
+% Hence a choice of separation distance is 32.
+function dist = distanceTwoMixtureGaussians(m1,weights1,m2, weights2)
+    assert(length(m1)==length(weights1));
+    assert(length(m2)==length(weights2));
+    
+    dist = 0;
+    for i1=1:length(m1)
+    for i2=1:length(m2)
+        d1 = weights1(i1) * weights2(i2) * norm(m1(i1,:) - m2(i2,:));
+        dist = dist + d1;
+    end
+    end
+end
+
+% Calculate distance between two GMMs using Eearth Mover Distance (EMD).
+% This method works somewhat better than distanceTwoMixtureGaussians for
+% blobs with high contrast colors.
+% Some distances for similar blobs (14.11 16.27)
+% Some distances for non-similar blobs (14.43 19.45)
+% Hence a choice of separation distance is 15.
+function dist = distanceTwoMixtureGaussiansEmd(m1,weights1,m2, weights2)
+    assert(length(m1)==length(weights1));
+    assert(length(m2)==length(weights2));
+
+    % Put an earth of corresponding weight into center of each mixture cluster in first GMM.
+    % Transfer all the earth into holes built from second GMM.
+    
+    sig1 = utils.PixelClassifier.gaussianMixtureToCvEmdSignature(m1,weights1);
+    sig2 = utils.PixelClassifier.gaussianMixtureToCvEmdSignature(m2,weights2);
+    dist = cv.EMD(sig1, sig2);
+end
+
+function sig1 = gaussianMixtureToCvEmdSignature(m, weights)
+    % [ clusterWeight r g b]
+    sig1 = zeros(length(m),4, 'single');
+    for i=1:length(m)
+        sig1(i,:) = [weights(i) m(i,1) m(i,2) m(i,3)];
+    end
+end
+
 % hitProb=min prob of whether a point belongs to a gaussian.
 function surf = drawMixtureGaussians(m, S, weights, colorChar)
     [mixCount,l]=size(m);

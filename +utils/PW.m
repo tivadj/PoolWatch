@@ -51,6 +51,42 @@ function angle = angleTwoVectors(v1,v2)
     angle = acos(v1 * v2' / (norm(v1)*norm(v2)));
 end
 
+% Facade function to create skin(flesh) classifier.
+function skinClassifierFun = createSkinClassifier(debug)
+    % initialize classifier
+    cl2=SkinClassifierStatics.create;
+    SkinClassifierStatics.populateSurfPixels(cl2);
+    SkinClassifierStatics.prepareTrainingDataMakeNonoverlappingHulls(cl2, debug);
+    SkinClassifierStatics.findSkinPixelsConvexHullWithMinError(cl2, debug);
+    
+    %svmClassifierFun=@(XByRow) utils.SvmClassifyHelper(obj.v.skinClassif, XByRow, 1000);
+    skinHullClassifierFun=@(XByRow) utils.inhull(XByRow, cl2.v.skinHullClassifHullPoints, cl2.v.skinHullClassifHullTriInds, 0.2);
+    skinClassifierFun = skinHullClassifierFun;
+end
+
+function waterClassifierFun = createWaterClassifier(debug)
+    % init water classifer
+    humanDetectorRunner = RunHumanDetector.create;
+    %waterClassifierFun = RunHumanDetector.getWaterClassifierAsConvHull(humanDetectorRunner, debug);
+    waterClassifierFun = RunHumanDetector.getWaterClassifierAsMixtureOfGaussians(humanDetectorRunner,6,debug);
+end
+
+function tracker = createSwimmerTracker(debug)
+    skinClassifierFun = utils.PW.createSkinClassifier(debug);
+    waterClassifierFun = utils.PW.createWaterClassifier(debug);
+    
+    poolRegionDetector = PoolRegionDetector(skinClassifierFun, waterClassifierFun);
+
+    distanceCompensator = CameraDistanceCompensator;
+    
+    humanDetector = HumanDetector(skinClassifierFun, waterClassifierFun, distanceCompensator);
+    
+    colorAppearance = ColorAppearanceController;
+    
+    %
+    tracker = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDetector, colorAppearance);
+end
+
 end
     
 end

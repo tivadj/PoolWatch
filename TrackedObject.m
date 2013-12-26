@@ -27,6 +27,16 @@ methods(Static)
 end
 
 methods
+    
+function id = idOrCandidateId(this)
+    if this.Id > 0
+        id = this.Id;
+    else
+        % make id negative to distinguish from TrackId
+        id = -this.TrackCandidateId;
+    end
+end
+
 function detectCount = getDetectionsCount(this, upToFrame)
     detectCount = 0;
     for i=this.FirstAppearanceFrameIdx:upToFrame
@@ -81,5 +91,8 @@ function probs = predict(this, testPixs)
     %fprintf('logProb error %d\n', sum((logProbs-logProbs2).^2));
 end
 
+function SetVelocity(this, worldVelocity)
+    this.KalmanFilter.State(3:4) = worldVelocity;
+end
 end
 end

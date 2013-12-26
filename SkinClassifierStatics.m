@@ -450,7 +450,7 @@ function findSkinPixelsConvexHullWithMinError(obj, debug)
 %         drawnow
         
         if debug
-            figure
+            %figure
         end
         
         pixelClassif = @(X) utils.inhull(X, shiftedHull, [], 0.2);
@@ -459,8 +459,8 @@ function findSkinPixelsConvexHullWithMinError(obj, debug)
         obj.v.skinHullClassifHullTriInds = hullTriInds;
 
         if debug
-            SkinClassifierStatics.testOnImage(obj,fullfile('data/MVI_3177_0127_640x476.png'), 1000, 0.1, pixelClassif);
-            title(sprintf('t=%d\n', t));
+            %SkinClassifierStatics.testOnImage(obj,fullfile('data/MVI_3177_0127_640x476.png'), 1000, 0.1, pixelClassif);
+            %title(sprintf('t=%d\n', t));
         end
         
         % check performance for this hull
@@ -480,7 +480,7 @@ function findSkinPixelsConvexHullWithMinError(obj, debug)
         perfHist = [perfHist; t perf errs1 errs2 errs3];
     end
     if debug
-        figure, plot(perfHist(:,1), perfHist(:,2));
+        %figure, plot(perfHist(:,1), perfHist(:,2));
     end
 end
 

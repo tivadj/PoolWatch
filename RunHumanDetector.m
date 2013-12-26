@@ -465,23 +465,29 @@ function loadWaterNonWaterPixels(obj, debug)
     % show pixels as 3d volume
     % water pixels
     waterPixsExclTriInd = convhulln(waterPixsExclDbl);
-    watSurf = trisurf(waterPixsExclTriInd , waterPixsExclDbl(:,1), waterPixsExclDbl(:,2), waterPixsExclDbl(:,3), 'FaceColor', 'b');
-    alpha(watSurf, 0.3)
-    xlabel('R'); ylabel('G'); zlabel('B');
+    if false && debug
+        watSurf = trisurf(waterPixsExclTriInd , waterPixsExclDbl(:,1), waterPixsExclDbl(:,2), waterPixsExclDbl(:,3), 'FaceColor', 'b');
+        alpha(watSurf, 0.3)
+        xlabel('R'); ylabel('G'); zlabel('B');
+    end
     
     % non-water pixels
     nonWaterPixsExclTriInd = convhulln(nonWaterPixsExclDbl);
-    hold on
-    nonWatSurf = trisurf(nonWaterPixsExclTriInd, nonWaterPixsExclDbl(:,1), nonWaterPixsExclDbl(:,2), nonWaterPixsExclDbl(:,3), 'FaceColor', 'y');
-    alpha(nonWatSurf,0.3);
-    hold off
+    if false && debug
+        hold on
+        nonWatSurf = trisurf(nonWaterPixsExclTriInd, nonWaterPixsExclDbl(:,1), nonWaterPixsExclDbl(:,2), nonWaterPixsExclDbl(:,3), 'FaceColor', 'y');
+        alpha(nonWatSurf,0.3);
+        hold off
+    end
     
     % common pixels
     commonPixelsDblTriInd = convhulln(commonPixelsDbl);
-    hold on
-    nonWatSurf = trisurf(commonPixelsDblTriInd, commonPixelsDbl(:,1), commonPixelsDbl(:,2), commonPixelsDbl(:,3), 'FaceColor', 'g');
-    alpha(nonWatSurf,0.6);
-    hold off
+    if false && debug
+        hold on
+        nonWatSurf = trisurf(commonPixelsDblTriInd, commonPixelsDbl(:,1), commonPixelsDbl(:,2), commonPixelsDbl(:,3), 'FaceColor', 'g');
+        alpha(nonWatSurf,0.6);
+        hold off
+    end
 end
 
 function waterClassifFun = getWaterClassifierAsMixtureOfGaussians(obj, nClusters, debug)
