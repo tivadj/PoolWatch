@@ -262,8 +262,6 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image,
 end
 
 function processDetections_Mht(this, image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug)
-    fprintf('============ frameInd=%d\n', frameInd);
-
     this.growTrackHyposhesisTree(frameInd, frameDetections, elapsedTimeMs, fps, swimmerMaxShiftPerFrameM, debug);
     
     leafSetNew = this.trackHypothesisForestPseudoNode.getLeafSet(false);
@@ -349,10 +347,9 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
         fprintf('leafSet before=%d\n', length(leafSet));
     end
 
+    % hypothesis2: track has correspondent observations in this frame
     for leafInd=1:length(leafSet)
         leaf = leafSet{leafInd};
-
-        % hypothesis2: track has correspondent observations in this frame
 
         for blobInd=1:length(frameDetections)
             blob = frameDetections(blobInd);
@@ -401,15 +398,39 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
         end
     end
     
+    % hypothesis1: (no observation) track has no associated observation in this frame
     if true
         for leafInd=1:length(leafSet)
             leaf = leafSet{leafInd};
 
-            % hypothesis1: (no observation) track has no associated observation in this frame
             kalmanFilter.State = leaf.KalmanFilterState;
             kalmanFilter.StateCovariance = leaf.KalmanFilterStateCovariance;
             predictedPos2 = kalmanFilter.predict();
             predictedPos = [predictedPos2 0]; % z=0
+            
+            % perf oversimplification
+            % prohibit hypothesis with predicted position close to another observation;
+            % it assumes that swimmers can't be too close to each other
+            hasCloseObservations = false;
+            for i=1:length(frameDetections)
+                blob = frameDetections(blobInd);
+                blobCentr = blob.Centroid;
+
+                % consider only blobs within specified gate
+                % calculate blob centroid positions
+                blobWorld = this.distanceCompensator.cameraToWorld(blobCentr);
+                dist = norm(predictedPos-blobWorld);
+                if dist < this.v.minDistToNewTrack
+                    hasCloseObservations = true;
+                    break;
+                end
+            end
+            
+            if hasCloseObservations
+                continue;
+            end
+            
+            % create hypothesis node
 
             childHyp = TrackHypothesisTreeNode;
             childHyp.Id = this.v.nextTrackCandidateId;
@@ -441,13 +462,18 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
     end
     
     % hypothesis3: (new track) track got the initial observation in this frame
+    % perfomance oversimplification:
+    % try to initiate new track sparingly (each N frames)
     
-    if frameInd > 0 % TODO: temporary cheat
+    initNewTrackDelay = 60;
+    if mod(frameInd-1, initNewTrackDelay) == 0
         for blobInd=1:length(frameDetections)
             blob = frameDetections(blobInd);
             centrPix = blob.Centroid;
             centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
 
+            % create hypothesis node
+            
             childHyp = TrackHypothesisTreeNode;
             childHyp.Id = this.v.nextTrackCandidateId;
             this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
@@ -485,7 +511,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
 end
 
 function result = isPseudoRoot(this, trackTreeNode)
-    result = (trackTreeNode == this.trackHypothesisForestPseudoNode);
+    result = (trackTreeNode.Id == this.trackHypothesisForestPseudoNode.Id);
 end
 
 % print optimal tracks in ascending rootId order
@@ -552,27 +578,7 @@ end
 function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allTrackIdToObj, debug)
     allTrackIds = cellfun(@(c) c.Id, leafSetNew);
 
-    % construct track incompatibility lists
-    leafCount = length(leafSetNew);
-    incompatibTrackEdgesMat = zeros(0,2,'int32');
-    for leafInd=1:leafCount
-        leaf = leafSetNew{leafInd};
-        
-        for othLeafInd=leafInd+1:leafCount
-            othLeaf = leafSetNew{othLeafInd};
-
-            hasCommonObs = utils.PW.hasCommonObservation(leaf, othLeaf);
-            if hasCommonObs
-                % two tracks are incompatible => there must be edge in the graph
-                % hence, independent set (ISP P=problem) solution will select only compatible vertices
-                
-                incompatibTrackEdgesMat = [incompatibTrackEdgesMat; leaf.Id othLeaf.Id]; % track ids
-                if debug
-                    %fprintf('edge %s-%s\n', leaf.briefInfoStr, othLeaf.briefInfoStr);
-                end
-            end
-        end
-    end
+    incompatibTrackEdgesMat = this.createTrackIncopatibilityGraph(leafSetNew, debug);
     
     % the graph may have isolated and connected vertices
     
@@ -599,14 +605,6 @@ function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allT
         fprintf('V=%d E=%d ConnCompCount=%d\n', connectedVertexCount, connectedEdgesCount, componentsCount);
     end
 
-    % trackIdToVertexInd normalized trackId into zero-based indices
-    
-    trackIdToVertexInd = containers.Map('KeyType', 'int32', 'ValueType', 'int32');
-    for vertexInd=1:connectedVertexCount
-        leafId = connectedVertices(vertexInd);
-        trackIdToVertexInd(leafId) = vertexInd;
-    end
-    
     % vertexWeights
     
     vertexWeights = zeros(1, connectedVertexCount);
@@ -628,40 +626,18 @@ function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allT
         fprintf('IndepSet (approx) weights = %f\n', sum(vertexWeights .* indepVerticesMask));
     end
     
-    % build constraint matrix A
-    
+    %
     allowExactMWISP = connectedEdgesCount  < 200; % try exact solution for small problems only
     if allowExactMWISP
-        A = zeros(connectedEdgesCount,connectedVertexCount); % costraints on edges
-        for edgeInd=1:connectedEdgesCount
-            trackIdFrom = incompatibTrackEdgesMat(edgeInd, 1);
-            trackIdTo   = incompatibTrackEdgesMat(edgeInd, 2);
-
-            vertexIndFrom = trackIdToVertexInd(trackIdFrom);
-            vertexIndTo   = trackIdToVertexInd(trackIdTo);
-
-            A(edgeInd, vertexIndFrom) = 1;
-            A(edgeInd, vertexIndTo  ) = 1;
-        end
-        b = ones(connectedEdgesCount,1);
-
-
-        % find set of tracks with maximal weight
-        % bintprog minimizes objective function but MWISP maximizes => put minus sign in obj fun
-        opt = optimoptions('bintprog');
-        opt.MaxTime = 5;
-        [x,fval,exitflag,output] = bintprog(-vertexWeights, A, b, [], [], indepVerticesMask, opt);
-        if exitflag==1
-            % solution found
-            indepVerticesMask = reshape(x, 1, []);
-            if debug
-                fprintf('IndepSet (exact) weight=%f bintprog time=%f\n', -fval, output.time);
-            end
-        else
-            fprintf('bintprog timeout, fallback to rough solution\n');
+        otimizationMaxTime = 5;
+        initialSolution = indepVerticesMask;
+        exactIndepVertices = this.maxWeightIndependentSetByLinearOptimization(connectedVertices, vertexWeights, incompatibTrackEdgesMat, initialSolution, otimizationMaxTime, debug);
+        if ~isempty(exactIndepVertices)
+            indepVerticesMask = exactIndepVertices;
         end
     end
-    
+
+    %
     optimTrackIdInds = find(indepVerticesMask);
     optimTrackIds = connectedVertices(optimTrackIdInds);
     
@@ -673,6 +649,117 @@ function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allT
     
     for trackId=optimTrackIds
         bestTrackLeaves{end+1} = allTrackIdToObj(trackId);
+    end
+end
+
+% Searches for solution for MWISP using linear programming formulation. Returns mask of vertices 
+% in the independent set or null if solution was not found in 'otimizationMaxTime' timeframe.
+function indepVerticesMask = maxWeightIndependentSetByLinearOptimization(this, connectedVertices, vertexWeights, incompatibTrackEdgesMat, initialSolution, otimizationMaxTime, debug)
+    % trackIdToVertexInd normalized trackId into zero-based indices
+
+    connectedVertexCount=length(connectedVertices);
+    connectedEdgesCount = size(incompatibTrackEdgesMat,1);
+    trackIdToVertexInd = containers.Map('KeyType', 'int32', 'ValueType', 'int32');
+    for vertexInd=1:connectedVertexCount
+        leafId = connectedVertices(vertexInd);
+        trackIdToVertexInd(leafId) = vertexInd;
+    end
+
+    % build constraint matrix A
+
+    A = zeros(connectedEdgesCount,connectedVertexCount); % costraints on edges
+    for edgeInd=1:connectedEdgesCount
+        trackIdFrom = incompatibTrackEdgesMat(edgeInd, 1);
+        trackIdTo   = incompatibTrackEdgesMat(edgeInd, 2);
+
+        vertexIndFrom = trackIdToVertexInd(trackIdFrom);
+        vertexIndTo   = trackIdToVertexInd(trackIdTo);
+
+        A(edgeInd, vertexIndFrom) = 1;
+        A(edgeInd, vertexIndTo  ) = 1;
+    end
+    b = ones(connectedEdgesCount,1);
+
+
+    % find set of tracks with maximal weight
+    % bintprog minimizes objective function but MWISP maximizes => put minus sign in obj fun
+    opt = optimoptions('bintprog');
+    opt.MaxTime = otimizationMaxTime;
+    [x,fval,exitflag,output] = bintprog(-vertexWeights, A, b, [], [], initialSolution, opt);
+    if exitflag==1
+        % solution found
+        indepVerticesMask = reshape(x, 1, []);
+        if debug
+            fprintf('IndepSet (exact) weight=%f bintprog time=%f\n', -fval, output.time);
+        end
+    else
+        indepVerticesMask = [];
+        fprintf('bintprog timeout, fallback to rough solution\n');
+    end
+end
+
+function incompatibTrackEdgesMat = createTrackIncopatibilityGraph(this, leafSetNew, debug)
+    oneHypObsIds=java.util.HashSet;
+    othHypObsIds=java.util.HashSet;
+    
+    % construct track incompatibility lists
+    leafCount = length(leafSetNew);
+    incompatibTrackEdgesMat = zeros(0,2,'int32');
+    for leafInd=1:leafCount
+        leaf = leafSetNew{leafInd};
+        
+        oneHypObsIds.clear;
+        this.populateHypothesisObservationIds(leaf, oneHypObsIds);
+        
+        for othLeafInd=leafInd+1:leafCount
+            othLeaf = leafSetNew{othLeafInd};
+
+            %hasCommonObs = utils.PW.hasCommonObservation(leaf, othLeaf);
+            
+            %
+            othHypObsIds.clear;
+            this.populateHypothesisObservationIds(othLeaf, othHypObsIds);
+            othHypObsIds.retainAll(oneHypObsIds); % get 'intersection'
+            
+            % two trajectories (hypotheses) are incompatible if they were assigned common observation
+            hasCommonObsJavaImpl = ~othHypObsIds.isEmpty;
+            %assert(hasCommonObs == hasCommonObsJavaImpl);            
+            hasCommonObs = hasCommonObsJavaImpl;
+
+            if hasCommonObs
+                % two tracks are incompatible => there must be edge in the graph
+                % hence, independent set (ISP P=problem) solution will select only compatible vertices
+                
+                incompatibTrackEdgesMat = [incompatibTrackEdgesMat; leaf.Id othLeaf.Id]; % track ids
+                if debug
+                    %fprintf('edge %s-%s\n', leaf.briefInfoStr, othLeaf.briefInfoStr);
+                end
+            end
+        end
+    end
+end
+
+% hypObsIds (type java.util.HashSet) ids of all observations except 0 (which is ID for 'missed observation')
+function populateHypothesisObservationIds(this, leaf, hypObsIds)
+
+    cur = leaf;
+    while (true)
+        assert(~isempty(cur), 'Each node has the parent or pseudo root');
+        
+        if this.isPseudoRoot(cur)
+            break;
+        end
+        if isempty(cur.DetectionInd) % skip 'missed observation' nodes
+            continue;
+        end
+        
+        % put together FrameInd+DetectionInd as a unique id of observation
+        % NOTE: assume observationsCount < 1000 for each frame
+        
+        compoundId = int32(cur.FrameInd * 1000 + cur.DetectionInd);
+        hypObsIds.add(compoundId);
+        
+        cur = cur.Parent;
     end
 end
 
@@ -722,7 +809,7 @@ function allocateTrackAssignments(this, bestTrackLeafs, pruneWindow)
         %track.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
 
         ass = ShapeAssignment();
-        ass.IsDetectionAssigned = fixedAncestor.CreationReason ~= TrackHypothesisTreeNode.NoObservation;
+        ass.IsDetectionAssigned = fixedAncestor.CreationReason == TrackHypothesisTreeNode.New | fixedAncestor.CreationReason == TrackHypothesisTreeNode.SequantialCorrespondence;
         ass.DetectionInd = fixedAncestor.DetectionInd;
         ass.v.EstimatedPosImagePix = fixedAncestor.ObservationPos;
         ass.PredictedPos = fixedAncestor.EstimatedWorldPos;
