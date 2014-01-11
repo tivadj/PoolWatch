@@ -9,6 +9,7 @@ properties
     distanceCompensator;
     humanDetector;
     colorAppearance;
+    trackHypothesisForestPseudoNode; % type: TrackHypothesisTreeNode
     v;
     %v.swimmerMaxSpeed;
 end
@@ -31,6 +32,11 @@ function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDet
 
     % new tracks are allocated for detections further from any existent tracks by this distance
     this.v.minDistToNewTrack = 0.5;
+    
+    this.v.pruneDepth = 5;
+    
+    % init track hypothesis pseudo root
+    this.trackHypothesisForestPseudoNode = TrackHypothesisTreeNode;
 
     purgeMemory(this);
 end
@@ -41,6 +47,7 @@ function purgeMemory(obj)
     obj.v.nextTrackId = 1;
     obj.frameInd = 0;
     obj.v.nextTrackCandidateId=1;
+    obj.trackHypothesisForestPseudoNode.clearChildren;
 end
 
 % elapsedTimeMs - time in milliseconds since last frame
@@ -83,7 +90,9 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     this.detectionsPerFrame{this.frameInd} = bodyDescrs;
     
     if debug
-        for i=1:length(bodyDescrs)
+        blobsCount = length(bodyDescrs);
+        fprintf('blobsCount=%d\n', blobsCount);
+        for i=1:blobsCount
             centr = bodyDescrs(i).Centroid;
             fprintf('Blob[%d] Centroid=[%.0f %.0f]\n', i, centr(1), centr(2));
         end
@@ -94,21 +103,25 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     processDetections(this, this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
 end
 
-function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
+function processDetections(this, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
     % remember tracks count at the beginning of current frame processing
     % because new tracks may be added
     %tracksCountPrevFrame = length(obj.tracks);
+    
+    swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
+    this.processDetections_Mht(image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug);
+    return;
 
     %
-    predictSwimmerPositions(obj, frameInd, fps);
+    predictSwimmerPositions(this, frameInd, fps);
 
-    trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(obj, image, frameInd, elapsedTimeMs, frameDetections, debug);
+    trackDetectCost = this.calcTrackToDetectionAssignmentCostMatrix(image, frameInd, frameDetections, swimmerMaxShiftPerFrameM, debug);
 
     % make assignment using Hungarian algo
     % all unassigned detectoins and unprocessed tracks
 
     % shapes with lesser proximity should not be assigned
-    minAppearPerPixSimilarity = obj.colorAppearance.minAppearanceSimilarityScore;
+    minAppearPerPixSimilarity = this.colorAppearance.minAppearanceSimilarityScore;
     
     unassignedTrackCost = 1 / minAppearPerPixSimilarity;
     unassignedDetectionCost = unassignedTrackCost;
@@ -125,7 +138,7 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
 
         detect=frameDetections(detectInd);
 
-        ass = obj.tracks{trackInd}.Assignments{frameInd};
+        ass = this.tracks{trackInd}.Assignments{frameInd};
         ass.IsDetectionAssigned = true;
         ass.DetectionInd = detectInd;
 
@@ -134,33 +147,33 @@ function processDetections(obj, frameInd, elapsedTimeMs, fps, frameDetections, i
         ass.v.EstimatedPosImagePix = imagePos;
 
         % project image position into TopView
-        worldPos = obj.distanceCompensator.cameraToWorld(imagePos);
+        worldPos = this.distanceCompensator.cameraToWorld(imagePos);
         
         worldPos2 = worldPos(1:2);
-        posEstimate2 = obj.tracks{trackInd}.KalmanFilter.correct(worldPos2);
+        posEstimate2 = this.tracks{trackInd}.KalmanFilter.correct(worldPos2);
         posEstimate = [posEstimate2 worldPos(3)];
         
         ass.EstimatedPos = posEstimate;
 
-        obj.tracks{trackInd}.Assignments{frameInd} = ass;
+        this.tracks{trackInd}.Assignments{frameInd} = ass;
         
         %
-        obj.onAssignDetectionToTrackedObject(obj.tracks{trackInd}, detect, image);
+        this.onAssignDetectionToTrackedObject(this.tracks{trackInd}, detect, image);
    end
 
-    assignTrackCandidateToUnassignedDetections(obj, unassignedDetections, frameDetections, frameInd, image, fps);
+    assignTrackCandidateToUnassignedDetections(this, unassignedDetections, frameDetections, frameInd, image, fps);
 
-    driftUnassignedTracks(obj, unassignedTracks, frameInd);
+    driftUnassignedTracks(this, unassignedTracks, frameInd);
 
-    promoteMatureTrackCandidates(obj, frameInd);
+    promoteMatureTrackCandidates(this, frameInd);
 
     % assert EstimatedPos is initialized
-    for r=1:length(obj.tracks)
-        if frameInd > length(obj.tracks{r}.Assignments)
-            assert(false, 'IndexOutOfRange: frameInd=%d greater than length(assignments)=%d\n', frameInd, length(obj.tracks{r}.Assignments));
+    for r=1:length(this.tracks)
+        if frameInd > length(this.tracks{r}.Assignments)
+            assert(false, 'IndexOutOfRange: frameInd=%d greater than length(assignments)=%d\n', frameInd, length(this.tracks{r}.Assignments));
         end
         
-        a = obj.tracks{r}.Assignments{frameInd};
+        a = this.tracks{r}.Assignments{frameInd};
         if isempty(a)
             assert(false);
         end
@@ -201,9 +214,7 @@ function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
     end
 end
 
-function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image, frameInd, elapsedTimeMs, frameDetections, debug)
-    swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
-    
+function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image, frameInd, frameDetections, swimmerMaxShiftPerFrameM, debug)
     % calculate distance from predicted pos of each tracked object
     % to each detection
 
@@ -248,6 +259,718 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image,
             trackDetectCost(trackInd,blobInd) = dist;
         end
     end
+end
+
+function processDetections_Mht(this, image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug)
+    fprintf('============ frameInd=%d\n', frameInd);
+
+    this.growTrackHyposhesisTree(frameInd, frameDetections, elapsedTimeMs, fps, swimmerMaxShiftPerFrameM, debug);
+    
+    leafSetNew = this.trackHypothesisForestPseudoNode.getLeafSet(false);
+
+    % construct track scores
+    
+    trackIdToScore = containers.Map('KeyType', 'int32', 'ValueType', 'double');
+    trackIdToScoreKalman = containers.Map('KeyType', 'int32', 'ValueType', 'double');
+    kalmanFilter = this.createKalmanPredictor([0 0], fps);
+    trackScores = zeros(1, length(leafSetNew));
+    for leafSetInd=1:length(leafSetNew)
+        leaf = leafSetNew{leafSetInd};
+        
+        trackSeq = leaf.getPathFromRoot();
+        trackSeq(1) = []; % exclude pseudo root from seq
+
+%         [scoreMan,scoreKalman] = this.calcTrackSequenceScoreNew(trackSeq, kalmanFilter);
+%         if debug
+%             fprintf('root %s leaf %s score=%.4f score2=%.4f\n', trackSeq{1}.briefInfoStr, leaf.briefInfoStr, scoreMan, scoreKalman);
+%         end
+        
+        % TODO: keep asserts
+        %assert(scoreMan == leaf.Score);
+        %assert(scoreKalman == leaf.ScoreKalman);
+        
+        scoreKalman = leaf.ScoreKalman;
+        
+        trackScores(leafSetInd) = scoreKalman;
+        trackIdToScore(leaf.Id) = scoreKalman;
+        trackIdToScoreKalman(leaf.Id) = scoreKalman;
+    end
+   
+    if debug
+        fprintf('grown tree, hypothesisCount=%d\n', length(leafSetNew));
+        %this.printHypothesis(leafSetNew, trackIdToScore, trackIdToScoreKalman);
+        this.printHypothesis(leafSetNew, [], []);
+    end
+
+    % TrackId - TrackObj map
+    allTrackIdToObj = containers.Map('KeyType', 'int32', 'ValueType', 'any');
+    for i=1:length(leafSetNew)
+        allTrackIdToObj(leafSetNew{i}.Id) = leafSetNew{i};
+    end
+    
+    bestTrackLeafs = this.findBestTracks(leafSetNew, trackIdToScore, allTrackIdToObj, debug);
+
+    if debug
+        fprintf('best tracks (before pruning)\n');
+        this.printHypothesis(bestTrackLeafs, trackIdToScore, trackIdToScoreKalman);
+    end
+
+    %
+    pruneWindow = this.v.pruneDepth + 1;
+    
+    this.allocateTrackAssignments(bestTrackLeafs, pruneWindow);
+    
+    this.pruneHypothesisTree(bestTrackLeafs, pruneWindow, debug);
+
+    if debug
+        fprintf('pruned tree\n');
+        this.printHypothesis(bestTrackLeafs, trackIdToScore, trackIdToScoreKalman);
+    end
+end
+
+% returns -1 if there is not available frames.
+function queryFrameInd = getFrameIndWithReadyTrackInfo(this)
+    queryFrameInd = this.frameInd - this.v.pruneDepth - 1;
+    
+    if queryFrameInd < 1
+        queryFrameInd = -1;
+    end
+end
+
+function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs, fps, swimmerMaxShiftPerFrameM, debug)
+    addedDueNoObservation = 0;
+    addedDueCorrespondence = 0;
+    addedNew = 0;
+
+    kalmanFilter = this.createKalmanPredictor([0 0], fps);
+    
+    leafSet = this.trackHypothesisForestPseudoNode.getLeafSet(false);
+    if debug
+        fprintf('leafSet before=%d\n', length(leafSet));
+    end
+
+    for leafInd=1:length(leafSet)
+        leaf = leafSet{leafInd};
+
+        % hypothesis2: track has correspondent observations in this frame
+
+        for blobInd=1:length(frameDetections)
+            blob = frameDetections(blobInd);
+            centrPix = blob.Centroid;
+
+            % consider only blobs within specified gate
+            % calculate blob centroid positions
+            centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
+            dist = norm(leaf.EstimatedWorldPos-centrWorld);
+            if dist > swimmerMaxShiftPerFrameM
+                continue;
+            end
+            
+            kalmanFilter.State = leaf.KalmanFilterState;
+            kalmanFilter.StateCovariance = leaf.KalmanFilterStateCovariance;
+            posPredicted = kalmanFilter.predict();
+            posEstimate2 = kalmanFilter.correct(centrWorld(1:2));
+            posEstimate = [posEstimate2 0]; % z=0
+
+            childHyp = TrackHypothesisTreeNode;
+            childHyp.Id = this.v.nextTrackCandidateId;
+            this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
+            childHyp.FamilyId = leaf.FamilyId;
+            childHyp.DetectionInd = blobInd;
+            childHyp.FrameInd = frameInd;
+            childHyp.ObservationPos = centrPix;
+            childHyp.ObservationWorldPos = centrWorld;
+            childHyp.EstimatedWorldPos = posEstimate;
+            childHyp.CreationReason = TrackHypothesisTreeNode.SequantialCorrespondence;
+            childHyp.KalmanFilterState = kalmanFilter.State;
+            childHyp.KalmanFilterStateCovariance = kalmanFilter.StateCovariance;
+            childHyp.KalmanFilterStatePrev = leaf.KalmanFilterState;
+            childHyp.KalmanFilterStateCovariancePrev = leaf.KalmanFilterStateCovariance;
+            
+            % calculate score
+            [scorePart, scoreKalmanPart] = this.calcTrackShiftScore(leaf, childHyp, kalmanFilter);
+            childHyp.Score = leaf.Score + scorePart;
+            childHyp.ScoreKalman = leaf.ScoreKalman + scoreKalmanPart;
+
+            leaf.addChild(childHyp);
+            addedDueCorrespondence = addedDueCorrespondence + 1;
+            
+            if debug
+                %fprintf('correspondence leaf %s hyp%s\n', leaf.briefInfoStr, childHyp.briefInfoStr);
+            end
+        end
+    end
+    
+    if true
+        for leafInd=1:length(leafSet)
+            leaf = leafSet{leafInd};
+
+            % hypothesis1: (no observation) track has no associated observation in this frame
+            kalmanFilter.State = leaf.KalmanFilterState;
+            kalmanFilter.StateCovariance = leaf.KalmanFilterStateCovariance;
+            predictedPos2 = kalmanFilter.predict();
+            predictedPos = [predictedPos2 0]; % z=0
+
+            childHyp = TrackHypothesisTreeNode;
+            childHyp.Id = this.v.nextTrackCandidateId;
+            this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
+            childHyp.FamilyId = leaf.FamilyId;
+            childHyp.DetectionInd = -1;
+            childHyp.FrameInd = frameInd;
+            childHyp.ObservationPos = [];
+            childHyp.ObservationWorldPos = [];
+            childHyp.EstimatedWorldPos = predictedPos;
+            childHyp.CreationReason = TrackHypothesisTreeNode.NoObservation;
+            childHyp.KalmanFilterState = kalmanFilter.State;
+            childHyp.KalmanFilterStateCovariance = kalmanFilter.StateCovariance;
+            childHyp.KalmanFilterStatePrev = leaf.KalmanFilterState;
+            childHyp.KalmanFilterStateCovariancePrev = leaf.KalmanFilterStateCovariance;
+
+            % calculate score
+            [scorePart, scoreKalmanPart] = this.calcTrackShiftScore(leaf, childHyp, kalmanFilter);
+            childHyp.Score = leaf.Score + scorePart;
+            childHyp.ScoreKalman = leaf.ScoreKalman + scoreKalmanPart;
+
+            leaf.addChild(childHyp);
+            addedDueNoObservation = addedDueNoObservation + 1;
+
+            if debug
+                %fprintf('noObs leaf %s hyp%s\n', leaf.briefInfoStr, childHyp.briefInfoStr);
+            end
+        end
+    end
+    
+    % hypothesis3: (new track) track got the initial observation in this frame
+    
+    if frameInd > 0 % TODO: temporary cheat
+        for blobInd=1:length(frameDetections)
+            blob = frameDetections(blobInd);
+            centrPix = blob.Centroid;
+            centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
+
+            childHyp = TrackHypothesisTreeNode;
+            childHyp.Id = this.v.nextTrackCandidateId;
+            this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
+            childHyp.FamilyId = childHyp.Id;
+            childHyp.DetectionInd = blobInd;
+            childHyp.FrameInd = frameInd;
+            childHyp.ObservationPos = centrPix;
+            childHyp.ObservationWorldPos = centrWorld;
+            childHyp.EstimatedWorldPos = centrWorld;
+            childHyp.CreationReason = TrackHypothesisTreeNode.New;
+            childHyp.KalmanFilterState = [centrWorld(1:2) 0 0]; % vx=0 vy=0
+            childHyp.KalmanFilterStateCovariance = eye(length(childHyp.KalmanFilterState));
+            childHyp.KalmanFilterStatePrev = []; % no previous state
+            childHyp.KalmanFilterStateCovariancePrev = [];
+
+            % calculate score
+            [scorePart, scoreKalmanPart] = this.calcTrackShiftScore([], childHyp, kalmanFilter);
+            childHyp.Score = scorePart;
+            childHyp.ScoreKalman = scoreKalmanPart;
+
+            this.trackHypothesisForestPseudoNode.addChild(childHyp);
+            addedNew = addedNew + 1;
+
+            if debug
+                %fprintf('new hyp%s\n', childHyp.briefInfoStr);
+            end
+        end
+    end
+    
+    if debug
+        fprintf('addedDueNoObservation=%d\n', addedDueNoObservation);
+        fprintf('addedDueCorrespondence=%d\n', addedDueCorrespondence);
+        fprintf('addedNew=%d\n', addedNew);
+    end
+end
+
+function result = isPseudoRoot(this, trackTreeNode)
+    result = (trackTreeNode == this.trackHypothesisForestPseudoNode);
+end
+
+% print optimal tracks in ascending rootId order
+function printHypothesis(this, bestTrackLeafs, trackIdToScore, trackIdToScoreKalman)
+    allTrackIdToObj = containers.Map('KeyType', 'int32', 'ValueType', 'any');
+    leafIdRootId = zeros(length(bestTrackLeafs),2, 'int32');
+    
+    for i=1:length(bestTrackLeafs)
+        leaf = bestTrackLeafs{i};
+        leafId = leaf.Id;
+        allTrackIdToObj(leafId) = leaf;
+        
+        leafIdRootId(i,1) = leafId;
+        leafIdRootId(i,2) = leaf.FamilyId;;
+    end 
+    leafIdRootId = sortrows(leafIdRootId, 2);
+
+    for leafId = reshape(leafIdRootId(:,1), 1, [])
+        leaf = allTrackIdToObj(leafId);
+
+        path = leaf.getPathFromRoot;
+        path(1) = [];
+        
+        root = path{1};
+        fprintf('F%d Len=%d', root.FamilyId, length(path));
+        
+        leafParentStr = 'nil';
+        if ~isempty(leaf.Parent) && ~this.isPseudoRoot(leaf.Parent)
+            leafParentStr = leaf.Parent.briefInfoStr;
+        end
+        fprintf(' LeafParent=%s', leafParentStr);
+        
+        fprintf(' Leaf=%s', leaf.briefInfoStr);
+        
+        if ~isempty(trackIdToScore)
+            score = trackIdToScore(leaf.Id);
+            fprintf(' score=%.4f', score);
+        end
+
+        fprintf(' score*=%.4f', leaf.ScoreKalman);
+
+        if ~isempty(trackIdToScore)
+            scoreK = trackIdToScoreKalman(leaf.Id);
+            fprintf(' scoreK=%.4f', scoreK);
+            
+            parentScoreK = 0;
+            if ~isempty(leaf.Parent) && ~this.isPseudoRoot(leaf.Parent)
+                % TODO: store score in tree node
+                %parentScoreK = trackIdToScoreKalman(leaf.Parent.Id);
+                parentScoreK = leaf.Parent.ScoreKalman;
+            end
+            deltaScoreK = scoreK - parentScoreK;
+            fprintf(' ds=%.4f', deltaScoreK);
+        end
+
+        fprintf(' [');
+        for i=1:length(path)
+            fprintf('%s ', path{i}.briefInfoStr);
+        end
+        fprintf(']\n');
+    end
+end
+
+function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allTrackIdToObj, debug)
+    allTrackIds = cellfun(@(c) c.Id, leafSetNew);
+
+    % construct track incompatibility lists
+    leafCount = length(leafSetNew);
+    incompatibTrackEdgesMat = zeros(0,2,'int32');
+    for leafInd=1:leafCount
+        leaf = leafSetNew{leafInd};
+        
+        for othLeafInd=leafInd+1:leafCount
+            othLeaf = leafSetNew{othLeafInd};
+
+            hasCommonObs = utils.PW.hasCommonObservation(leaf, othLeaf);
+            if hasCommonObs
+                % two tracks are incompatible => there must be edge in the graph
+                % hence, independent set (ISP P=problem) solution will select only compatible vertices
+                
+                incompatibTrackEdgesMat = [incompatibTrackEdgesMat; leaf.Id othLeaf.Id]; % track ids
+                if debug
+                    %fprintf('edge %s-%s\n', leaf.briefInfoStr, othLeaf.briefInfoStr);
+                end
+            end
+        end
+    end
+    
+    % the graph may have isolated and connected vertices
+    
+    connectedEdgesCount = size(incompatibTrackEdgesMat,1);
+    connectedVertices = int32(reshape(unique(sort(incompatibTrackEdgesMat(:))),1,[]));
+    connectedVertexCount=length(connectedVertices);
+    
+    % select isolated vertices which automatically constitute the solution
+    isolatedVertices = setdiff(allTrackIds, connectedVertices);
+    
+    % all isolated vertices are automatically part of the solution
+    bestTrackLeaves = cell(1,0);
+    
+    for trackId=isolatedVertices
+        bestTrackLeaves{end+1} = allTrackIdToObj(trackId);
+    end
+
+    if connectedEdgesCount == 0
+        return;
+    end
+
+    if debug
+        componentsCount = utils.PW.connectedComponentsCountNative(incompatibTrackEdgesMat);
+        fprintf('V=%d E=%d ConnCompCount=%d\n', connectedVertexCount, connectedEdgesCount, componentsCount);
+    end
+
+    % trackIdToVertexInd normalized trackId into zero-based indices
+    
+    trackIdToVertexInd = containers.Map('KeyType', 'int32', 'ValueType', 'int32');
+    for vertexInd=1:connectedVertexCount
+        leafId = connectedVertices(vertexInd);
+        trackIdToVertexInd(leafId) = vertexInd;
+    end
+    
+    % vertexWeights
+    
+    vertexWeights = zeros(1, connectedVertexCount);
+    for vertexInd=1:connectedVertexCount
+        vertexId = connectedVertices(vertexInd);
+        %score = trackIdToScore(vertexId);
+        hypNode = allTrackIdToObj(vertexId);
+        score = hypNode.ScoreKalman;
+        vertexWeights(vertexInd) = score;
+    end
+
+    assert(~isempty(connectedVertices));
+    
+    % approximite solution for Independent Set Problem
+    indepVerticesMask = PWMaxWeightInependentSetMaxFirst(connectedVertices, incompatibTrackEdgesMat, vertexWeights);
+    indepVerticesMask = double(indepVerticesMask); % required by bintprog
+
+    if debug
+        fprintf('IndepSet (approx) weights = %f\n', sum(vertexWeights .* indepVerticesMask));
+    end
+    
+    % build constraint matrix A
+    
+    allowExactMWISP = connectedEdgesCount  < 200; % try exact solution for small problems only
+    if allowExactMWISP
+        A = zeros(connectedEdgesCount,connectedVertexCount); % costraints on edges
+        for edgeInd=1:connectedEdgesCount
+            trackIdFrom = incompatibTrackEdgesMat(edgeInd, 1);
+            trackIdTo   = incompatibTrackEdgesMat(edgeInd, 2);
+
+            vertexIndFrom = trackIdToVertexInd(trackIdFrom);
+            vertexIndTo   = trackIdToVertexInd(trackIdTo);
+
+            A(edgeInd, vertexIndFrom) = 1;
+            A(edgeInd, vertexIndTo  ) = 1;
+        end
+        b = ones(connectedEdgesCount,1);
+
+
+        % find set of tracks with maximal weight
+        % bintprog minimizes objective function but MWISP maximizes => put minus sign in obj fun
+        opt = optimoptions('bintprog');
+        opt.MaxTime = 5;
+        [x,fval,exitflag,output] = bintprog(-vertexWeights, A, b, [], [], indepVerticesMask, opt);
+        if exitflag==1
+            % solution found
+            indepVerticesMask = reshape(x, 1, []);
+            if debug
+                fprintf('IndepSet (exact) weight=%f bintprog time=%f\n', -fval, output.time);
+            end
+        else
+            fprintf('bintprog timeout, fallback to rough solution\n');
+        end
+    end
+    
+    optimTrackIdInds = find(indepVerticesMask);
+    optimTrackIds = connectedVertices(optimTrackIdInds);
+    
+    if debug
+        fprintf('MWIS cardinality=%d\n', length(optimTrackIdInds));
+    end
+    
+    % result solution = isolated vertices + result of MWISP
+    
+    for trackId=optimTrackIds
+        bestTrackLeaves{end+1} = allTrackIdToObj(trackId);
+    end
+end
+
+% Fix track hypothesis (if any) into track records.
+function allocateTrackAssignments(this, bestTrackLeafs, pruneWindow)
+    % gather new tracks or get track assignments
+    
+    for i=1:length(bestTrackLeafs)
+        leaf = bestTrackLeafs{i};
+        
+        % find ancestor to remove from hypothesis tree
+        
+        fixedAncestor = leaf.getAncestor(pruneWindow);
+        if isempty(fixedAncestor)
+            continue;
+        end
+        if this.isPseudoRoot(fixedAncestor)
+            continue;
+        end
+        
+        % find corresponding track record
+        
+        track = [];
+        if fixedAncestor.CreationReason == TrackHypothesisTreeNode.New
+            % allocate new track
+            
+            track = TrackedObject.NewTrackCandidate(fixedAncestor.FamilyId);
+            track.FirstAppearanceFrameIdx = fixedAncestor.FrameInd;
+        else
+            % find track with FimilyId
+            for i1=1:length(this.tracks)
+                if this.tracks{i1}.TrackCandidateId == fixedAncestor.FamilyId
+                    track = this.tracks{i1};
+                    break;
+                end
+            end
+            assert(~isempty(track), 'Track with ancestor.FamilyId must exist');
+        end
+
+        %
+        %detect = frameDetections(blobInd);
+
+        % project image position into TopView
+        %imagePos = detect.Centroid;
+        %worldPos = obj.distanceCompensator.cameraToWorld(imagePos);
+
+        %track.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
+
+        ass = ShapeAssignment();
+        ass.IsDetectionAssigned = fixedAncestor.CreationReason ~= TrackHypothesisTreeNode.NoObservation;
+        ass.DetectionInd = fixedAncestor.DetectionInd;
+        ass.v.EstimatedPosImagePix = fixedAncestor.ObservationPos;
+        ass.PredictedPos = fixedAncestor.EstimatedWorldPos;
+        ass.EstimatedPos = fixedAncestor.EstimatedWorldPos;
+
+        track.Assignments{fixedAncestor.FrameInd} = ass;
+
+        %obj.onAssignDetectionToTrackedObject(track, detect, image);
+
+        this.tracks{end+1} = track;
+    end
+end
+
+% Performs N-scan pruning.
+function pruneHypothesisTree(this, leafSet, pruneWindow, debug)
+    prunedTreeSet = cell(1,0);
+    for leafInd = 1:length(leafSet)
+        leaf = leafSet{leafInd};
+        
+        % find new family root
+        newRoot = leaf;
+        stepBack = 1;
+        while true
+            if stepBack == pruneWindow
+                break;
+            end
+            
+            % stop if parent is the pseudo root
+            if isempty(newRoot.Parent) || newRoot.Parent.Id == this.trackHypothesisForestPseudoNode.Id
+                break;
+            end
+            
+            newRoot = newRoot.Parent;
+            stepBack = stepBack + 1;
+        end
+        
+        % if tree is shallow - no need to prune it
+        if true
+            prunedTreeSet{end+1} = newRoot;
+        end
+    end
+    
+    this.trackHypothesisForestPseudoNode.clearChildren;
+    for i=1:length(prunedTreeSet)
+        this.trackHypothesisForestPseudoNode.addChild(prunedTreeSet{i});
+    end
+end
+
+function score = calcTrackSequenceScore(this, trackSeq)
+    dist = 0;
+    
+    if isempty(trackSeq)
+        return;
+    end
+    
+    oldCenter = trackSeq{1}.EstimatedPos;
+    trackLen = 1;
+    
+    for i=2:length(trackSeq)
+        trackLen = trackLen + 1;
+        
+        pos = trackSeq{i}.EstimatedPos;
+        distPart = norm(pos - oldCenter);
+        
+        dist = dist + distPart;
+        oldCenter = pos;
+    end
+    
+    if trackLen == 1
+        score = 0;
+    else
+        maxScore = 9999;
+        if dist < 0.0001
+            score = maxScore
+        else
+            score = 1 / dist;
+        end
+    end
+end
+
+function [scorePart, kalmanScorePart] = calcTrackShiftScore(this, parentTrackNode, trackNode, kalmanFilter)
+    % penalty for missed observation
+    % prob 0.4 - penalty -0.9163
+    % prob 0.6 - penalty -0.5108
+    probDetection = 0.6;
+    penalty = log(1 - probDetection);
+
+    % initial track score
+    nt = 5; % number of expected targets
+    fa = 25; % number of expected FA (false alarms)
+    precision = nt / (nt + fa);
+    initialScore = -log(precision);
+
+    % if initial score is large, then tracks with missed detections may
+    % be evicted from hypothesis tree
+    initialScore = abs(6*penalty);
+
+    first = trackNode;
+    if first.CreationReason == TrackHypothesisTreeNode.New
+        assert(isempty(parentTrackNode));
+        
+        kalmanScorePart = initialScore;
+        scorePart = initialScore;
+    else
+        assert(~isempty(parentTrackNode));
+        kalmanFilter.State = parentTrackNode.KalmanFilterState;
+        kalmanFilter.StateCovariance = parentTrackNode.KalmanFilterStateCovariance;
+        
+        predictedPos2 = kalmanFilter.predict(); % [X,Y]
+        predictedPos = [predictedPos2 0]; % z=0
+        
+        worldPos = first.EstimatedWorldPos;
+
+%         p1 = trackSeq{i}.ObservationWorldPos;
+%         if isempty(p1)
+%             p1 = trackSeq{i}.EstimatedWorldPos;
+%         end
+
+        p1 = first.ObservationWorldPos;
+        if ~isempty(p1)
+            % got observation
+            
+            kalmanScorePart = kalmanFilter.distance(p1(1:2)); 
+
+            distPart = norm(worldPos - predictedPos);
+            if distPart < 0.001
+                scorePart = 10;
+            else
+                scorePart = 1 / distPart;
+            end
+            %sig = this.v.swimmerMaxSpeed / 3;
+            %(1/(2*pi*sig))*exp(-0.5*distPart^2)
+        else
+            kalmanScorePart = penalty;
+            scorePart = penalty;
+        end        
+    end
+end
+
+function [score,kalmanScore] = calcTrackSequenceScoreNew(this, trackSeq, kalmanFilter)
+    score = 0;
+    kalmanScore = 0;
+
+    % penalty for missed observation
+    % prob 0.4 - penalty -0.9163
+    % prob 0.6 - penalty -0.5108
+    probDetection = 0.6;
+    penalty = log(1 - probDetection);
+
+    % initial track score
+    nt = 5; % number of expected targets
+    fa = 25; % number of expected FA (false alarms)
+    precision = nt / (nt + fa);
+    initialScore = -log(precision);
+
+    % if initial score is large, then tracks with missed detections may
+    % be evicted from hypothesis tree
+    initialScore = abs(6*penalty);
+
+    first = trackSeq{1};
+    if first.CreationReason == TrackHypothesisTreeNode.New
+        kalmanScore = initialScore;
+        score = initialScore;
+
+        startFrom = 2;
+        % first element of track may not have prev Kalman Filter state
+        kalmanFilter.State = first.KalmanFilterState;
+        kalmanFilter.StateCovariance = first.KalmanFilterStateCovariance;
+        
+        %
+        [a1,a2] = this.calcTrackShiftScore([], first, kalmanFilter);
+        assert(a2 == kalmanScore);
+    else
+        startFrom = 1;
+
+        assert(~isempty(first.KalmanFilterStatePrev), 'Subsequent track node must have Kalman Filter state');
+        kalmanFilter.State = first.KalmanFilterStatePrev;
+        kalmanFilter.StateCovariance = first.KalmanFilterStateCovariancePrev;
+    end
+    
+    for i=startFrom:length(trackSeq)
+        curNode = trackSeq{i};
+        predictedPos2 = kalmanFilter.predict(); % [X,Y]
+        predictedPos = [predictedPos2 0]; % z=0
+        
+        worldPos = curNode.EstimatedWorldPos;
+
+%         p1 = trackSeq{i}.ObservationWorldPos;
+%         if isempty(p1)
+%             p1 = trackSeq{i}.EstimatedWorldPos;
+%         end
+
+        % check world pos is correct
+%         if ~isempty(curNode.ObservationWorldPos)
+%         leaf = curNode.Parent;
+%         assert(~this.isPseudoRoot(leaf));
+%         centrWorld = curNode.ObservationWorldPos;
+%         kalmanFilter2 = this.createKalmanPredictor([0 0], 30);
+%         kalmanFilter2.State = leaf.KalmanFilterState;
+%         kalmanFilter2.StateCovariance = leaf.KalmanFilterStateCovariance;
+%         posPredicted = kalmanFilter2.predict();
+%         posEstimate2 = kalmanFilter2.correct(centrWorld(1:2));
+%         posEstimate = [posEstimate2 0]; % z=0
+%         assert(all(posEstimate == worldPos));
+%         end
+
+
+        observWorld = curNode.ObservationWorldPos;
+        if ~isempty(observWorld)
+            % got observation
+            
+            %kalmanScorePart = kalmanFilter.distance(observWorld(1:2)); 
+            kalmanScorePart = kalmanDistance(kalmanFilter, observWorld(1:2));
+            corrected = kalmanFilter.correct(observWorld(1:2));
+            corrected = [corrected 0];
+            %assert(all(corrected == worldPos)); % TODO:
+
+            distPart = norm(worldPos - predictedPos);
+            if distPart < 0.001
+                scorePart = 10;
+            else
+                scorePart = 1 / distPart;
+            end
+            %sig = this.v.swimmerMaxSpeed / 3;
+            %(1/(2*pi*sig))*exp(-0.5*distPart^2)
+        else
+            kalmanScorePart = penalty;
+            scorePart = penalty;
+        end        
+        
+%         curNodeParent = curNode.Parent;
+%         if this.isPseudoRoot(curNodeParent)
+%             curNodeParent = [];
+%         end
+%         [a1,a2] = this.calcTrackShiftScore(curNodeParent, curNode, kalmanFilter);
+        %assert(a1 == scorePart); % TODO:
+        %assert(a2 == kalmanScorePart);
+        
+        kalmanScore = kalmanScore + kalmanScorePart;
+        score = score + scorePart;
+    end
+    
+%     maxScore = 9999;
+%     if dist < 0.0001
+%         score = maxScore;
+%     else
+%         score = 1 / dist;
+%     end
 end
 
 function trackImgPos = getPrevFrameDetectionOrPredictedImagePos(this, track, curFrameInd)
@@ -429,10 +1152,14 @@ function onAssignDetectionToTrackedObject(this, track, detect, image)
     this.colorAppearance.onAssignDetectionToTrackedObject(track, detect, image);
 end
 
-function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType)
-    pathStartFrame = max([1, obj.frameInd - 250]);
+function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType, queryFrameInd)
+    if ~exist('queryFrameInd', 'var')
+        queryFrameInd = obj.frameInd;
+    end
     
-    detects = obj.detectionsPerFrame{obj.frameInd};
+    pathStartFrame = max([1, queryFrameInd - 250]);
+    
+    detects = obj.detectionsPerFrame{queryFrameInd};
     %imageWithTracks = drawDetections(obj, image, detects);
 
     if strcmp('TopView', coordType)
@@ -440,7 +1167,7 @@ function imageWithTracks = adornImageWithTrackedBodies(obj, image, coordType)
         image = obj.distanceCompensator.convertCameraImageToTopView(image, desiredImageSize);
     end
 
-    imageWithTracks = adornTracks(obj, image, pathStartFrame, obj.frameInd, obj.detectionsPerFrame, obj.tracks, coordType);
+    imageWithTracks = adornTracks(obj, image, pathStartFrame, queryFrameInd, obj.detectionsPerFrame, obj.tracks, coordType);
 end
 
 function videoUpd = generateVideoWithTrackedBodies(obj,mediaReader, framesToTake, detectionsPerFrame, tracks)
@@ -490,7 +1217,13 @@ function imageAdorned = adornTracks(obj, image, fromTime, toTimeInc, detectionsP
         end
         
         % process last frame
-        lastAss = track.Assignments{toTimeInc};
+
+        lastAss = [];
+        % TODO: implement track termination
+        if toTimeInc <= length(track.Assignments)
+            lastAss = track.Assignments{toTimeInc};
+        end
+        
         if ~isempty(lastAss)
             if lastAss.IsDetectionAssigned
                 % draw shape contour
@@ -560,8 +1293,18 @@ function [trackPolyline,initialTrackPos] = buildTrackPath(obj, track, fromTime, 
     trackPolyline = cell(0,0);
     initialTrackPos = [];
     for timeInd=fromTime:toTimeInc
-        ass = track.Assignments{timeInd};
-        if isempty(ass)
+        trackBreaks = false;
+        if timeInd > length(track.Assignments)
+            % TODO: implement track termination
+            trackBreaks = true;
+        else
+            ass = track.Assignments{timeInd};
+            if isempty(ass)
+                trackBreaks = true;
+            end
+        end
+        
+        if trackBreaks
             % push next polyline
             if ~isempty(curPolyline)
                 trackPolyline{end+1} =  curPolyline;

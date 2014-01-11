@@ -39,8 +39,9 @@ function play(this, tracker, debug)
             blob = frame.Blobs(blobInd);
             if isfield(blob,'WorldVelocity')
                 track = tracker.getTrackByBlobId(frame.SeqNum, blob.Id);
-                assert(~isempty(track));
-                track.SetVelocity(blob.WorldVelocity);
+                % TODO: tester-tracker cooperation
+                %assert(~isempty(track));
+                %track.SetVelocity(blob.WorldVelocity);
             end
         end
             

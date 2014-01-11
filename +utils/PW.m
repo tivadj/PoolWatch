@@ -87,6 +87,98 @@ function tracker = createSwimmerTracker(debug)
     tracker = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDetector, colorAppearance);
 end
 
+function result = hasCommonObservation(track, otherTrack)
+    assert(~isempty(track));
+    assert(~isempty(otherTrack));
+    
+    result = false;
+    
+    % node.DetectionInd is empty for root pseudo node or node for missed observation hypothesis
+    
+    childAnc = track;
+    while ~isempty(childAnc)
+        if ~isempty(childAnc.DetectionInd)
+        
+            otherAnc = otherTrack;
+            while ~isempty(otherAnc)
+                if ~isempty(otherAnc.DetectionInd)
+                    
+                    if childAnc.FrameInd == otherAnc.FrameInd && childAnc.DetectionInd == otherAnc.DetectionInd
+                        result = true;
+                        return;
+                    end
+                end
+                otherAnc = otherAnc.Parent;
+            end
+        end
+        childAnc = childAnc.Parent;
+    end
+end
+
+% Finds connected component in the graph, represented as list of edges.
+% connectedComponents([1 2; 2 3; 3 1; 4 5; 5 6])
+% result = {[1 2; 2 3; 3 1], [4 5; 5 6]}
+function edgeGraphList = connectedComponents(edgeGraph)
+    edgeCount = size(edgeGraph,1);
+    
+    componentIds = zeros(edgeCount, 1, 'int32');
+    
+    verticesToProcess = cell(1,0);
+    curComponent = 1;
+    
+    % for each component
+    
+    while true
+        pendingEdgesInds = find(componentIds(:) == 0);
+        if isempty(pendingEdgesInds)
+            break;
+        end
+        
+        pendingEdge = edgeGraph(pendingEdgesInds(1), :);
+        verticesToProcess{end+1} = pendingEdge(1);
+        verticesToProcess{end+1} = pendingEdge(2);
+        
+        % gather component
+        
+        while ~isempty(verticesToProcess)
+            vertex = verticesToProcess{1};
+            verticesToProcess(1) = [];
+
+            fromEdges = edgeGraph(:,1) == vertex;
+            toEdges   = edgeGraph(:,2) == vertex;
+            pending   = componentIds(:,1) == 0;
+            
+            incidentEdgesMask = (fromEdges | toEdges) & pending;
+            componentIds(incidentEdgesMask, 1) = curComponent;
+            
+            for adjVertex = reshape(edgeGraph(incidentEdgesMask, :), 1, [])
+                verticesToProcess{end+1} = adjVertex;
+            end
+        end
+        
+        curComponent = curComponent + 1;
+    end
+    
+    compCount = curComponent - 1;
+    edgeGraphList = cell(1,compCount);
+    for compInd=1:compCount
+        edgeGraphList{compInd} = edgeGraph(componentIds(:,1) == compInd, :);
+    end
+end
+
+function result = connectedComponentsCount(edgeGraph)
+    edgeGraphList = utils.PW.connectedComponents(edgeGraph);
+    result = length(edgeGraphList);
+end
+
+function result = connectedComponentsCountNative(edgeGraph)
+    %countMatlab = utils.PW.connectedComponentsCount(edgeGraph);
+    
+    countNative = PWConnectedComponentsCount(edgeGraph);
+    %assert(countMatlab == countNative);
+    result = countNative;
+end
+
 end
     
 end
