@@ -12,6 +12,10 @@ properties
     trackHypothesisForestPseudoNode; % type: TrackHypothesisTreeNode
     v;
     %v.swimmerMaxSpeed;
+
+    %v.encodedTreeString; % type: int32[] hypothesis tree as string cache
+    %v.encodedTreeStringSize; % type: int actual length of the tree as string
+    maxObservationsCountPerFrame; % type: int32
 end
 
 methods
@@ -36,7 +40,14 @@ function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDet
     this.v.pruneDepth = 5;
     
     % init track hypothesis pseudo root
+    % values of (Id,FrameInd,DetectionInd) are used in unique observation Id generation
     this.trackHypothesisForestPseudoNode = TrackHypothesisTreeNode;
+    this.trackHypothesisForestPseudoNode.Id = 0;
+    this.trackHypothesisForestPseudoNode.FrameInd = 0;
+    this.trackHypothesisForestPseudoNode.DetectionInd = 0;
+    
+    this.maxObservationsCountPerFrame = 1000;
+    assert(this.trackHypothesisForestPseudoNode.DetectionInd < this.maxObservationsCountPerFrame);
 
     purgeMemory(this);
 end
@@ -48,6 +59,9 @@ function purgeMemory(obj)
     obj.frameInd = 0;
     obj.v.nextTrackCandidateId=1;
     obj.trackHypothesisForestPseudoNode.clearChildren;
+    
+    obj.v.encodedTreeString = zeros(1, 5000000, 'int32');
+    obj.v.encodedTreeStringSize = 1;
 end
 
 % elapsedTimeMs - time in milliseconds since last frame
@@ -97,6 +111,8 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
             fprintf('Blob[%d] Centroid=[%.0f %.0f]\n', i, centr(1), centr(2));
         end
     end
+    
+    assert(length(bodyDescrs) <= this.maxObservationsCountPerFrame, 'observationCount exceeds the limit, used in unique ObservationId generation');
     
     % track shapes
 
@@ -578,7 +594,29 @@ end
 function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allTrackIdToObj, debug)
     allTrackIds = cellfun(@(c) c.Id, leafSetNew);
 
-    incompatibTrackEdgesMat = this.createTrackIncopatibilityGraph(leafSetNew, debug);
+%     tic;
+%     g1 = this.createTrackIncopatibilityGraph(leafSetNew, debug);
+%     t1 =  toc;
+%     if debug
+%         fprintf('createTrackIncopatibilityGraph MatLab time=%d\n', t1);
+%     end
+    
+    tic;
+    g2 = this.createTrackIncopatibilityGraphDLang(debug);
+    t2 =  toc;
+    if debug
+        fprintf('createTrackIncopatibilityGraph DLang time=%d\n', t2);
+    end
+
+%     g11=[min(g1,[],2) max(g1,[],2)];
+%     g22=[min(g2,[],2) max(g2,[],2)];
+%     
+%     normIncompatMat1 = sortrows(g11, [1,2]);
+%     normIncompatMat2 = sortrows(g22, [1,2]);
+%     
+%     assert(all(normIncompatMat1(:) == normIncompatMat2(:)));
+    
+    incompatibTrackEdgesMat = g2;
     
     % the graph may have isolated and connected vertices
     
@@ -619,11 +657,16 @@ function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allT
     assert(~isempty(connectedVertices));
     
     % approximite solution for Independent Set Problem
+    if debug
+        fprintf('PWMaxWeightInependentSetMaxFirst...');
+    end
+    tic;
     indepVerticesMask = PWMaxWeightInependentSetMaxFirst(connectedVertices, incompatibTrackEdgesMat, vertexWeights);
     indepVerticesMask = double(indepVerticesMask); % required by bintprog
+    approxMWISPTime=toc;
 
     if debug
-        fprintf('IndepSet (approx) weights = %f\n', sum(vertexWeights .* indepVerticesMask));
+        fprintf('IndepSet (approx) weights = %f time=%.2f\n', sum(vertexWeights .* indepVerticesMask), approxMWISPTime);
     end
     
     %
@@ -704,7 +747,9 @@ function incompatibTrackEdgesMat = createTrackIncopatibilityGraph(this, leafSetN
     
     % construct track incompatibility lists
     leafCount = length(leafSetNew);
-    incompatibTrackEdgesMat = zeros(0,2,'int32');
+    edgesCountMax = leafCount*(leafCount-1)/2;
+    incompatibTrackEdgesMat = zeros(edgesCountMax,2,'int32');
+    edgeInd = 1;
     for leafInd=1:leafCount
         leaf = leafSetNew{leafInd};
         
@@ -730,12 +775,68 @@ function incompatibTrackEdgesMat = createTrackIncopatibilityGraph(this, leafSetN
                 % two tracks are incompatible => there must be edge in the graph
                 % hence, independent set (ISP P=problem) solution will select only compatible vertices
                 
-                incompatibTrackEdgesMat = [incompatibTrackEdgesMat; leaf.Id othLeaf.Id]; % track ids
+                assert(edgeInd <= edgesCountMax);
+                incompatibTrackEdgesMat(edgeInd,:) = [leaf.Id othLeaf.Id]; % track ids
+                edgeInd = edgeInd + 1;
                 if debug
                     %fprintf('edge %s-%s\n', leaf.briefInfoStr, othLeaf.briefInfoStr);
                 end
             end
         end
+    end
+    incompatibTrackEdgesMat(edgeInd:end,:) = [];
+end
+
+function incompatibTrackEdgesMat = createTrackIncopatibilityGraphDLang(this, debug)
+    % encode hypothesis tree into string
+    
+    this.v.encodedTreeStringNextIndex = 1;
+    this.hypothesisTreeToTreeStringRec(this.trackHypothesisForestPseudoNode, debug);
+    treeStr = this.v.encodedTreeString(1,1:this.v.encodedTreeStringNextIndex-1);
+    
+    incompatibTrackEdgesMat = PWComputeTrackIncopatibilityGraph(treeStr);
+    incompatibTrackEdgesMat = reshape(incompatibTrackEdgesMat, 2, [])';
+end
+
+function reserveEncodedTreeString(this, newSize)
+    % resize cache
+    cacheSize = length(this.v.encodedTreeString);
+    if newSize > cacheSize
+        newCacheSize = int32(cacheSize * 2);
+        newCache = zeros(1,newCacheSize, 'int32');
+
+        newCache(1,1:this.v.encodedTreeStringNextIndex-1) = this.v.encodedTreeString(1,1:this.v.encodedTreeStringNextIndex-1);
+        this.v.encodedTreeString = newCache;
+    end
+end
+
+function hypothesisTreeToTreeStringRec(this, startFromNode, debug)
+    compoundId = compoundObservationId(this, startFromNode);
+
+    % 4 items: start node id, obs id, open and close brackets
+    this.reserveEncodedTreeString(this.v.encodedTreeStringNextIndex + 4);
+    
+    i = this.v.encodedTreeStringNextIndex;
+    this.v.encodedTreeString(1,i+0) = startFromNode.Id;
+    this.v.encodedTreeString(1,i+1) = compoundId;
+    this.v.encodedTreeStringNextIndex = i + 2;
+    
+    openBracket = -1;
+    closeBracket = -2;
+
+    % construct edge list representation of hypothesis graph
+    childrenCount = length(startFromNode.Children);
+    if childrenCount > 0
+        this.v.encodedTreeString(1,this.v.encodedTreeStringNextIndex) = openBracket;
+        this.v.encodedTreeStringNextIndex = this.v.encodedTreeStringNextIndex + 1;
+        
+        for i=1:childrenCount
+            child = startFromNode.Children{i};       
+            this.hypothesisTreeToTreeStringRec(child, debug);
+        end
+        
+        this.v.encodedTreeString(1,this.v.encodedTreeStringNextIndex) = closeBracket;
+        this.v.encodedTreeStringNextIndex = this.v.encodedTreeStringNextIndex + 1;
     end
 end
 
@@ -753,14 +854,17 @@ function populateHypothesisObservationIds(this, leaf, hypObsIds)
             continue;
         end
         
-        % put together FrameInd+DetectionInd as a unique id of observation
-        % NOTE: assume observationsCount < 1000 for each frame
-        
-        compoundId = int32(cur.FrameInd * 1000 + cur.DetectionInd);
+        compoundId = this.compoundObservationId(cur);        
         hypObsIds.add(compoundId);
         
         cur = cur.Parent;
     end
+end
+
+function compoundId = compoundObservationId(this, hypothesisNode)
+    % put together FrameInd+DetectionInd as a unique id of observation
+    % NOTE: assume observationsCount < 1000 for each frame
+    compoundId = int32(hypothesisNode.FrameInd * this.maxObservationsCountPerFrame + hypothesisNode.DetectionInd);
 end
 
 % Fix track hypothesis (if any) into track records.
