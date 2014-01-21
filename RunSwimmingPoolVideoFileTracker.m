@@ -90,10 +90,10 @@ function processFrames(obj, renderTopView, debug)
     end
     
     % track video
-    i=1;
+    frameOrder=1;
     
     for frameInd = obj.v.framesToTake
-        fprintf(1, 'SwimmerTracker: processing frame %d (#%d of %d)\n', frameInd, i, length(obj.v.framesToTake));
+        fprintf(1, 'SwimmerTracker: processing frame %d (#%d of %d)\n', frameInd, frameOrder, length(obj.v.framesToTake));
         
         userBreakFile = dir('_UserBreak.txt');
         if ~isempty(userBreakFile)
@@ -112,8 +112,8 @@ function processFrames(obj, renderTopView, debug)
         %imshow(image)
         
         %
-        image = utils.applyMask(image, obj.v.laneMask);
-        imshow(image)
+        %image = utils.applyMask(image, obj.v.laneMask);
+        %imshow(image)
 
         % do frame analysis
         
@@ -123,8 +123,9 @@ function processFrames(obj, renderTopView, debug)
 
         queryFrameInd = obj.v.tracker.getFrameIndWithReadyTrackInfo();
         if queryFrameInd ~= -1
+            queryImage = read(obj.v.videoReader, queryFrameInd);
             
-            imageWithTracks = obj.v.tracker.adornImageWithTrackedBodies(image, 'camera', queryFrameInd);
+            imageWithTracks = obj.v.tracker.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd);
             if renderTopView
                 subplot(2,1,1);
             end
@@ -135,22 +136,22 @@ function processFrames(obj, renderTopView, debug)
 
             if renderTopView
                 %imageWithTracksTopView = obj.v.tracker.adornImageWithTrackedBodiesTopView(image);
-                imageWithTracksTopView =obj.v.tracker.adornImageWithTrackedBodies(image, 'TopView');
+                imageWithTracksTopView =obj.v.tracker.adornImageWithTrackedBodies(queryImage, 'TopView');
                 subplot(2,1,2);
                 imshow(imageWithTracksTopView)
             end
 
             % store frame
 
-            obj.v.videoWithTracksDual(:,1:size(image,2),:,i) = imageWithTracks;
+            obj.v.videoWithTracksDual(:,1:size(queryImage,2),:,frameOrder) = imageWithTracks;
         end
         
         if renderTopView
-            obj.v.videoWithTracksDual(:,size(image,2)+1:end,:,i) = imageWithTracksTopView;
+            obj.v.videoWithTracksDual(:,size(image,2)+1:end,:,frameOrder) = imageWithTracksTopView;
         end
 
         drawnow;
-        i=i+1;
+        frameOrder=frameOrder+1;
     end
     
     % status
