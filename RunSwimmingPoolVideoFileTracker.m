@@ -125,7 +125,7 @@ function processFrames(obj, renderTopView, debug)
         if true && queryFrameInd ~= -1
             queryImage = read(obj.v.videoReader, queryFrameInd);
             
-            imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracks, obj.v.tracker.distanceCompensator);
+            imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracksHistory, obj.v.tracker.distanceCompensator);
             if renderTopView
                 subplot(2,1,1);
             end
@@ -171,7 +171,7 @@ function processFrames(obj, renderTopView, debug)
     %}
 
     % play movie
-    videoWithTracksMovie = immovie(obj.v.videoWithTracksDual(:,:,:,1:framesCount));
+    videoWithTracksMovie = immovie(obj.v.videoWithTracksDual(:,:,:,1:length(obj.v.framesToTake)));
     implay(videoWithTracksMovie, obj.v.videoReader.FrameRate);
 end
 

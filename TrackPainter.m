@@ -115,8 +115,7 @@ function imageAdorned = adornTracks(image, fromTime, toTimeInc, detectionsPerFra
             % put text for the last frame
             labelTrackCandidates = false;
             if labelTrackCandidates || ~track.IsTrackCandidate
-                estPos = lastAss.EstimatedPos;
-                estPosImage = TrackPainter.getViewCoord(estPos, coordType, lastAss, distanceCompensator);
+                estPosImage = lastAss.ObservationPosPixExactOrApprox;
                 textPos = estPosImage;
 
                 if lastAss.IsDetectionAssigned && ~isempty(box)
@@ -162,8 +161,7 @@ function [trackPolyline,initialTrackPos] = buildTrackPath(track, fromTime, toTim
         end
 
         %
-        worldPos = ass.EstimatedPos;
-        estPosImage = TrackPainter.getViewCoord(worldPos, coordType, ass, distanceCompensator);
+        estPosImage = ass.ObservationPosPixExactOrApprox;
             
         curPolyline{end+1} = estPosImage;
 
@@ -175,21 +173,6 @@ function [trackPolyline,initialTrackPos] = buildTrackPath(track, fromTime, toTim
     % push last polyline
     if ~isempty(curPolyline)
         trackPolyline{end+1} =  curPolyline;
-    end
-end
-
-function pos = getViewCoord(worldPos, coordType, assignment, distanceCompensator)
-    if strcmp('camera', coordType)
-        pos = distanceCompensator.worldToCamera(worldPos);
-
-        if assignment.IsDetectionAssigned && norm(assignment.v.EstimatedPosImagePix - pos) > 10
-            %warning('image and back projected coord diverge too much Expect=%d Actual=%d',assignment.v.EstimatedPosImagePix ,pos);
-        end
-    elseif strcmp('TopView', coordType)
-        expectCameraSize = CameraDistanceCompensator.expectCameraSize;
-        pos = CameraDistanceCompensator.scaleWorldToTopViewImageCoord(worldPos, expectCameraSize);
-    else
-        error('invalid argument coordType %s', coordType);
     end
 end
 
@@ -231,6 +214,7 @@ function imageTopView = adornImageWithTrackedBodiesTopView(obj, image)
 end
 
 function color = getTrackColor(track)
+    assert(~isempty(track));
     c_list = ['g' 'r' 'b' 'c' 'm' 'y'];
     c_list = utils.convert_color(c_list)*255;
 

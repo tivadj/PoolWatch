@@ -1,13 +1,16 @@
 classdef TrackedObject <handle
 properties
-    Id;
-    IsTrackCandidate; % true=TrackCandidate
     TrackCandidateId;
-    FirstAppearanceFrameIdx;
-    PromotionFramdInd; % the frame when candidate was promoted to track
+    
+    % used to cache predicted pos associated with track
+    PredictedPosWorld; % [X,Y,Z]
+    
+    % represents the most recent position of this target (tracked object)
+    % used for logging of each track image positions
+    LastEstimatedPosWorld; % [X,Y,Z]
+    LastObservationPosExactOrApprox; % [X,Y] in pixels
 
     KalmanFilter; % used to predict position of track candidate
-    Assignments;
     v;
     %v.AppearanceGmm; % type: cv.EM, accumulated color signature up to the last frame
     %v.AppearanceGmmTrained; % type: bool, whether appearamance GMM is trained
@@ -16,10 +19,7 @@ end
 methods(Static)
     function obj = NewTrackCandidate(trackCandidateId)
         obj = TrackedObject;
-        obj.IsTrackCandidate = true;
         obj.TrackCandidateId = trackCandidateId;
-        obj.Id = -1;
-        obj.Assignments = cell(1,1);
         obj.v.AppearanceGmm = cv.EM('Nclusters', 16, 'CovMatType', 'Spherical');
         obj.v.AppearanceGmmTrained = false;
         obj.v.AppearancePixels = zeros(0,3,'uint8');
@@ -29,22 +29,8 @@ end
 methods
     
 function id = idOrCandidateId(this)
-    if this.Id > 0
-        id = this.Id;
-    else
-        % make id negative to distinguish from TrackId
-        id = -this.TrackCandidateId;
-    end
-end
-
-function detectCount = getDetectionsCount(this, upToFrame)
-    detectCount = 0;
-    for i=this.FirstAppearanceFrameIdx:upToFrame
-        ass = this.Assignments{i};
-        if ~isempty(ass) && ass.IsDetectionAssigned
-            detectCount = detectCount + 1;
-        end
-    end
+    % make id negative to distinguish from TrackId
+    id = -this.TrackCandidateId;
 end
 
 function result = appearPixMax(this)

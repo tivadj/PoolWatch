@@ -3,6 +3,7 @@ properties
     frameInd;                 % type:int, number of processed frames
     detectionsPerFrame; % type: List<ShapeAssignment>
     tracks; % type: List<TrackedObject>
+    tracksHistory; % type: List<TrackedObject>
     %v.nextTrackId;
     % v.nextTrackCandidateId;
     poolRegionDetector;
@@ -11,6 +12,7 @@ properties
     colorAppearance;
     v;
     %v.swimmerMaxSpeed;
+    trackStatusList; % struct<TrackChangePerFrame> used locally in trackBlobs method only, but 
 end
 
 methods
@@ -32,11 +34,15 @@ function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDet
     % new tracks are allocated for detections further from any existent tracks by this distance
     this.v.minDistToNewTrack = 0.5;
     
+    % cache of track results
+    this.trackStatusList = struct(TrackChangePerFrame);
+    
     purgeMemory(this);
 end
 
 function purgeMemory(obj)
     obj.tracks=cell(0,0);
+    obj.tracksHistory=cell(0,0);
     obj.v.nextTrackId = 1;
     obj.frameInd = 0;
     obj.v.nextTrackCandidateId=1;
@@ -86,6 +92,14 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     % find shapes
     
     bodyDescrs = this.humanDetector.GetHumanBodies(this.frameInd, imageSwimmers, waterMask, debug);
+    
+    % associate corresponding world coordinates of blob
+    for i=1:length(bodyDescrs)
+        centr = bodyDescrs(i).Centroid;
+        centrWorld = this.distanceCompensator.cameraToWorld(centr);
+        bodyDescrs(i).CentroidWorld = centrWorld;
+    end
+    
     this.detectionsPerFrame{this.frameInd} = bodyDescrs;
     
     if debug
@@ -97,16 +111,84 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
         end
     end
     
-    % track shapes
+    %
+    [frameIndWithTrackInfo,trackStatusList] = this.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
 
-    processDetections(this, this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
+	% update positions history for each track
+    this.recordTrackStatus(frameIndWithTrackInfo,trackStatusList);
+
+    this.promoteMatureTrackCandidates(this.frameInd);
 end
 
-function processDetections(this, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
+function recordTrackStatus(this, frameIndWithTrackInfo, trackStatusList)
+    for i=1:length(trackStatusList)
+        trackStatus = trackStatusList(i);
+
+        % find corresponding track by ID
+        trackHistInd = -1;
+        if trackStatus.UpdateType == TrackChangePerFrame.New
+            trackHistInd = -1;
+        elseif trackStatus.UpdateType == TrackChangePerFrame.ObservationUpdate ||...
+               trackStatus.UpdateType == TrackChangePerFrame.NoObservation
+               %trackStatus.UpdateType == TrackChangePerFrame.Finished
+            trackByIdPred = @(t) t.TrackCandidateId == trackStatus.TrackCandidateId;
+            trackHistInd = this.getTrackIndFromHistory(trackByIdPred);
+        end
+        
+        if trackHistInd == -1 && trackStatus.UpdateType == TrackChangePerFrame.NoObservation
+            % track history was removed as false detection
+            continue;
+        end
+        % remove track record
+%         if trackStatus.UpdateType == TrackChangePerFrame.Finished
+%             this.tracksHistory(trackHistInd) = [];
+%         end
+
+        %
+        ass = ShapeAssignment;
+        ass.EstimatedPosWorld = trackStatus.EstimatedPosWorld;
+        ass.ObservationPosPixExactOrApprox = trackStatus.ObservationPosPixExactOrApprox;
+
+        % copy blob coordinates
+        if trackStatus.UpdateType == TrackChangePerFrame.ObservationUpdate || trackStatus.UpdateType == TrackChangePerFrame.New
+            ass.IsDetectionAssigned = true;
+            ass.DetectionInd = trackStatus.ObservationInd;
+        elseif trackStatus.UpdateType == TrackChangePerFrame.NoObservation
+            ass.IsDetectionAssigned = false;
+            ass.DetectionInd = 0;
+        end
+        
+        % allocate new track
+        if trackHistInd ==-1
+            isNew = trackStatus.UpdateType == TrackChangePerFrame.New;
+            assert(isNew);
+            
+            % Track is not deleted from Tracker but deleted TrackHistory
+
+            trackRecord = TrackInfoHistory();
+            trackRecord.TrackCandidateId = trackStatus.TrackCandidateId;
+            trackRecord.FirstAppearanceFrameIdx = frameIndWithTrackInfo;
+
+            this.tracksHistory{end+1} = trackRecord;
+            trackHistInd = length(this.tracksHistory);
+        end
+        
+        assert(trackHistInd <= length(this.tracksHistory));
+        this.tracksHistory{trackHistInd}.Assignments{frameIndWithTrackInfo} = ass;
+    end
+end
+
+function [frameIndWithTrackInfo,trackStatusListResult] = trackBlobs(this, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
     % remember tracks count at the beginning of current frame processing
     % because new tracks may be added
     %tracksCountPrevFrame = length(obj.tracks);
     
+    %this.trackStatusList(:) = [];
+    % cache of tracking results for each frame
+    %this.trackStatusList = struct(TrackChangePerFrame);
+    %this.trackStatusList(1)=[];
+    this.trackStatusList(:) = [];
+
     %
     predictSwimmerPositions(this, frameInd, fps);
 
@@ -132,50 +214,49 @@ function processDetections(this, frameInd, elapsedTimeMs, fps, frameDetections, 
         trackInd = assignment(i,1);
         detectInd = assignment(i,2);
 
+        % estimate position
+
+        track = this.tracks{trackInd};
         detect=frameDetections(detectInd);
 
-        ass = this.tracks{trackInd}.Assignments{frameInd};
-        ass.IsDetectionAssigned = true;
-        ass.DetectionInd = detectInd;
-
-        % estimate position
-        imagePos = detect.Centroid;
-        ass.v.EstimatedPosImagePix = imagePos;
-
-        % project image position into TopView
-        worldPos = this.distanceCompensator.cameraToWorld(imagePos);
-        
-        worldPos2 = worldPos(1:2);
-        posEstimate2 = this.tracks{trackInd}.KalmanFilter.correct(worldPos2);
+        worldPos = detect.CentroidWorld;
+        posEstimate2 =track.KalmanFilter.correct(worldPos(1:2));
         posEstimate = [posEstimate2 worldPos(3)];
         
-        ass.EstimatedPos = posEstimate;
+        track.LastEstimatedPosWorld = posEstimate;
+        track.LastObservationPosExactOrApprox = detect.Centroid;
 
-        this.tracks{trackInd}.Assignments{frameInd} = ass;
+        %
+        this.onAssignDetectionToTrackedObject(track, detect, image);
         
         %
-        this.onAssignDetectionToTrackedObject(this.tracks{trackInd}, detect, image);
+        status = TrackChangePerFrame;
+        status.TrackCandidateId = track.TrackCandidateId;
+        status.UpdateType = TrackChangePerFrame.ObservationUpdate;
+        status.EstimatedPosWorld = posEstimate;
+        status.ObservationInd = detectInd;
+        status.ObservationPosPixExactOrApprox = detect.Centroid;
+        this.trackStatusList(end+1) = struct(status);
    end
 
     assignTrackCandidateToUnassignedDetections(this, unassignedDetections, frameDetections, frameInd, image, fps);
 
     driftUnassignedTracks(this, unassignedTracks, frameInd);
 
-    promoteMatureTrackCandidates(this, frameInd);
-
     % assert EstimatedPos is initialized
-    for r=1:length(this.tracks)
-        if frameInd > length(this.tracks{r}.Assignments)
-            assert(false, 'IndexOutOfRange: frameInd=%d greater than length(assignments)=%d\n', frameInd, length(this.tracks{r}.Assignments));
-        end
-        
-        a = this.tracks{r}.Assignments{frameInd};
-        if isempty(a)
+    for r=1:length(this.trackStatusList)
+        status = this.trackStatusList(r);
+
+        if isempty(status.EstimatedPosWorld)
             assert(false);
         end
-
-        assert(~isempty(a.EstimatedPos), 'EstimatedPos for track ind=%d ass ind=%d is not initalized\n', r, frameInd);
+        if isempty(status.ObservationPosPixExactOrApprox)
+            assert(false);
+        end
     end
+    
+    frameIndWithTrackInfo = frameInd;
+    trackStatusListResult = this.trackStatusList; % take data from cache
 end
 
 function predictSwimmerPositions(obj, frameInd, fps)
@@ -185,13 +266,16 @@ function predictSwimmerPositions(obj, frameInd, fps)
 
         worldPos2 = track.KalmanFilter.predict();
         worldPos = [worldPos2 0]; % append zeroHeight = 0
+
+        %%%%%
+        track.PredictedPosWorld = worldPos;
         
         %
-        ass = ShapeAssignment();
-        ass.IsDetectionAssigned = false;
-        ass.DetectionInd = -1;
-        ass.PredictedPos = worldPos; % take pair (x,y)
-        obj.tracks{r}.Assignments{frameInd} = ass;
+%         ass = ShapeAssignment();
+%         ass.IsDetectionAssigned = false;
+%         ass.DetectionInd = -1;
+%         ass.PredictedPos = worldPos; % take pair (x,y)
+%         obj.tracks{r}.Assignments{frameInd} = ass;
     end
 end
 
@@ -220,11 +304,10 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image,
     trackDetectCost=zeros(trackObjCount, detectCount);
     for trackInd=1:trackObjCount
         track = this.tracks{trackInd};
-        trackedObjPos = track.Assignments{frameInd}.PredictedPos;
         
         if debug
             % recover track pos
-            trackImgPos = this.getPrevFrameDetectionOrPredictedImagePos(track, frameInd);
+            trackImgPos = track.LastObservationPosExactOrApprox;
             fprintf('Track Id=%d ImgPos=[%.0f %.0f]\n', track.idOrCandidateId, trackImgPos(1), trackImgPos(2));
         end
         
@@ -235,10 +318,8 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image,
 
             maxCost = 99999;
             
-            centrPix = detect.Centroid;
-            centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
-            
-            dist=norm(centrWorld-trackedObjPos);
+            centrWorld = detect.CentroidWorld;
+            dist=norm(centrWorld-track.PredictedPosWorld);
             
             % keep swimmers inside the area of max possible shift per frame
             if dist > swimmerMaxShiftPerFrameM
@@ -257,31 +338,32 @@ function trackDetectCost = calcTrackToDetectionAssignmentCostMatrix(this, image,
     end
 end
 
-function trackImgPos = getPrevFrameDetectionOrPredictedImagePos(this, track, curFrameInd)
-    assert(curFrameInd >= 2, 'There is no previous frame for the first frame');
-    
-    prevFrameAssign = track.Assignments{curFrameInd-1};
+function discardTrackCore(this, trackCandidateId)
+    trackIndToRemove = -1;
+    for trackInd=1:length(this.tracks)
+        track = this.tracks{trackInd};
+        if track.TrackCandidateId == trackCandidateId
+            trackIndToRemove = trackInd;
+            break;
+        end
+    end
 
-    if prevFrameAssign.IsDetectionAssigned
-        prevFrameBlobs = this.detectionsPerFrame{curFrameInd-1};
-        prevBlob = prevFrameBlobs(prevFrameAssign.DetectionInd);
-        trackImgPos = prevBlob.Centroid;
-    else
-        trackImgPos = this.distanceCompensator.worldToCamera(prevFrameAssign.EstimatedPos);
+    if trackIndToRemove ~= -1
+        this.tracks(trackIndToRemove) = [];
     end
 end
 
 function promoteMatureTrackCandidates(obj, frameInd)
     % One period of breaststroke=90 frames for 30fps video
     % at least half of frames should have detected the human
-    trackCandidateMaturingTime = 90; % number of frames to scrutinize if candidate is a human or noise
+    trackCandidateMaturingTime = 10; % number of frames to scrutinize if candidate is a human or noise
     trackCandidatePromotionRatio = 8/15; % candidate is promoted to track if is frequently detected
     
     trackCandidateInfancyTime = 5; % number of frames to scrutinize the candidate if it just noise and to be removed early
     trackCandidateInfancyRatio = 1/5+0.01; % candidate is discarded if detected infrequently during infancy time
 
-    for candInd=1:length(obj.tracks)
-        cand=obj.tracks{candInd};
+    for candInd=1:length(obj.tracksHistory)
+        cand=obj.tracksHistory{candInd};
         if ~cand.IsTrackCandidate
             continue;
         end
@@ -293,12 +375,14 @@ function promoteMatureTrackCandidates(obj, frameInd)
         if lifeTime <= trackCandidateInfancyTime
             if detectRatio < trackCandidateInfancyRatio
                 % candidate is a noise, discard it
-                obj.tracks{candInd}=[]; % mark for deletion
+                obj.discardTrackCore(cand.TrackCandidateId);
+                obj.tracksHistory{candInd}=[]; % mark for deletion
             end
         elseif lifeTime >= trackCandidateMaturingTime
             if detectRatio < trackCandidatePromotionRatio
                 % candidate is a noise, discard it
-                obj.tracks{candInd}=[]; % mark for deletion
+                obj.discardTrackCore(cand.TrackCandidateId);
+                obj.tracksHistory{candInd}=[]; % mark for deletion
             else
                 % candidate is a stable detection, promote to track
 
@@ -306,17 +390,17 @@ function promoteMatureTrackCandidates(obj, frameInd)
                 obj.v.nextTrackId = obj.v.nextTrackId + 1;
 
                 % promote TrackCandidiate into Track
-                obj.tracks{candInd}.Id = newTrackId;
-                obj.tracks{candInd}.IsTrackCandidate = false;
-                obj.tracks{candInd}.PromotionFramdInd = frameInd;
+                obj.tracksHistory{candInd}.Id = newTrackId;
+                obj.tracksHistory{candInd}.IsTrackCandidate = false;
+                obj.tracksHistory{candInd}.PromotionFramdInd = frameInd;
             end 
         end        
     end
 
     % clean empty track candidate slots
-    for i=length(obj.tracks):-1:1 % goes backward
-        if isempty(obj.tracks{i})
-            obj.tracks(i) = [];
+    for i=length(obj.tracksHistory):-1:1 % goes backward
+        if isempty(obj.tracksHistory{i})
+            obj.tracksHistory(i) = [];
         end
     end
 end
@@ -351,12 +435,9 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         for trackInd=1:length(obj.tracks)
             track = obj.tracks{trackInd};
 
-            trackImgPos = obj.getPrevFrameDetectionOrPredictedImagePos(track, frameInd);
-            
-            
             for blobInd=blobInds(farAwayBlobsMask)
                 blob = frameDetections(blobInd);
-                dist = norm(trackImgPos - blob.Centroid);
+                dist = norm(track.LastEstimatedPosWorld - blob.CentroidWorld);
                 
                 % new tracks are allocated for detections further from any existent tracks by this distance
                 if dist < obj.v.minDistToNewTrack
@@ -369,51 +450,47 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
     farAwayBlobs = blobInds(farAwayBlobsMask);
     
     for blobInd=farAwayBlobs
+        detect = frameDetections(blobInd);
+
         % new track candidate
         
         cand = TrackedObject.NewTrackCandidate(obj.v.nextTrackCandidateId);
         obj.v.nextTrackCandidateId = obj.v.nextTrackCandidateId + 1;
 
-        cand.FirstAppearanceFrameIdx = frameInd;
-        
-        %
-        detect = frameDetections(blobInd);
-        
         % project image position into TopView
-        imagePos = detect.Centroid;
-        worldPos = obj.distanceCompensator.cameraToWorld(imagePos);
-
+        worldPos = detect.CentroidWorld;
         cand.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
-
-        ass = ShapeAssignment();
-        ass.IsDetectionAssigned = true;
-        ass.DetectionInd = blobInd;
-        ass.v.EstimatedPosImagePix = imagePos;
-        ass.PredictedPos = worldPos;
-        ass.EstimatedPos = worldPos;
-
-        cand.Assignments{frameInd} = ass;
+        cand.LastEstimatedPosWorld = worldPos; % world pos is the initial estimate
+        cand.LastObservationPosExactOrApprox = detect.Centroid;
         
         obj.onAssignDetectionToTrackedObject(cand, detect, image);
-
         obj.tracks{end+1} = cand;
+        
+        %
+        
+        status = TrackChangePerFrame;
+        status.TrackCandidateId = cand.TrackCandidateId;
+        status.UpdateType = TrackChangePerFrame.New;
+        status.EstimatedPosWorld = worldPos;
+        status.ObservationInd = blobInd;
+        status.ObservationPosPixExactOrApprox = detect.Centroid;
+        obj.trackStatusList(end+1) = struct(status);
     end
 end
 
 function driftUnassignedTracks(this, unassignedTracksByRow, frameInd)
     % for unassigned tracks initialize EstimatedPos = PredictedPos by default
     for trackInd=unassignedTracksByRow'
-        a = this.tracks{trackInd}.Assignments{frameInd};
-        assert(~isempty(a.PredictedPos), 'Kalman Predictor must have initialized the PredictedPos (track=%d assignment=%d)', trackInd, frameInd);
+        track = this.tracks{trackInd};
+        assert(~isempty(track.PredictedPosWorld), 'PredictedPos must have been initialized (trackInd=%d frameInd=%d)', trackInd, frameInd);
 
-        estPos = a.PredictedPos;
-        a.EstimatedPos = estPos;
-        this.tracks{trackInd}.Assignments{frameInd} = a;
+        % predicted pos is the best estimate
+        estimatedPos = track.PredictedPosWorld;
 
         % TODO: finish track if detections lost for some time
         
         %
-        x = estPos(1);
+        x = estimatedPos(1);
         poolSize = this.distanceCompensator.poolSize;
         if x < 1 || x > poolSize(2) - 1
             isNearBorder = true;
@@ -424,11 +501,25 @@ function driftUnassignedTracks(this, unassignedTracksByRow, frameInd)
         % we don't use Kalman filter near pool boundary as swimmers
         % usually reverse their direction here
         if isNearBorder
-            kalmanObj = this.tracks{trackInd}.KalmanFilter;
+            kalmanObj = track.KalmanFilter;
             
             % after zeroing velocity, Kalman predictions would aim single position
             kalmanObj.State(3:end)=0; % zero vx and vy
         end
+        
+        %
+        track.LastEstimatedPosWorld = estimatedPos;
+        approxBlobCentroid = this.distanceCompensator.worldToCamera(estimatedPos);
+        track.LastObservationPosExactOrApprox = approxBlobCentroid;
+        
+        %
+        status = TrackChangePerFrame;
+        status.TrackCandidateId = track.TrackCandidateId;
+        status.UpdateType = TrackChangePerFrame.NoObservation;
+        status.EstimatedPosWorld = estimatedPos;
+        status.ObservationInd = 0;
+        status.ObservationPosPixExactOrApprox = approxBlobCentroid;
+        this.trackStatusList(end+1) = struct(status);
     end
 end
 
@@ -525,6 +616,19 @@ function track = getTrackByBlobId(this, frameId, blobId)
                 track = curTrack;
                 return;
             end
+        end
+    end
+end
+
+function trackInd = getTrackIndFromHistory(this, pred)
+    trackInd = -1;
+    
+    for i=1:length(this.tracksHistory)
+        curTrack = this.tracksHistory{i};
+        
+        if pred(curTrack)
+            trackInd = i;
+            break;
         end
     end
 end
