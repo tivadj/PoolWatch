@@ -166,8 +166,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
             centrPix = blob.Centroid;
 
             % consider only blobs within specified gate
-            % calculate blob centroid positions
-            centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
+            centrWorld = blob.CentroidWorld;
             dist = norm(leaf.EstimatedWorldPos-centrWorld);
             if dist > swimmerMaxShiftPerFrameM
                 continue;
@@ -224,12 +223,9 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
             hasCloseObservations = false;
             for i=1:length(frameDetections)
                 blob = frameDetections(blobInd);
-                blobCentr = blob.Centroid;
 
                 % consider only blobs within specified gate
-                % calculate blob centroid positions
-                blobWorld = this.distanceCompensator.cameraToWorld(blobCentr);
-                dist = norm(predictedPos-blobWorld);
+                dist = norm(predictedPos-blob.CentroidWorld);
                 if dist < this.v.minDistToNewTrack
                     hasCloseObservations = true;
                     break;
@@ -279,8 +275,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
     if mod(frameInd-1, initNewTrackDelay) == 0
         for blobInd=1:length(frameDetections)
             blob = frameDetections(blobInd);
-            centrPix = blob.Centroid;
-            centrWorld = this.distanceCompensator.cameraToWorld(centrPix);
+            centrWorld = blob.CentroidWorld;
 
             % create hypothesis node
             
@@ -290,7 +285,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
             childHyp.FamilyId = childHyp.Id;
             childHyp.DetectionInd = blobInd;
             childHyp.FrameInd = frameInd;
-            childHyp.ObservationPos = centrPix;
+            childHyp.ObservationPos = blob.Centroid;
             childHyp.ObservationWorldPos = centrWorld;
             childHyp.EstimatedWorldPos = centrWorld;
             childHyp.CreationReason = TrackHypothesisTreeNode.New;
