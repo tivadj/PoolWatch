@@ -1,18 +1,30 @@
-classdef MultiHypothesisTracker
+classdef MultiHypothesisTracker < handle
 %MULTIHYPOTHESISTRACKER Summary of this class goes here
 %   Detailed explanation goes here
 
 properties
+    distanceCompensator;
+    
     trackHypothesisForestPseudoNode; % type: TrackHypothesisTreeNode
-    %v.encodedTreeString; % type: int32[] hypothesis tree as string cache
-    %v.encodedTreeStringSize; % type: int actual length of the tree as string
+    
     maxObservationsCountPerFrame; % type: int32
+    pruneDepth;
+    
+    encodedTreeString; % type: int32[] hypothesis tree as string cache
+    encodedTreeStringNextIndex; % type: int actual length of the tree as string
+    
+    trackStatusList; % struct<TrackChangePerFrame> used locally in trackBlobs method only, but 
+    frameIndWithTrackInfo; % type: int32
+    v;
 end
 
 methods
     
-function this = MultiHypothesisTracker()
-    this.v.pruneDepth = 5;
+function this = MultiHypothesisTracker(distanceCompensator)
+    assert(~isempty(distanceCompensator));
+    this.distanceCompensator = distanceCompensator;
+    
+    this.pruneDepth = 5;
     
     % init track hypothesis pseudo root
     % values of (Id,FrameInd,DetectionInd) are used in unique observation Id generation
@@ -24,34 +36,51 @@ function this = MultiHypothesisTracker()
     this.maxObservationsCountPerFrame = 1000;
     assert(this.trackHypothesisForestPseudoNode.DetectionInd < this.maxObservationsCountPerFrame);
 
+    this.v.swimmerMaxSpeed = 2.3; % max speed for swimmers 2.3m/s
+
+    % new tracks are allocated for detections further from any existent tracks by this distance
+    this.v.minDistToNewTrack = 0.5;
+
+    % cache of track results
+    this.trackStatusList = struct(TrackChangePerFrame);
+
     this.purgeMemory();
 end
 
-function purgeMemory(obj)
-    obj.trackHypothesisForestPseudoNode.clearChildren;
+function purgeMemory(this)
+    this.v.nextTrackCandidateId=1;
+
+    this.trackHypothesisForestPseudoNode.clearChildren;
     
-    obj.v.encodedTreeString = zeros(1, 5000000, 'int32');
-    obj.v.encodedTreeStringSize = 1;
+    this.encodedTreeString = zeros(1, 5000000, 'int32');
 end
 
 % Returns frame number for which track info (position, velocity vector etc) is available.
 % returns -1 if there is not available frames.
 function queryFrameInd = getFrameIndWithReadyTrackInfo(this)
-    queryFrameInd = this.frameInd - this.v.pruneDepth - 1;
+    queryFrameInd = this.frameInd - this.pruneDepth - 1;
     
     if queryFrameInd < 1
         queryFrameInd = -1;
     end
 end
 
-function processDetections(this, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
+function [frameIndWithTrackInfo,trackStatusListResult] = trackBlobs(this, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
     assert(length(frameDetections) <= this.maxObservationsCountPerFrame, 'observationCount exceeds the limit, used in unique ObservationId generation');
 
-    swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
-    this.processDetections_Mht(image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug);
+    % clear result cache
+    this.trackStatusList(:) = [];
+    
+    shapeCentroidNoise = 0.5;
+    %swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
+    swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + shapeCentroidNoise;
+    this.processDetections(image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug);
+    
+    frameIndWithTrackInfo = this.frameIndWithTrackInfo;
+    trackStatusListResult = this.trackStatusList;
 end
 
-function processDetections_Mht(this, image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug)
+function processDetections(this, image, frameInd, elapsedTimeMs, fps, frameDetections, swimmerMaxShiftPerFrameM, debug)
     this.growTrackHyposhesisTree(frameInd, frameDetections, elapsedTimeMs, fps, swimmerMaxShiftPerFrameM, debug);
     
     leafSetNew = this.trackHypothesisForestPseudoNode.getLeafSet(false);
@@ -104,9 +133,9 @@ function processDetections_Mht(this, image, frameInd, elapsedTimeMs, fps, frameD
     end
 
     %
-    pruneWindow = this.v.pruneDepth + 1;
+    pruneWindow = this.pruneDepth + 1;
     
-    this.allocateTrackAssignments(bestTrackLeafs, pruneWindow);
+    this.collectTrackChanges(frameInd, bestTrackLeafs, pruneWindow);
     
     this.pruneHypothesisTree(bestTrackLeafs, pruneWindow, debug);
 
@@ -555,9 +584,9 @@ end
 function incompatibTrackEdgesMat = createTrackIncopatibilityGraphDLang(this, debug)
     % encode hypothesis tree into string
     
-    this.v.encodedTreeStringNextIndex = 1;
+    this.encodedTreeStringNextIndex = 1;
     this.hypothesisTreeToTreeStringRec(this.trackHypothesisForestPseudoNode, debug);
-    treeStr = this.v.encodedTreeString(1,1:this.v.encodedTreeStringNextIndex-1);
+    treeStr = this.encodedTreeString(1,1:this.encodedTreeStringNextIndex-1);
     
     incompatibTrackEdgesMat = PWComputeTrackIncopatibilityGraph(treeStr);
     incompatibTrackEdgesMat = reshape(incompatibTrackEdgesMat, 2, [])';
@@ -565,13 +594,13 @@ end
 
 function reserveEncodedTreeString(this, newSize)
     % resize cache
-    cacheSize = length(this.v.encodedTreeString);
+    cacheSize = length(this.encodedTreeString);
     if newSize > cacheSize
         newCacheSize = int32(cacheSize * 2);
         newCache = zeros(1,newCacheSize, 'int32');
 
-        newCache(1,1:this.v.encodedTreeStringNextIndex-1) = this.v.encodedTreeString(1,1:this.v.encodedTreeStringNextIndex-1);
-        this.v.encodedTreeString = newCache;
+        newCache(1,1:this.encodedTreeStringNextIndex-1) = this.encodedTreeString(1,1:this.encodedTreeStringNextIndex-1);
+        this.encodedTreeString = newCache;
     end
 end
 
@@ -579,12 +608,12 @@ function hypothesisTreeToTreeStringRec(this, startFromNode, debug)
     compoundId = compoundObservationId(this, startFromNode);
 
     % 4 items: start node id, obs id, open and close brackets
-    this.reserveEncodedTreeString(this.v.encodedTreeStringNextIndex + 4);
+    this.reserveEncodedTreeString(this.encodedTreeStringNextIndex + 4);
     
-    i = this.v.encodedTreeStringNextIndex;
-    this.v.encodedTreeString(1,i+0) = startFromNode.Id;
-    this.v.encodedTreeString(1,i+1) = compoundId;
-    this.v.encodedTreeStringNextIndex = i + 2;
+    i = this.encodedTreeStringNextIndex;
+    this.encodedTreeString(1,i+0) = startFromNode.Id;
+    this.encodedTreeString(1,i+1) = compoundId;
+    this.encodedTreeStringNextIndex = i + 2;
     
     openBracket = -1;
     closeBracket = -2;
@@ -592,16 +621,16 @@ function hypothesisTreeToTreeStringRec(this, startFromNode, debug)
     % construct edge list representation of hypothesis graph
     childrenCount = length(startFromNode.Children);
     if childrenCount > 0
-        this.v.encodedTreeString(1,this.v.encodedTreeStringNextIndex) = openBracket;
-        this.v.encodedTreeStringNextIndex = this.v.encodedTreeStringNextIndex + 1;
+        this.encodedTreeString(1,this.encodedTreeStringNextIndex) = openBracket;
+        this.encodedTreeStringNextIndex = this.encodedTreeStringNextIndex + 1;
         
         for i=1:childrenCount
             child = startFromNode.Children{i};       
             this.hypothesisTreeToTreeStringRec(child, debug);
         end
         
-        this.v.encodedTreeString(1,this.v.encodedTreeStringNextIndex) = closeBracket;
-        this.v.encodedTreeStringNextIndex = this.v.encodedTreeStringNextIndex + 1;
+        this.encodedTreeString(1,this.encodedTreeStringNextIndex) = closeBracket;
+        this.encodedTreeStringNextIndex = this.encodedTreeStringNextIndex + 1;
     end
 end
 
@@ -633,8 +662,13 @@ function compoundId = compoundObservationId(this, hypothesisNode)
 end
 
 % Fix track hypothesis (if any) into track records.
-function allocateTrackAssignments(this, bestTrackLeafs, pruneWindow)
+function collectTrackChanges(this, frameInd, bestTrackLeafs, pruneWindow)
     % gather new tracks or get track assignments
+    readyFrameInd = frameInd - pruneWindow;
+    if readyFrameInd < 1
+        readyFrameInd = -1;
+    end
+    this.frameIndWithTrackInfo = readyFrameInd;
     
     for i=1:length(bestTrackLeafs)
         leaf = bestTrackLeafs{i};
@@ -650,45 +684,28 @@ function allocateTrackAssignments(this, bestTrackLeafs, pruneWindow)
         end
         
         % find corresponding track record
-        
-        track = [];
+
+        change = TrackChangePerFrame();
+        change.TrackCandidateId = fixedAncestor.FamilyId;
+
         if fixedAncestor.CreationReason == TrackHypothesisTreeNode.New
-            % allocate new track
-            
-            track = TrackedObject.NewTrackCandidate(fixedAncestor.FamilyId);
-            track.FirstAppearanceFrameIdx = fixedAncestor.FrameInd;
-        else
-            % find track with FimilyId
-            for i1=1:length(this.tracks)
-                if this.tracks{i1}.TrackCandidateId == fixedAncestor.FamilyId
-                    track = this.tracks{i1};
-                    break;
-                end
-            end
-            assert(~isempty(track), 'Track with ancestor.FamilyId must exist');
+            change.UpdateType = TrackChangePerFrame.New;
+        elseif fixedAncestor.CreationReason == TrackHypothesisTreeNode.SequantialCorrespondence
+            change.UpdateType = TrackChangePerFrame.ObservationUpdate;
+        elseif fixedAncestor.CreationReason == TrackHypothesisTreeNode.NoObservation
+            change.UpdateType = TrackChangePerFrame.NoObservation;
         end
-
-        %
-        %detect = frameDetections(blobInd);
-
-        % project image position into TopView
-        %imagePos = detect.Centroid;
-        %worldPos = obj.distanceCompensator.cameraToWorld(imagePos);
-
-        %track.KalmanFilter = createKalmanPredictor(obj, worldPos(1:2), fps);
-
-        ass = ShapeAssignment();
-        ass.IsDetectionAssigned = fixedAncestor.CreationReason == TrackHypothesisTreeNode.New | fixedAncestor.CreationReason == TrackHypothesisTreeNode.SequantialCorrespondence;
-        ass.DetectionInd = fixedAncestor.DetectionInd;
-        ass.v.EstimatedPosImagePix = fixedAncestor.ObservationPos;
-        ass.PredictedPos = fixedAncestor.EstimatedWorldPos;
-        ass.EstimatedPos = fixedAncestor.EstimatedWorldPos;
-
-        track.Assignments{fixedAncestor.FrameInd} = ass;
-
-        %obj.onAssignDetectionToTrackedObject(track, detect, image);
-
-        this.tracks{end+1} = track;
+        
+        estimatedPos = fixedAncestor.EstimatedWorldPos;
+        change.EstimatedPosWorld = estimatedPos;
+        
+        change.ObservationInd = fixedAncestor.DetectionInd;
+        obsPos = fixedAncestor.ObservationPos;
+        if isempty(obsPos)
+            obsPos = this.distanceCompensator.worldToCamera(estimatedPos);            
+        end
+        change.ObservationPosPixExactOrApprox = obsPos;
+        this.trackStatusList(end+1) = struct(change);
     end
 end
 
@@ -724,6 +741,36 @@ function pruneHypothesisTree(this, leafSet, pruneWindow, debug)
     this.trackHypothesisForestPseudoNode.clearChildren;
     for i=1:length(prunedTreeSet)
         this.trackHypothesisForestPseudoNode.addChild(prunedTreeSet{i});
+    end
+end
+
+function kalman = createKalmanPredictor(obj, initPos2D, fps)
+    % init Kalman Filter
+    stateModel = [1 0 1 0; 0 1 0 1; 0 0 1 0; 0 0 0 1]; 
+    measurementModel = [1 0 0 0; 0 1 0 0]; 
+    kalman = vision.KalmanFilter(stateModel, measurementModel);
+    
+    % max shift per frame = 20cm
+    %kalman.ProcessNoise = (0.2 / 3)^2;
+    obj.setTrackKalmanProcessNoise(kalman, 'normal', fps);
+    
+    % max measurment error per frame = 1m (far away it can be 5m)
+    kalman.MeasurementNoise = (5 / 3)^2;
+    kalman.State = [initPos2D 0 0]; % v0=0
+end
+
+function setTrackKalmanProcessNoise(obj, kalman, swimmerLocactionStr, fps)
+    % 2.3m/s is max speed for swimmers
+    % let say 0.5m/s is an average speed
+    % estimate sigma as one third of difference between max and mean shift per frame
+    maxShiftM = 2.3 / fps;
+    meanShiftM = 0.5 / fps;
+    sigma = (maxShiftM - meanShiftM) / 3;
+
+    if strcmp(swimmerLocactionStr, 'normal')
+        kalman.ProcessNoise = sigma^2;
+    elseif strcmp(swimmerLocactionStr, 'nearBorder')
+        kalman.ProcessNoise = 999^2; % suppress process model
     end
 end
 

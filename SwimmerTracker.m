@@ -13,6 +13,7 @@ properties
     v;
     %v.swimmerMaxSpeed;
     trackStatusList; % struct<TrackChangePerFrame> used locally in trackBlobs method only, but 
+    blobTracker;     % MultiHypothesisTracker
 end
 
 methods
@@ -27,6 +28,7 @@ function this = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDet
     this.distanceCompensator = distanceCompensator;
     this.humanDetector = humanDetector;
     this.colorAppearance = colorAppearance;
+    this.blobTracker = MultiHypothesisTracker(distanceCompensator);
     
     % configure tracker
     this.v.swimmerMaxSpeed = 2.3; % max speed for swimmers 2.3m/s
@@ -46,13 +48,19 @@ function purgeMemory(obj)
     obj.v.nextTrackId = 1;
     obj.frameInd = 0;
     obj.v.nextTrackCandidateId=1;
+    obj.v.queryFrameInd = -1;
+    
+    if ~isempty(obj.blobTracker)
+        obj.blobTracker.purgeMemory();
+    end
 end
 
 % Returns frame number for which track info (position, velocity vector etc) is available.
 % returns -1 if there is not available frames.
 function queryFrameInd = getFrameIndWithReadyTrackInfo(this)
     % This tracker has no history, return last processed frame
-    queryFrameInd = this.frameInd;
+    %queryFrameInd = this.frameInd;
+    queryFrameInd = this.v.queryFrameInd;
 end
 
 % elapsedTimeMs - time in milliseconds since last frame
@@ -112,7 +120,30 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     end
     
     %
-    [frameIndWithTrackInfo,trackStatusList] = this.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
+    if ~isempty(this.blobTracker)
+        [frameIndWithTrackInfo,trackStatusList] = this.blobTracker.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
+    else
+        [frameIndWithTrackInfo,trackStatusList] = this.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
+    end
+    
+    this.v.queryFrameInd = frameIndWithTrackInfo;
+    
+    if true % assert
+        for i=1:length(trackStatusList)
+            change = trackStatusList(i);
+            assert(~isempty(change.EstimatedPosWorld));
+            assert(~isempty(change.ObservationPosPixExactOrApprox));
+        end
+    end
+    
+    if debug
+        fprintf('trackStatusList.length=%d\n', length(trackStatusList));
+        for i=1:length(trackStatusList)
+            change = trackStatusList(i);
+            pix = change.ObservationPosPixExactOrApprox;
+            fprintf('change %d: UpdType=%d ObsId=%d [%f %f]\n', i, change.UpdateType, change.ObservationInd, pix(1), pix(2));
+        end
+    end
 
 	% update positions history for each track
     this.recordTrackStatus(frameIndWithTrackInfo,trackStatusList);
@@ -160,11 +191,11 @@ function recordTrackStatus(this, frameIndWithTrackInfo, trackStatusList)
         
         % allocate new track
         if trackHistInd ==-1
-            isNew = trackStatus.UpdateType == TrackChangePerFrame.New;
-            assert(isNew);
+            % For one-step tracker, the UpdateType is always 'New'
+            % For MHT, family root may be lost before it is collected by pruning mechanism
+            % hence trackStatus.UpdateType potentially may be anything;
+            % in this case, if there is no track for given change, we will create new track
             
-            % Track is not deleted from Tracker but deleted TrackHistory
-
             trackRecord = TrackInfoHistory();
             trackRecord.TrackCandidateId = trackStatus.TrackCandidateId;
             trackRecord.FirstAppearanceFrameIdx = frameIndWithTrackInfo;
