@@ -24,7 +24,7 @@ function init(obj, renderTopView)
     % open video
     
     %videoFilePath = fullfile('data/mvi3177_blueWomanLane3_16frames.avi');
-    videoFilePath = fullfile('../output/mvi3177_blueWomanLane3.avi');
+    videoFilePath = fullfile('../../output/mvi3177_blueWomanLane3.avi');
     %videoFilePath = fullfile('../rawdata/MVI_3177.mov');
     %videoFilePath = fullfile('../dinosaur/mvi3177_1461_2041_kid1_lane4.avi');
     
