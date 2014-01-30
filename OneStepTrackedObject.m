@@ -1,4 +1,4 @@
-classdef TrackedObject <handle
+classdef OneStepTrackedObject <handle
 properties
     TrackCandidateId;
     
@@ -18,7 +18,7 @@ properties
 end
 methods(Static)
     function obj = NewTrackCandidate(trackCandidateId)
-        obj = TrackedObject;
+        obj = OneStepTrackedObject;
         obj.TrackCandidateId = trackCandidateId;
         obj.v.AppearanceGmm = cv.EM('Nclusters', 16, 'CovMatType', 'Spherical');
         obj.v.AppearanceGmmTrained = false;

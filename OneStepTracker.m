@@ -3,7 +3,7 @@ classdef OneStepTracker < handle
 % assignment algorithm for association.
     
 properties
-    tracks; % type: List<TrackedObject>
+    tracks; % type: List<OneStepTrackedObject>
     % v.nextTrackCandidateId;
     distanceCompensator;
     colorAppearance;
@@ -259,7 +259,7 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
 
         % new track candidate
         
-        cand = TrackedObject.NewTrackCandidate(obj.v.nextTrackCandidateId);
+        cand = OneStepTrackedObject.NewTrackCandidate(obj.v.nextTrackCandidateId);
         obj.v.nextTrackCandidateId = obj.v.nextTrackCandidateId + 1;
 
         % project image position into TopView

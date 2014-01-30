@@ -2,7 +2,7 @@ classdef SwimmerObserver < handle
 properties
     frameInd;                 % type:int, number of processed frames
     detectionsPerFrame; % type: List<ShapeAssignment>
-    tracksHistory; % type: List<TrackedObject>
+    tracksHistory; % type: List<TrackInfoHistory>
     %v.nextTrackId;
     poolRegionDetector;
     distanceCompensator;
