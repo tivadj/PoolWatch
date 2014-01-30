@@ -315,7 +315,7 @@ function mergeBlobsRecipe = mergeBlobsRecipeViaColorSimilarity(this, connComp, c
             colorDist = utils.PixelClassifier.distanceTwoMixtureGaussiansEmd(mixGaussList{blobInd1}.Means, mixGaussList{blobInd1}.Weights,mixGaussList{blobInd2}.Means, mixGaussList{blobInd2}.Weights);
             
             if debug
-                fprintf('blobs[%d-%d] colorDist=%.2f\n', blobInd1,blobInd2,colorDist);
+                %fprintf('blobs[%d-%d] colorDist=%.2f\n', blobInd1,blobInd2,colorDist);
             end
             
             if colorDist > maxBlobColorMergeDist

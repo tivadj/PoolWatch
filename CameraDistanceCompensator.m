@@ -3,6 +3,7 @@ classdef CameraDistanceCompensator < handle
 properties
 v;
 %obj.v.cameraMatrix
+%obj.v.cameraMatrixInv
 %obj.v.rvec
 %obj.v.tvec
 %obj.v.worldToCamera
@@ -31,6 +32,7 @@ function initCameraPosition(obj)
     fy=527.46802103114874;
     cameraMatrix = [fx 0 cx; 0 fy cy; 0 0 1];
     obj.v.cameraMatrix = cameraMatrix;
+    obj.v.cameraMatrixInv = inv(cameraMatrix);
     
     distCoeffs = [0 0 0 0];
     obj.v.distCoeffs = distCoeffs;
@@ -69,16 +71,17 @@ function initCameraPosition(obj)
     
     worldToCamera = [rotMat tvec; [0 0 0 1]];
     obj.v.worldToCamera = worldToCamera;
-    
+    obj.v.worldToCameraInv = inv(worldToCamera);    
 end
 
+% imagePos = [1x2]
 function worldPos = cameraToWorld(obj, imagePos)
     num = size(imagePos,1);
     
     % image to camera coordinates
-    camPos = inv(obj.v.cameraMatrix)*[imagePos 1]'; % 3xN
+    camPos = obj.v.cameraMatrixInv*[imagePos 1]'; % 3xN
 
-    cameraToWorld = inv(obj.v.worldToCamera); % 4x4
+    cameraToWorld = obj.v.worldToCameraInv; % 4x4
 
     % find fourth homog component so that world z=0
     zeroHeight = 0;

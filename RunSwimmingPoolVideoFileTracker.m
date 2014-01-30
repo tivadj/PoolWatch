@@ -90,10 +90,10 @@ function processFrames(obj, renderTopView, debug)
     end
     
     % track video
-    i=1;
+    frameOrder=1;
     
     for frameInd = obj.v.framesToTake
-        fprintf(1, 'SwimmerTracker: processing frame %d (#%d of %d)\n', frameInd, i, length(obj.v.framesToTake));
+        fprintf(1, 'SwimmerTracker: processing frame %d (#%d of %d)\n', frameInd, frameOrder, length(obj.v.framesToTake));
         
         userBreakFile = dir('_UserBreak.txt');
         if ~isempty(userBreakFile)
@@ -112,7 +112,7 @@ function processFrames(obj, renderTopView, debug)
         %imshow(image)
         
         %
-        %image = utils.applyMask(image, obj.v.subPoolMask);
+        %image = utils.applyMask(image, obj.v.laneMask);
         %imshow(image)
 
         % do frame analysis
@@ -121,31 +121,37 @@ function processFrames(obj, renderTopView, debug)
 
         % get debug image
 
-        imageWithTracks = obj.v.tracker.adornImageWithTrackedBodies(image, 'camera');
-        if renderTopView
-            subplot(2,1,1);
-        end
-        if true || debug
-            imshow(imageWithTracks)
+        queryFrameInd = obj.v.tracker.getFrameIndWithReadyTrackInfo();
+        if true && queryFrameInd ~= -1
+            queryImage = read(obj.v.videoReader, queryFrameInd);
+            
+            imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracksHistory, obj.v.tracker.distanceCompensator);
+            if renderTopView
+                subplot(2,1,1);
+            end
+            if true || debug
+                imshow(imageWithTracks)
+                pause(0.5);
+            end
+
+            if renderTopView
+                %imageWithTracksTopView = obj.v.tracker.adornImageWithTrackedBodiesTopView(image);
+                imageWithTracksTopView =obj.v.tracker.adornImageWithTrackedBodies(queryImage, 'TopView');
+                subplot(2,1,2);
+                imshow(imageWithTracksTopView)
+            end
+
+            % store frame
+
+            obj.v.videoWithTracksDual(:,1:size(queryImage,2),:,frameOrder) = imageWithTracks;
         end
         
         if renderTopView
-            %imageWithTracksTopView = obj.v.tracker.adornImageWithTrackedBodiesTopView(image);
-            imageWithTracksTopView =obj.v.tracker.adornImageWithTrackedBodies(image, 'TopView');
-            subplot(2,1,2);
-            imshow(imageWithTracksTopView)
-        end
-    
-        % store frame
-        
-        obj.v.videoWithTracksDual(:,1:size(image,2),:,i) = imageWithTracks;
-        
-        if renderTopView
-            obj.v.videoWithTracksDual(:,size(image,2)+1:end,:,i) = imageWithTracksTopView;
+            obj.v.videoWithTracksDual(:,size(image,2)+1:end,:,frameOrder) = imageWithTracksTopView;
         end
 
         drawnow;
-        i=i+1;
+        frameOrder=frameOrder+1;
     end
     
     % status
@@ -155,16 +161,17 @@ function processFrames(obj, renderTopView, debug)
     % write output
         framesCount = size(poolTracker.v.videoWithTracksDual,4);
         [~,videoFileName,~] = fileparts(poolTracker.v.videoReader.Name);
-        outFile = sprintf('../output/%s_n%d_%s.avi',videoFileName, framesCount, utils.PW.timeStampNow)
+        outFile = sprintf('../output/%s_%s_n%d.avi',videoFileName, utils.PW.timeStampNow, framesCount)
         writerObj = VideoWriter(outFile);
         writerObj.FrameRate = 30;
         writerObj.open();
-        writerObj.writeVideo(poolTracker.v.videoWithTracksDual);
+        writerObj.writeVideo(poolTracker.v.videoWithTracksDual(:,:,:,1:framesCount));
         writerObj.close();
+        implay(immovie(poolTracker.v.videoWithTracksDual(:,:,:,1:framesCount)), poolTracker.v.videoReader.FrameRate);
     %}
 
     % play movie
-    videoWithTracksMovie = immovie(obj.v.videoWithTracksDual);
+    videoWithTracksMovie = immovie(obj.v.videoWithTracksDual(:,:,:,1:length(obj.v.framesToTake)));
     implay(videoWithTracksMovie, obj.v.videoReader.FrameRate);
 end
 
