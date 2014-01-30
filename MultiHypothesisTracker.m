@@ -55,16 +55,6 @@ function purgeMemory(this)
     this.encodedTreeString = zeros(1, 5000000, 'int32');
 end
 
-% Returns frame number for which track info (position, velocity vector etc) is available.
-% returns -1 if there is not available frames.
-function queryFrameInd = getFrameIndWithReadyTrackInfo(this)
-    queryFrameInd = this.frameInd - this.pruneDepth - 1;
-    
-    if queryFrameInd < 1
-        queryFrameInd = -1;
-    end
-end
-
 function [frameIndWithTrackInfo,trackStatusListResult] = trackBlobs(this, frameInd, elapsedTimeMs, fps, frameDetections, image, debug)
     assert(length(frameDetections) <= this.maxObservationsCountPerFrame, 'observationCount exceeds the limit, used in unique ObservationId generation');
 
@@ -858,6 +848,10 @@ function [scorePart, kalmanScorePart] = calcTrackShiftScore(this, parentTrackNod
             scorePart = penalty;
         end        
     end
+end
+
+function discardTrackCore(this, trackCandidateId)
+    % ignore clean up requests
 end
 
 function [score,kalmanScore] = calcTrackSequenceScoreNew(this, trackSeq, kalmanFilter)

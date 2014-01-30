@@ -95,7 +95,7 @@ function tracker = createDummyTracker(this, scenario)
     distanceCompensator = tests.CameraDistanceCompensatorStub;
     humanDetector = tests.HumanDetectorStub(scenario);
     colorAppearance = tests.ColorAppearanceControllerStub(scenario);
-    tracker = SwimmerTracker(poolRegionDetector, distanceCompensator, humanDetector, colorAppearance);
+    tracker = SwimmerObserver(poolRegionDetector, distanceCompensator, humanDetector, colorAppearance);
 end
 
 end
