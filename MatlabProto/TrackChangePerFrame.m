@@ -3,18 +3,18 @@ classdef TrackChangePerFrame
 % The list of such change per each 
     
 properties
-    TrackCandidateId;
-    UpdateType; % enum
-    EstimatedPosWorld; % [X,Y,Z] corrected by sensor position (in world coord)
+    TrackCandidateId; % type: int32
+    UpdateType; % int32 enum
+    EstimatedPosWorld; % single[X,Y,Z] corrected by sensor position (in world coord)
     
     ObservationInd; % type:int32, 0=no observation; >0 observation index
-    ObservationPosPixExactOrApprox; % [X,Y]; required to avoid world->camera conversion on drawing
+    ObservationPosPixExactOrApprox; % single[X,Y]; required to avoid world->camera conversion on drawing
 end
 
 properties (Constant)
-    New = 1;
-    ObservationUpdate = 2;
-    NoObservation = 3;
+    New = int32(1);
+    ObservationUpdate = int32(2);
+    NoObservation = int32(3);
     %Finished = 9;
 end
 

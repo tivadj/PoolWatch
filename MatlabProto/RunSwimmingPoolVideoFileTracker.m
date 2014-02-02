@@ -90,7 +90,7 @@ function processFrames(obj, renderTopView, debug)
     end
     
     % track video
-    frameOrder=1;
+    frameOrder=int32(1);
     
     for frameInd = obj.v.framesToTake
         fprintf(1, 'SwimmerTracker: processing frame %d (#%d of %d)\n', frameInd, frameOrder, length(obj.v.framesToTake));
@@ -125,7 +125,7 @@ function processFrames(obj, renderTopView, debug)
         if true && queryFrameInd ~= -1
             queryImage = read(obj.v.videoReader, queryFrameInd);
             
-            imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracksHistory, obj.v.tracker.distanceCompensator);
+            imageWithTracks  = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracksHistory, obj.v.tracker.distanceCompensator);
             if renderTopView
                 subplot(2,1,1);
             end

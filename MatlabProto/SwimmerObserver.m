@@ -29,9 +29,9 @@ end
 
 function purgeMemory(obj)
     obj.tracksHistory=cell(0,0);
-    obj.v.nextTrackId = 1;
-    obj.frameInd = 0;
-    obj.v.queryFrameInd = -1;
+    obj.v.nextTrackId = int32(1);
+    obj.frameInd = int32(0);
+    obj.v.queryFrameInd = int32(-1);
     obj.blobTracker.purgeMemory();
 end
 
@@ -83,7 +83,7 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     for i=1:length(bodyDescrs)
         centr = bodyDescrs(i).Centroid;
         centrWorld = this.distanceCompensator.cameraToWorld(centr);
-        bodyDescrs(i).CentroidWorld = centrWorld;
+        bodyDescrs(i).CentroidWorld = single(centrWorld);
     end
     
     this.detectionsPerFrame{this.frameInd} = bodyDescrs;

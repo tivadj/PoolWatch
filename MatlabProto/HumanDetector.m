@@ -202,9 +202,10 @@ function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
         imgOutlinePixels = [imgOutlinePixelsLocal(:,1) + bndBox(2), imgOutlinePixelsLocal(:,2) + bndBox(1)];
         
         blob = DetectedBlob;
-        blob.Centroid = props.Centroid;
-        blob.BoundingBox = props.BoundingBox;
-        blob.OutlinePixels = imgOutlinePixels;
+        blob.Id = int32(i);
+        blob.Centroid = single(props.Centroid);
+        blob.BoundingBox = single(props.BoundingBox);
+        blob.OutlinePixels = int32(imgOutlinePixels);
         blob.FilledImage = imgFill;
         resultCells(i) = struct(blob);
     end

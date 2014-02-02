@@ -29,9 +29,9 @@ function this = MultiHypothesisTracker(distanceCompensator)
     % init track hypothesis pseudo root
     % values of (Id,FrameInd,DetectionInd) are used in unique observation Id generation
     this.trackHypothesisForestPseudoNode = TrackHypothesisTreeNode;
-    this.trackHypothesisForestPseudoNode.Id = 0;
-    this.trackHypothesisForestPseudoNode.FrameInd = 0;
-    this.trackHypothesisForestPseudoNode.DetectionInd = 0;
+    this.trackHypothesisForestPseudoNode.Id = int32(0);
+    this.trackHypothesisForestPseudoNode.FrameInd = int32(0);
+    this.trackHypothesisForestPseudoNode.DetectionInd = int32(0);
     
     this.maxObservationsCountPerFrame = 1000;
     assert(this.trackHypothesisForestPseudoNode.DetectionInd < this.maxObservationsCountPerFrame);
@@ -48,7 +48,7 @@ function this = MultiHypothesisTracker(distanceCompensator)
 end
 
 function purgeMemory(this)
-    this.v.nextTrackCandidateId=1;
+    this.v.nextTrackCandidateId=int32(1);
 
     this.trackHypothesisForestPseudoNode.clearChildren;
     
@@ -172,7 +172,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
             childHyp.Id = this.v.nextTrackCandidateId;
             this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
             childHyp.FamilyId = leaf.FamilyId;
-            childHyp.DetectionInd = blobInd;
+            childHyp.DetectionInd = int32(blobInd);
             childHyp.FrameInd = frameInd;
             childHyp.ObservationPos = centrPix;
             childHyp.ObservationWorldPos = centrWorld;
@@ -232,7 +232,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
             childHyp.Id = this.v.nextTrackCandidateId;
             this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
             childHyp.FamilyId = leaf.FamilyId;
-            childHyp.DetectionInd = -1;
+            childHyp.DetectionInd = int32(-1);
             childHyp.FrameInd = frameInd;
             childHyp.ObservationPos = [];
             childHyp.ObservationWorldPos = [];
@@ -273,7 +273,7 @@ function growTrackHyposhesisTree(this, frameInd, frameDetections, elapsedTimeMs,
             childHyp.Id = this.v.nextTrackCandidateId;
             this.v.nextTrackCandidateId = this.v.nextTrackCandidateId + 1;
             childHyp.FamilyId = childHyp.Id;
-            childHyp.DetectionInd = blobInd;
+            childHyp.DetectionInd = int32(blobInd);
             childHyp.FrameInd = frameInd;
             childHyp.ObservationPos = blob.Centroid;
             childHyp.ObservationWorldPos = centrWorld;
@@ -689,7 +689,7 @@ function collectTrackChanges(this, frameInd, bestTrackLeafs, pruneWindow)
         if isempty(obsPos)
             obsPos = this.distanceCompensator.worldToCamera(estimatedPos);            
         end
-        change.ObservationPosPixExactOrApprox = obsPos;
+        change.ObservationPosPixExactOrApprox = single(obsPos);
         this.trackStatusList(end+1) = struct(change);
     end
 end
