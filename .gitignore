@@ -1,3 +1,8 @@
 *.log
 *.asv
 _UserBreak*.txt
+*.user
+build/
+*.sdf
+*.opensdf
+*.suo
