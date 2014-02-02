@@ -125,7 +125,8 @@ function processFrames(obj, renderTopView, debug)
         if true && queryFrameInd ~= -1
             queryImage = read(obj.v.videoReader, queryFrameInd);
             
-            imageWithTracks  = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracksHistory, obj.v.tracker.distanceCompensator);
+            imageWithTracks  = obj.v.tracker.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd);
+
             if renderTopView
                 subplot(2,1,1);
             end

@@ -7,8 +7,9 @@ properties
     poolRegionDetector;
     distanceCompensator;
     humanDetector;
-    v;
     blobTracker;     % MultiHypothesisTracker
+    trackPainterHandle; % id of the native track painter object
+    v;
 end
 
 methods
@@ -33,6 +34,7 @@ function purgeMemory(obj)
     obj.frameInd = int32(0);
     obj.v.queryFrameInd = int32(-1);
     obj.blobTracker.purgeMemory();
+    obj.trackPainterHandle = PWTrackPainter(int32(0), 'new');
 end
 
 % Returns frame number for which track info (position, velocity vector etc) is available.
@@ -97,6 +99,9 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
         end
     end
     
+    % update native painter with new blobs
+    PWTrackPainter(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
+    
     %
     [frameIndWithTrackInfo,trackStatusList] = this.blobTracker.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
     
@@ -118,6 +123,11 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
             pix = change.ObservationPosPixExactOrApprox;
             fprintf('change %d: UpdType=%d ObsId=%d [%f %f]\n', i, change.UpdateType, change.ObservationInd, pix(1), pix(2));
         end
+    end
+    
+    % update native painter with track changes
+    if frameIndWithTrackInfo ~= -1
+        PWTrackPainter(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
     end
 
 	% update positions history for each track
@@ -234,6 +244,16 @@ function promoteMatureTrackCandidates(obj, frameInd)
             obj.tracksHistory(i) = [];
         end
     end
+end
+
+function imageWithTracks = adornImageWithTrackedBodies(this, queryImage, coordType, queryFrameInd)
+    trailLength=int32(250);
+
+    % Matlab drawing
+    %imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, coordType, queryFrameInd, trailLength, this.detectionsPerFrame, this.tracksHistory, this.distanceCompensator);
+    
+    % native drawing
+    imageWithTracks=PWTrackPainter(this.trackPainterHandle, 'adornImage', queryImage, int32(queryFrameInd), trailLength);
 end
 
 % TODO: what is it?

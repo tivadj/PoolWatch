@@ -1,5 +1,6 @@
 % Configuration
 addpath('C:/devb/cplex/mexopencv'); % required for OpenCV cv.* functions
+addpath(fullfile(cd, '../build/x64/Release/'))
 warning('off','MATLAB:structOnObject') % init struct from object 
 
 %% Track swimmers in video
