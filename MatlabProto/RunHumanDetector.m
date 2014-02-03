@@ -437,7 +437,8 @@ function loadWaterNonWaterPixels(obj, debug)
 %     waterImg=utils.applyMask(image,nonWaterMask1);
 %     imshow(waterImg)
     
-    waterMarkupFiles = '../dinosaur/waterMarkup/*.svg';
+    % TODO: pass as parameter
+    waterMarkupFiles = '../../dinosaur/waterMarkup/*.svg';
     waterMarkupColor='#0000FF';
     waterPixs = utils.getPixelsDistinct(waterMarkupFiles, false, waterMarkupColor);
     nonWaterMarkupColor='#FFFF00';

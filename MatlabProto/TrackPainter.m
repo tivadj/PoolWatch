@@ -4,8 +4,8 @@ classdef TrackPainter
     
 methods(Static)
 
-function imageWithTracks = adornImageWithTrackedBodies(image, coordType, queryFrameInd, detectionsPerFrame, tracks, distanceCompensator)
-    pathStartFrame = max([1, queryFrameInd - 250]);
+function imageWithTracks = adornImageWithTrackedBodies(image, coordType, queryFrameInd, trailLength, detectionsPerFrame, tracks, distanceCompensator)
+    pathStartFrame = max([1, queryFrameInd - trailLength]);
     
     %detects = detectionsPerFrame{queryFrameInd};
     %imageWithTracks = drawDetections(obj, image, detects);

@@ -24,7 +24,7 @@ function init(obj, renderTopView)
     % open video
     
     %videoFilePath = fullfile('data/mvi3177_blueWomanLane3_16frames.avi');
-    videoFilePath = fullfile('../output/mvi3177_blueWomanLane3.avi');
+    videoFilePath = fullfile('../../output/mvi3177_blueWomanLane3.avi');
     %videoFilePath = fullfile('../rawdata/MVI_3177.mov');
     %videoFilePath = fullfile('../dinosaur/mvi3177_1461_2041_kid1_lane4.avi');
     
@@ -90,7 +90,7 @@ function processFrames(obj, renderTopView, debug)
     end
     
     % track video
-    frameOrder=1;
+    frameOrder=int32(1);
     
     for frameInd = obj.v.framesToTake
         fprintf(1, 'SwimmerTracker: processing frame %d (#%d of %d)\n', frameInd, frameOrder, length(obj.v.framesToTake));
@@ -125,7 +125,8 @@ function processFrames(obj, renderTopView, debug)
         if true && queryFrameInd ~= -1
             queryImage = read(obj.v.videoReader, queryFrameInd);
             
-            imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd, obj.v.tracker.detectionsPerFrame, obj.v.tracker.tracksHistory, obj.v.tracker.distanceCompensator);
+            imageWithTracks  = obj.v.tracker.adornImageWithTrackedBodies(queryImage, 'camera', queryFrameInd);
+
             if renderTopView
                 subplot(2,1,1);
             end

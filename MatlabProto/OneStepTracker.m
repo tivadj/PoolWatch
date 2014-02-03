@@ -32,7 +32,7 @@ function this = OneStepTracker(distanceCompensator, colorAppearance)
 end
 
 function purgeMemory(obj)
-    obj.v.nextTrackCandidateId=1;
+    obj.v.nextTrackCandidateId=int32(1);
     obj.tracks=cell(0,0);
 end
 
@@ -90,9 +90,9 @@ function [frameIndWithTrackInfo,trackStatusListResult] = trackBlobs(this, frameI
         status = TrackChangePerFrame;
         status.TrackCandidateId = track.TrackCandidateId;
         status.UpdateType = TrackChangePerFrame.ObservationUpdate;
-        status.EstimatedPosWorld = posEstimate;
-        status.ObservationInd = detectInd;
-        status.ObservationPosPixExactOrApprox = detect.Centroid;
+        status.EstimatedPosWorld = single(posEstimate);
+        status.ObservationInd = int32(detectInd);
+        status.ObservationPosPixExactOrApprox = single(detect.Centroid);
         this.trackStatusList(end+1) = struct(status);
    end
 
@@ -276,9 +276,9 @@ function assignTrackCandidateToUnassignedDetections(obj, unassignedDetectionsByR
         status = TrackChangePerFrame;
         status.TrackCandidateId = cand.TrackCandidateId;
         status.UpdateType = TrackChangePerFrame.New;
-        status.EstimatedPosWorld = worldPos;
-        status.ObservationInd = blobInd;
-        status.ObservationPosPixExactOrApprox = detect.Centroid;
+        status.EstimatedPosWorld = single(worldPos);
+        status.ObservationInd = int32(blobInd);
+        status.ObservationPosPixExactOrApprox = single(detect.Centroid);
         obj.trackStatusList(end+1) = struct(status);
     end
 end
@@ -321,9 +321,9 @@ function driftUnassignedTracks(this, unassignedTracksByRow, frameInd)
         status = TrackChangePerFrame;
         status.TrackCandidateId = track.TrackCandidateId;
         status.UpdateType = TrackChangePerFrame.NoObservation;
-        status.EstimatedPosWorld = estimatedPos;
-        status.ObservationInd = 0;
-        status.ObservationPosPixExactOrApprox = approxBlobCentroid;
+        status.EstimatedPosWorld = single(estimatedPos);
+        status.ObservationInd = int32(0);
+        status.ObservationPosPixExactOrApprox = single(approxBlobCentroid);
         this.trackStatusList(end+1) = struct(status);
     end
 end
