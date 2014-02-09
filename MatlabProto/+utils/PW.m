@@ -83,11 +83,11 @@ function tracker = createSwimmerTracker(debug)
     
     colorAppearance = ColorAppearanceController;
     
-    blobTracker = MultiHypothesisTracker(distanceCompensator);
+    blobTracker = MultiHypothesisBlobTracker(distanceCompensator);
     %blobTracker = OneStepTracker(distanceCompensator, colorAppearance);
     
     %
-    tracker = SwimmerObserver(poolRegionDetector, distanceCompensator, humanDetector, blobTracker);
+    tracker = SwimmingPoolObserver(poolRegionDetector, distanceCompensator, humanDetector, blobTracker);
 end
 
 function result = hasCommonObservation(track, otherTrack)

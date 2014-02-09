@@ -1,4 +1,4 @@
-classdef SwimmerObserver < handle
+classdef SwimmingPoolObserver < handle
 properties
     frameInd;                 % type:int, number of processed frames
     detectionsPerFrame; % type: List<ShapeAssignment>
@@ -7,14 +7,14 @@ properties
     poolRegionDetector;
     distanceCompensator;
     humanDetector;
-    blobTracker;     % MultiHypothesisTracker
+    blobTracker;     % MultiHypothesisBlobTracker
     trackPainterHandle; % id of the native track painter object
     v;
 end
 
 methods
     
-function this = SwimmerObserver(poolRegionDetector, distanceCompensator, humanDetector, blobTracker)
+function this = SwimmingPoolObserver(poolRegionDetector, distanceCompensator, humanDetector, blobTracker)
     assert(~isempty(poolRegionDetector));
     assert(~isempty(distanceCompensator));
     assert(~isempty(humanDetector));
@@ -34,7 +34,10 @@ function purgeMemory(obj)
     obj.frameInd = int32(0);
     obj.v.queryFrameInd = int32(-1);
     obj.blobTracker.purgeMemory();
-    obj.trackPainterHandle = PWTrackPainter(int32(0), 'new');
+    
+    pruneWindow = obj.blobTracker.pruneDepth + 1;
+    fps = single(30); % TODO: init from client
+    obj.trackPainterHandle = PWSwimmingPoolObserver(int32(0), 'new', pruneWindow, fps);
 end
 
 % Returns frame number for which track info (position, velocity vector etc) is available.
@@ -100,7 +103,21 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     end
     
     % update native painter with new blobs
-    PWTrackPainter(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
+    if ~this.blobTracker.v.nativeRun
+        PWSwimmingPoolObserver(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
+    else
+        PWSwimmingPoolObserver(this.trackPainterHandle, 'processBlobs', int32(this.frameInd), imageSwimmers, bodyDescrs);
+        
+        pruneWindow=6;
+        readyFrameInd = this.frameInd - pruneWindow;
+        if readyFrameInd < 1
+            readyFrameInd = -1;
+        end
+        this.v.queryFrameInd=readyFrameInd;
+
+        return;
+    end
+    
     
     %
     [frameIndWithTrackInfo,trackStatusList] = this.blobTracker.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
@@ -127,7 +144,9 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     
     % update native painter with track changes
     if frameIndWithTrackInfo ~= -1
-        PWTrackPainter(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
+        if ~this.blobTracker.v.nativeRun
+            PWSwimmingPoolObserver(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
+        end
     end
 
 	% update positions history for each track
@@ -249,11 +268,13 @@ end
 function imageWithTracks = adornImageWithTrackedBodies(this, queryImage, coordType, queryFrameInd)
     trailLength=int32(250);
 
-    % Matlab drawing
-    %imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, coordType, queryFrameInd, trailLength, this.detectionsPerFrame, this.tracksHistory, this.distanceCompensator);
-    
-    % native drawing
-    imageWithTracks=PWTrackPainter(this.trackPainterHandle, 'adornImage', queryImage, int32(queryFrameInd), trailLength);
+    if ~this.blobTracker.v.nativeRun
+        % Matlab drawing
+        imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, coordType, queryFrameInd, trailLength, this.detectionsPerFrame, this.tracksHistory, this.distanceCompensator);
+    else
+        % native drawing
+        imageWithTracks=PWSwimmingPoolObserver(this.trackPainterHandle, 'adornImage', queryImage, int32(queryFrameInd), trailLength);
+    end
 end
 
 % TODO: what is it?

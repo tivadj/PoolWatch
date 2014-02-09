@@ -1,4 +1,4 @@
-#include "TrackPainter.h"
+#include "SwimmingPoolObserver.h"
 #include <cassert>
 #include <iostream>
 #include <stdint.h>
@@ -8,16 +8,17 @@
 
 using namespace std;
 
-TrackPainter::TrackPainter()
+SwimmingPoolObserver::SwimmingPoolObserver(int pruneWindow, float fps)
+{
+	auto cp = make_shared<CameraProjector>();
+	blobTracker_.swap(make_unique<MultiHypothesisBlobTracker>(cp, pruneWindow, fps));
+}
+
+SwimmingPoolObserver::~SwimmingPoolObserver()
 {
 }
 
-
-TrackPainter::~TrackPainter()
-{
-}
-
-void TrackPainter::setBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs)
+void SwimmingPoolObserver::setBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs)
 {
 	if (frameOrd == blobsPerFrame_.size())
 		blobsPerFrame_.resize(frameOrd + 1);
@@ -34,13 +35,29 @@ void TrackPainter::setBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs)
 	blobsPerFrame_[frameOrd] = blobs;
 }
 
-void TrackPainter::toString(stringstream& bld)
+void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, const vector<DetectedBlob>& blobs)
+{
+	setBlobs(frameOrd, blobs);
+
+	auto fps = blobTracker_->getFps();
+	auto elapsedTimeMs = 1000.0f / fps;
+	int frameIndWithTrackInfo = -1;
+	vector<TrackChangePerFrame> trackChangeList;
+	blobTracker_->trackBlobs((int)frameOrd, blobs, image, fps, elapsedTimeMs, frameIndWithTrackInfo, trackChangeList);
+
+	if (frameIndWithTrackInfo != -1)
+	{
+		setTrackChangesPerFrame(frameIndWithTrackInfo, trackChangeList);
+	}
+}
+
+void SwimmingPoolObserver::toString(stringstream& bld)
 {
 	bld << "framesCount=" << blobsPerFrame_.size() << std::endl;
 	bld << "trackChanges=" << trackIdToHistory_.size() << std::endl;
 }
 
-void TrackPainter::setTrackChangesPerFrame(int frameOrd, const vector<TrackChangePerFrame>& trackChanges)
+void SwimmingPoolObserver::setTrackChangesPerFrame(int frameOrd, const vector<TrackChangePerFrame>& trackChanges)
 {
 	for (auto& change : trackChanges)
 	{
@@ -80,7 +97,7 @@ void TrackPainter::setTrackChangesPerFrame(int frameOrd, const vector<TrackChang
 	}
 }
 
-void TrackPainter::adornImage(const cv::Mat& image, int frameOrd, int trailLength, cv::Mat& resultImage)
+void SwimmingPoolObserver::adornImage(const cv::Mat& image, int frameOrd, int trailLength, cv::Mat& resultImage)
 {
 	int processedFramesCount = static_cast<int>(blobsPerFrame_.size());
 	CV_Assert(frameOrd >= 0 && frameOrd < processedFramesCount && "Parameter frameOrd is out of range");
@@ -94,7 +111,7 @@ void TrackPainter::adornImage(const cv::Mat& image, int frameOrd, int trailLengt
 	adornImageInternal(image, fromFrameOrd, frameOrd, trailLength, resultImage);
 }
 
-void TrackPainter::adornImageInternal(const cv::Mat& image, int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage)
+void SwimmingPoolObserver::adornImageInternal(const cv::Mat& image, int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage)
 {
 	for (auto& trackIdToHist : trackIdToHistory_)
 	{
@@ -154,7 +171,7 @@ void TrackPainter::adornImageInternal(const cv::Mat& image, int fromFrameOrd, in
 	}
 }
 
-cv::Scalar TrackPainter::getTrackColor(const TrackInfoHistory& trackHist)
+cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist)
 {
 	static vector<cv::Scalar> trackColors;
 	trackColors.push_back(CV_RGB(0, 255, 0));

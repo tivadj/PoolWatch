@@ -1,4 +1,4 @@
-classdef MultiHypothesisTracker < handle
+classdef MultiHypothesisBlobTracker < handle
 %MULTIHYPOTHESISTRACKER Summary of this class goes here
 %   Detailed explanation goes here
 
@@ -16,15 +16,17 @@ properties
     trackStatusList; % struct<TrackChangePerFrame> used locally in trackBlobs method only, but 
     frameIndWithTrackInfo; % type: int32
     v;
+    %v.nextTrackCandidateId; % type: int32
+    %v.nativeRun; % type: bool, whether to execute native code or Matlab code
 end
 
 methods
     
-function this = MultiHypothesisTracker(distanceCompensator)
+function this = MultiHypothesisBlobTracker(distanceCompensator)
     assert(~isempty(distanceCompensator));
     this.distanceCompensator = distanceCompensator;
     
-    this.pruneDepth = 5;
+    this.pruneDepth = int32(5);
     
     % init track hypothesis pseudo root
     % values of (Id,FrameInd,DetectionInd) are used in unique observation Id generation
@@ -48,6 +50,7 @@ function this = MultiHypothesisTracker(distanceCompensator)
 end
 
 function purgeMemory(this)
+    this.v.nativeRun = true;
     this.v.nextTrackCandidateId=int32(1);
 
     this.trackHypothesisForestPseudoNode.clearChildren;
@@ -79,29 +82,7 @@ function processDetections(this, image, frameInd, elapsedTimeMs, fps, frameDetec
     
     trackIdToScore = containers.Map('KeyType', 'int32', 'ValueType', 'double');
     trackIdToScoreKalman = containers.Map('KeyType', 'int32', 'ValueType', 'double');
-    kalmanFilter = this.createKalmanPredictor([0 0], fps);
-    trackScores = zeros(1, length(leafSetNew));
-    for leafSetInd=1:length(leafSetNew)
-        leaf = leafSetNew{leafSetInd};
-        
-        trackSeq = leaf.getPathFromRoot();
-        trackSeq(1) = []; % exclude pseudo root from seq
-
-%         [scoreMan,scoreKalman] = this.calcTrackSequenceScoreNew(trackSeq, kalmanFilter);
-%         if debug
-%             fprintf('root %s leaf %s score=%.4f score2=%.4f\n', trackSeq{1}.briefInfoStr, leaf.briefInfoStr, scoreMan, scoreKalman);
-%         end
-        
-        % TODO: keep asserts
-        %assert(scoreMan == leaf.Score);
-        %assert(scoreKalman == leaf.ScoreKalman);
-        
-        scoreKalman = leaf.ScoreKalman;
-        
-        trackScores(leafSetInd) = scoreKalman;
-        trackIdToScore(leaf.Id) = scoreKalman;
-        trackIdToScoreKalman(leaf.Id) = scoreKalman;
-    end
+    trackScores = this.calcTrackHypothesisScore(leafSetNew, trackIdToScore, trackIdToScoreKalman);
    
     if debug
         fprintf('grown tree, hypothesisCount=%d\n', length(leafSetNew));
@@ -132,6 +113,31 @@ function processDetections(this, image, frameInd, elapsedTimeMs, fps, frameDetec
     if debug
         fprintf('pruned tree\n');
         this.printHypothesis(bestTrackLeafs, trackIdToScore, trackIdToScoreKalman);
+    end
+end
+
+function trackScores = calcTrackHypothesisScore(this, leafSetNew, trackIdToScore, trackIdToScoreKalman)
+    trackScores = zeros(1, length(leafSetNew));
+    for leafSetInd=1:length(leafSetNew)
+        leaf = leafSetNew{leafSetInd};
+        
+        trackSeq = leaf.getPathFromRoot();
+        trackSeq(1) = []; % exclude pseudo root from seq
+
+%         [scoreMan,scoreKalman] = this.calcTrackSequenceScoreNew(trackSeq, kalmanFilter);
+%         if debug
+%             fprintf('root %s leaf %s score=%.4f score2=%.4f\n', trackSeq{1}.briefInfoStr, leaf.briefInfoStr, scoreMan, scoreKalman);
+%         end
+        
+        % TODO: keep asserts
+        %assert(scoreMan == leaf.Score);
+        %assert(scoreKalman == leaf.ScoreKalman);
+        
+        scoreKalman = leaf.ScoreKalman;
+        
+        trackScores(leafSetInd) = scoreKalman;
+        trackIdToScore(leaf.Id) = scoreKalman;
+        trackIdToScoreKalman(leaf.Id) = scoreKalman;
     end
 end
 
