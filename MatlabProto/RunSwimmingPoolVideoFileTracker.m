@@ -156,13 +156,13 @@ function processFrames(obj, renderTopView, debug)
     end
     
     % status
-    fprintf(1, 'tracks count=%d\n', length(obj.v.tracker.tracks));
+    fprintf(1, 'tracks count=%d\n', length(obj.v.tracker.tracksHistory));
 
     %{
     % write output
         framesCount = size(poolTracker.v.videoWithTracksDual,4);
         [~,videoFileName,~] = fileparts(poolTracker.v.videoReader.Name);
-        outFile = sprintf('../output/%s_%s_n%d.avi',videoFileName, utils.PW.timeStampNow, framesCount)
+        outFile = sprintf('../../output/%s_%s_n%d.avi',videoFileName, utils.PW.timeStampNow, framesCount)
         writerObj = VideoWriter(outFile);
         writerObj.FrameRate = 30;
         writerObj.open();
