@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="PWTrackPainter.cpp">
+    <ClCompile Include="PWSwimmingPoolObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

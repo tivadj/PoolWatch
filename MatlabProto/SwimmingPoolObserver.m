@@ -1,4 +1,4 @@
-classdef SwimmerObserver < handle
+classdef SwimmingPoolObserver < handle
 properties
     frameInd;                 % type:int, number of processed frames
     detectionsPerFrame; % type: List<ShapeAssignment>
@@ -7,14 +7,14 @@ properties
     poolRegionDetector;
     distanceCompensator;
     humanDetector;
-    blobTracker;     % MultiHypothesisTracker
+    blobTracker;     % MultiHypothesisBlobTracker
     trackPainterHandle; % id of the native track painter object
     v;
 end
 
 methods
     
-function this = SwimmerObserver(poolRegionDetector, distanceCompensator, humanDetector, blobTracker)
+function this = SwimmingPoolObserver(poolRegionDetector, distanceCompensator, humanDetector, blobTracker)
     assert(~isempty(poolRegionDetector));
     assert(~isempty(distanceCompensator));
     assert(~isempty(humanDetector));
@@ -37,7 +37,7 @@ function purgeMemory(obj)
     
     pruneWindow = obj.blobTracker.pruneDepth + 1;
     fps = single(30); % TODO: init from client
-    obj.trackPainterHandle = PWTrackPainter(int32(0), 'new', pruneWindow, fps);
+    obj.trackPainterHandle = PWSwimmingPoolObserver(int32(0), 'new', pruneWindow, fps);
 end
 
 % Returns frame number for which track info (position, velocity vector etc) is available.
@@ -104,9 +104,9 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     
     % update native painter with new blobs
     if ~this.blobTracker.v.nativeRun
-        PWTrackPainter(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
+        PWSwimmingPoolObserver(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
     else
-        PWTrackPainter(this.trackPainterHandle, 'processBlobs', int32(this.frameInd), imageSwimmers, bodyDescrs);
+        PWSwimmingPoolObserver(this.trackPainterHandle, 'processBlobs', int32(this.frameInd), imageSwimmers, bodyDescrs);
         
         pruneWindow=6;
         readyFrameInd = this.frameInd - pruneWindow;
@@ -145,7 +145,7 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
     % update native painter with track changes
     if frameIndWithTrackInfo ~= -1
         if ~this.blobTracker.v.nativeRun
-            PWTrackPainter(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
+            PWSwimmingPoolObserver(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
         end
     end
 
@@ -273,7 +273,7 @@ function imageWithTracks = adornImageWithTrackedBodies(this, queryImage, coordTy
         imageWithTracks = TrackPainter.adornImageWithTrackedBodies(queryImage, coordType, queryFrameInd, trailLength, this.detectionsPerFrame, this.tracksHistory, this.distanceCompensator);
     else
         % native drawing
-        imageWithTracks=PWTrackPainter(this.trackPainterHandle, 'adornImage', queryImage, int32(queryFrameInd), trailLength);
+        imageWithTracks=PWSwimmingPoolObserver(this.trackPainterHandle, 'adornImage', queryImage, int32(queryFrameInd), trailLength);
     end
 end
 

@@ -6,7 +6,7 @@
 #include <opencv2/matlab/bridge.hpp>
 #include <opencv2/core.hpp>
 
-#include "TrackPainter.h"
+#include "SwimmingPoolObserver.h"
 #include "PoolWatchFacade.h"
 
 using namespace std;
@@ -15,13 +15,13 @@ using namespace cv;
 using namespace matlab;
 using namespace bridge;
 
-map<int, unique_ptr<TrackPainter>> trackPaintHandlers;
+map<int, unique_ptr<SwimmingPoolObserver>> trackPaintHandlers;
 
-int createTrackPainter(map<int, unique_ptr<TrackPainter>>& trackPaintHandlers, int pruneWindow, float fps)
+int createTrackPainter(map<int, unique_ptr<SwimmingPoolObserver>>& trackPaintHandlers, int pruneWindow, float fps)
 {
 	auto nextId = static_cast<int>(trackPaintHandlers.size());
 	nextId += 1; // first id=1
-	trackPaintHandlers.insert(make_pair(nextId, std::move(make_unique<TrackPainter>(pruneWindow, fps))));
+	trackPaintHandlers.insert(make_pair(nextId, std::move(make_unique<SwimmingPoolObserver>(pruneWindow, fps))));
 	return nextId;
 }
 

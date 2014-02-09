@@ -8,15 +8,15 @@
 #include "MultiHypothesisBlobTracker.h"
 
 /** Decorates frame images with tracks pathes and swimmer shapes. */
-class TrackPainter
+class SwimmingPoolObserver
 {
 	std::vector<std::vector<DetectedBlob>> blobsPerFrame_;
 	std::map<int, TrackInfoHistory> trackIdToHistory_;
 	std::unique_ptr<MultiHypothesisBlobTracker> blobTracker_;
 public:
-	TrackPainter(int pruneWindow, float fps);
-	TrackPainter(const TrackPainter& tp) = delete;
-	virtual ~TrackPainter();
+	SwimmingPoolObserver(int pruneWindow, float fps);
+	SwimmingPoolObserver(const SwimmingPoolObserver& tp) = delete;
+	virtual ~SwimmingPoolObserver();
 	void setBlobs(size_t frameOrd, const std::vector<DetectedBlob>& blobs);
 	void toString(std::stringstream& bld);
 	void setTrackChangesPerFrame(int frameOrd, const std::vector<TrackChangePerFrame>& trackChanges);

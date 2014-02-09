@@ -84,12 +84,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="PWTrackPainter.cpp" />
+    <ClCompile Include="PWSwimmingPoolObserver.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <Target Name="BuildPoolWatchMexLibraries" AfterTargets="Build">
-    <Exec Command="$(MatlabDir)bin\mex $(ProjectDir)PWTrackPainter.cpp -I&quot;$(PoolWatchDir)PoolWatchBackend&quot; -lPoolWatchBackend -L&quot;$(OutDir)&quot; -outdir &quot;$(OutDir)&quot;" />
+    <Exec Command="$(MatlabDir)bin\mex $(ProjectDir)PWSwimmingPoolObserver.cpp -I&quot;$(PoolWatchDir)PoolWatchBackend&quot; -lPoolWatchBackend -L&quot;$(OutDir)&quot; -outdir &quot;$(OutDir)&quot;" />
   </Target>
 </Project>

@@ -93,7 +93,7 @@
     <ClInclude Include="PoolWatchFacade.h" />
     <ClInclude Include="MatlabInterop.h" />
     <ClInclude Include="TrackHypothesisTreeNode.h" />
-    <ClInclude Include="TrackPainter.h" />
+    <ClInclude Include="SwimmingPoolObserver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="algos1.cpp" />
@@ -104,7 +104,7 @@
     <ClCompile Include="MatlabInterop.cpp" />
     <ClCompile Include="TrackHypothesisTreeNode.cpp" />
     <ClCompile Include="TrackPaintMexFunction.cpp" />
-    <ClCompile Include="TrackPainter.cpp" />
+    <ClCompile Include="SwimmingPoolObserver.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

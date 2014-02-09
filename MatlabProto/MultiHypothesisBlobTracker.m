@@ -1,4 +1,4 @@
-classdef MultiHypothesisTracker < handle
+classdef MultiHypothesisBlobTracker < handle
 %MULTIHYPOTHESISTRACKER Summary of this class goes here
 %   Detailed explanation goes here
 
@@ -22,7 +22,7 @@ end
 
 methods
     
-function this = MultiHypothesisTracker(distanceCompensator)
+function this = MultiHypothesisBlobTracker(distanceCompensator)
     assert(~isempty(distanceCompensator));
     this.distanceCompensator = distanceCompensator;
     
