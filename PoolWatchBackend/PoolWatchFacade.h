@@ -3,8 +3,15 @@
 #include "mex.h"
 #include <opencv2/core.hpp>
 
+//#ifdef POOLWATCH_EXPORTS
+//#define POOLWATCH_API __declspec(dllexport)
+//#else
+//#define POOLWATCH_API __declspec(dllimport)
+//#endif
+
 typedef void (*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
 
+/** Rectangular region of tracket target, which is detected in camera's image frame. */
 struct DetectedBlob
 {
 	int Id;
@@ -25,10 +32,10 @@ enum TrackChangeUpdateType
 struct TrackChangePerFrame
 {
 	int TrackCandidateId;
-	TrackChangeUpdateType UpdateType; // enum
+	TrackChangeUpdateType UpdateType;
 	cv::Point3f EstimatedPosWorld; // [X, Y, Z] corrected by sensor position(in world coord)
 
-	int ObservationInd; // type:int32, 0 = no observation; >0 observation index
+	int ObservationInd; // 0 = no observation; >0 observation index
 	cv::Point2f ObservationPosPixExactOrApprox; // [X, Y]; required to avoid world->camera conversion on drawing
 };
 
@@ -50,3 +57,4 @@ __declspec(dllexport) void executeMexFunctionSafe(MexFunctionDelegate mexFun, in
 //
 
 __declspec(dllexport) void TrackPaintMexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
+

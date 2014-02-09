@@ -17,6 +17,7 @@ properties
     frameIndWithTrackInfo; % type: int32
     v;
     %v.nextTrackCandidateId; % type: int32
+    %v.nativeRun; % type: bool, whether to execute native code or Matlab code
 end
 
 methods

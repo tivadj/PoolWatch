@@ -8,10 +8,11 @@
 
 using namespace std;
 
-TrackPainter::TrackPainter()
+TrackPainter::TrackPainter(int pruneWindow, float fps)
 {
+	auto cp = make_shared<CameraProjector>();
+	blobTracker_.swap(make_unique<MultiHypothesisBlobTracker>(cp, pruneWindow, fps));
 }
-
 
 TrackPainter::~TrackPainter()
 {
@@ -32,6 +33,22 @@ void TrackPainter::setBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs)
 
 	assert(frameOrd == blobsPerFrame_.size() - 1);
 	blobsPerFrame_[frameOrd] = blobs;
+}
+
+void TrackPainter::processBlobs(size_t frameOrd, const cv::Mat& image, const vector<DetectedBlob>& blobs)
+{
+	setBlobs(frameOrd, blobs);
+
+	auto fps = blobTracker_->getFps();
+	auto elapsedTimeMs = 1000.0f / fps;
+	int frameIndWithTrackInfo = -1;
+	vector<TrackChangePerFrame> trackChangeList;
+	blobTracker_->trackBlobs((int)frameOrd, blobs, image, fps, elapsedTimeMs, frameIndWithTrackInfo, trackChangeList);
+
+	if (frameIndWithTrackInfo != -1)
+	{
+		setTrackChangesPerFrame(frameIndWithTrackInfo, trackChangeList);
+	}
 }
 
 void TrackPainter::toString(stringstream& bld)

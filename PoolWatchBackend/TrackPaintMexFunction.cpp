@@ -1,24 +1,27 @@
 #include <vector>
 #include <tuple>
 #include <map>
-using namespace std;
+#include <memory>
 
 #include <opencv2/matlab/bridge.hpp>
 #include <opencv2/core.hpp>
-using namespace cv;
-using namespace matlab;
-using namespace bridge;
 
 #include "TrackPainter.h"
 #include "PoolWatchFacade.h"
 
-map<int, TrackPainter> trackPaintHandlers;
+using namespace std;
 
-int createTrackPainter(map<int, TrackPainter>& trackPaintHandlers)
+using namespace cv;
+using namespace matlab;
+using namespace bridge;
+
+map<int, unique_ptr<TrackPainter>> trackPaintHandlers;
+
+int createTrackPainter(map<int, unique_ptr<TrackPainter>>& trackPaintHandlers, int pruneWindow, float fps)
 {
 	auto nextId = static_cast<int>(trackPaintHandlers.size());
 	nextId += 1; // first id=1
-	trackPaintHandlers.insert(make_pair(nextId, TrackPainter()));
+	trackPaintHandlers.insert(make_pair(nextId, std::move(make_unique<TrackPainter>(pruneWindow, fps))));
 	return nextId;
 }
 
@@ -38,7 +41,7 @@ tuple<bool,string> ParseDetectedBlobStruct(const mxArray* blobsAsStruct, vector<
 				return std::make_tuple(false, "type(Id)==int32 failed");
 			int id = Bridge(mx).toInt();
 			blob.Id = id;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("id=%d\n", id);
 #endif
 		}
@@ -48,7 +51,7 @@ tuple<bool,string> ParseDetectedBlobStruct(const mxArray* blobsAsStruct, vector<
 				return std::make_tuple(false, "type(Centroid)==float failed");
 			auto pCentr = reinterpret_cast<cv::Point2f*>(mxGetData(mx));
 			blob.Centroid = *pCentr;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("centr=%f %f\n", pCentr->x, pCentr->y);
 #endif
 		}
@@ -58,7 +61,7 @@ tuple<bool,string> ParseDetectedBlobStruct(const mxArray* blobsAsStruct, vector<
 				return std::make_tuple(false, "type(CentroidWorld)==float failed");
 			auto pCentr3 = reinterpret_cast<cv::Point3f*>(mxGetData(mx));
 			blob.CentroidWorld = *pCentr3;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("centr=%f %f\n", pCentr3->x, pCentr3->y);
 #endif
 		}
@@ -68,7 +71,7 @@ tuple<bool,string> ParseDetectedBlobStruct(const mxArray* blobsAsStruct, vector<
 				return std::make_tuple(false, "type(BoundingBox)==float failed");
 			auto pBnd = reinterpret_cast<cv::Rect2f*>(mxGetData(mx));
 			blob.BoundingBox = *pBnd;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("bnd=%f %f %f %f\n", pBnd->x, pBnd->y, pBnd->width, pBnd->height);
 #endif
 		}
@@ -78,7 +81,7 @@ tuple<bool,string> ParseDetectedBlobStruct(const mxArray* blobsAsStruct, vector<
 				return std::make_tuple(false, "type(OutlinePixels)==int32 failed");
 			cv::Mat mat = Bridge(mx).toMat();
 			blob.OutlinePixels = mat;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("outPix=%d %d\n", mat.rows, mat.cols);
 			if (mat.rows >= 2)
 			{
@@ -93,7 +96,7 @@ tuple<bool,string> ParseDetectedBlobStruct(const mxArray* blobsAsStruct, vector<
 				return std::make_tuple(false, "type(FilledImage)==bool failed");
 			cv::Mat mat = Bridge(mx).toMat();
 			blob.FilledImage = mat;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("FilledImage=%d %d\n", mat.rows, mat.cols);
 #endif
 		}
@@ -119,7 +122,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 				return std::make_tuple(false, "type(Id)==int32 failed");
 			int trackCandidateId = Bridge(mx).toInt();
 			change.TrackCandidateId = trackCandidateId;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("TrackCandidateId=%d\n", trackCandidateId);
 #endif
 		}
@@ -129,7 +132,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 				return std::make_tuple(false, "type(UpdateType)==int32 failed");
 			int updateType = Bridge(mx).toInt();
 			change.UpdateType = static_cast<TrackChangeUpdateType>(updateType);
-#if _DEBUG
+#if PRINTF
 			mexPrintf("UpdateType=%d\n", updateType);
 #endif
 		}
@@ -139,7 +142,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 				return std::make_tuple(false, "type(EstimatedPosWorld)==float failed");
 			auto pCentr3 = reinterpret_cast<cv::Point3f*>(mxGetData(mx));
 			change.EstimatedPosWorld = *pCentr3;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("EstimatedPosWorld=%f %f\n", pCentr3->x, pCentr3->y);
 #endif
 		}
@@ -149,7 +152,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 				return std::make_tuple(false, "type(ObservationInd)==int32 failed");
 			int obsInd = Bridge(mx).toInt() - 1; // -1 due to Matlab indices start from one
 			change.ObservationInd = obsInd;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("ObservationInd=%d\n", obsInd);
 #endif
 		}
@@ -159,7 +162,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 				return std::make_tuple(false, "type(ObservationPosPixExactOrApprox)==float failed");
 			auto pCentr = reinterpret_cast<cv::Point2f*>(mxGetData(mx));
 			change.ObservationPosPixExactOrApprox = *pCentr;
-#if _DEBUG
+#if PRINTF
 			mexPrintf("ObservationPosPixExactOrApprox=%f %f\n", pCentr->x, pCentr->y);
 #endif
 		}
@@ -170,7 +173,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 
 void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* prhs[])
 {
-#if _DEBUG
+#if PRINTF
 	mexPrintf("inside TrackPaintMexFunction int=%d\n", sizeof(int));
 #endif
 	//const char* argMethodName = "PWTrackPainter";
@@ -186,7 +189,23 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 	string methodName = inputs[1].toString();
 	if (methodName == "new")
 	{
-		// fun(0, 'new') -> objId
+		// fun(0, 'new', pruneWindow, fps) -> objId
+
+		if (!mxIsInt32(prhs[2]))
+		{
+			matlab::error("type(pruneWindow)==int32 failed");
+			return;
+		}
+
+		int pruneWindow = inputs[2].toInt();
+
+		if (!mxIsSingle(prhs[3]))
+		{
+			matlab::error("type(fps)==float failed");
+			return;
+		}
+
+		float fps = inputs[3].toFloat();
 
 		if (nlhs > 1)
 		{
@@ -194,12 +213,12 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 			return;
 		}
 
-		auto nextId = createTrackPainter(trackPaintHandlers);
+		auto nextId = createTrackPainter(trackPaintHandlers, pruneWindow, fps);
 
 		mxArray* mx = mxCreateNumericMatrix(1, 1, mxINT32_CLASS, mxREAL);
 		*static_cast<int32_t*>(mxGetData(mx)) = static_cast<int32_t>(nextId);
 
-#if _DEBUG
+#if PRINTF
 		mexPrintf("objIds count=%d\n", trackPaintHandlers.size());
 #endif
 
@@ -232,8 +251,8 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 			return;
 		}
 
-		TrackPainter& trackPainter = objIdIt->second;
-		trackPainter.setBlobs(frameOrd, blobs);
+		auto pTrackPainter = objIdIt->second.get();
+		pTrackPainter->setBlobs(frameOrd, blobs);
 	}
 	else if (methodName == "setTrackChangesPerFrame")
 	{
@@ -262,8 +281,39 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 			return;
 		}
 
-		TrackPainter& trackPainter = objIdIt->second;
-		trackPainter.setTrackChangesPerFrame(frameOrd, trackChanges);
+		auto pTrackPainter = objIdIt->second.get();
+		pTrackPainter->setTrackChangesPerFrame(frameOrd, trackChanges);
+	}
+	else if (methodName == "processBlobs")
+	{
+		// eg: fun(1,'processBlobs', frameOrd, image, blobs) -> void
+		auto objIdIt = trackPaintHandlers.find(objId);
+		if (objIdIt == trackPaintHandlers.end())
+		{
+			matlab::error("Object with given ID doesn't exist");
+			return;
+		}
+
+		if (!mxIsInt32(prhs[2]))
+		{
+			matlab::error("type(frameOrd)==int32 failed");
+			return;
+		}
+		int frameOrd = inputs[2].toInt() - 1; // -1 due to Matlab indices start from one
+		const mxArray* pImage = prhs[3];
+		cv::Mat imageMat = Bridge(pImage).toMat();
+		const mxArray* pDetectionsPerFrame = prhs[4];
+
+		vector<DetectedBlob> blobs;
+		auto parseRes = ParseDetectedBlobStruct(pDetectionsPerFrame, blobs);
+		if (!get<0>(parseRes))
+		{
+			matlab::error(get<1>(parseRes));
+			return;
+		}
+
+		auto pTrackPainter = objIdIt->second.get();
+		pTrackPainter->processBlobs(frameOrd, imageMat, blobs);
 	}
 	else if (methodName == "adornImage")
 	{
@@ -298,17 +348,17 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 		}
 
 		int trailLength = inputs[4].toInt();
-#if _DEBUG
+#if PRINTF
 		mexPrintf("trailLength=%d\n", trailLength);
 #endif
 
-		TrackPainter& trackPainter = objIdIt->second;
+		auto pTrackPainter = objIdIt->second.get();
 		cv::Mat adornedImage = image.clone();
-		trackPainter.adornImage(image, frameOrd, trailLength, adornedImage);
+		pTrackPainter->adornImage(image, frameOrd, trailLength, adornedImage);
 
 		if (nlhs > 0)
 		{
-			// TODO: Bridge::FromMat->deepCopyAndTranspose seems to have a memory leak
+			// TODO: Bridge::FromMat->deepCopyAndTranspose() seems to have a memory leak
 			MxArray adornedImageMx = Bridge::FromMat<uint8_t>(adornedImage);
 			plhs[0] = adornedImageMx.releaseOwnership();
 		}
@@ -318,7 +368,7 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 		// fun(1, 'toString') -> void
 
 		stringstream bld;
-		trackPaintHandlers[objId].toString(bld);
+		trackPaintHandlers[objId]->toString(bld);
 		string msg = bld.str();
 		mexPrintf("%s", msg.c_str());
 	}
