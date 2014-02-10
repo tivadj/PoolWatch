@@ -37,7 +37,12 @@ function purgeMemory(obj)
     
     pruneWindow = obj.blobTracker.pruneDepth + 1;
     fps = single(30); % TODO: init from client
-    obj.trackPainterHandle = PWSwimmingPoolObserver(int32(0), 'new', pruneWindow, fps);
+    
+    if obj.blobTracker.v.nativeRun
+        obj.trackPainterHandle = PWSwimmingPoolObserver(int32(0), 'new', pruneWindow, fps);
+    else
+        obj.trackPainterHandle = int32(-1);
+    end
 end
 
 % Returns frame number for which track info (position, velocity vector etc) is available.
@@ -48,6 +53,70 @@ end
 
 % elapsedTimeMs - time in milliseconds since last frame
 function nextFrame(this, image, elapsedTimeMs, fps, debug)
+    [imageSwimmers,bodyDescrs] = this.getSwimmerBlobs(image, debug);
+    this.detectionsPerFrame{this.frameInd} = bodyDescrs;
+    
+    if debug
+        blobsCount = length(bodyDescrs);
+        fprintf('blobsCount=%d\n', blobsCount);
+        for i=1:blobsCount
+            centr = bodyDescrs(i).Centroid;
+            fprintf('Blob[%d] Centroid=[%.0f %.0f]\n', i, centr(1), centr(2));
+        end
+    end
+    
+    % update native painter with new blobs
+    if this.blobTracker.v.nativeRun
+        %PWSwimmingPoolObserver(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
+        PWSwimmingPoolObserver(this.trackPainterHandle, 'processBlobs', int32(this.frameInd), imageSwimmers, bodyDescrs);
+        
+        pruneWindow=6;
+        readyFrameInd = this.frameInd - pruneWindow;
+        if readyFrameInd < 1
+            readyFrameInd = -1;
+        end
+        this.v.queryFrameInd=readyFrameInd;
+
+        return;
+    end
+    
+    %
+    [frameIndWithTrackInfo,trackStatusList] = this.blobTracker.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
+    
+    % remember index of the last ready frame 
+    this.v.queryFrameInd = frameIndWithTrackInfo;
+    
+    if true % assert
+        for i=1:length(trackStatusList)
+            change = trackStatusList(i);
+            assert(~isempty(change.EstimatedPosWorld));
+            assert(~isempty(change.ObservationPosPixExactOrApprox));
+        end
+    end
+    
+    if debug
+        fprintf('trackStatusList.length=%d\n', length(trackStatusList));
+        for i=1:length(trackStatusList)
+            change = trackStatusList(i);
+            pix = change.ObservationPosPixExactOrApprox;
+            fprintf('change %d: UpdType=%d ObsId=%d [%f %f]\n', i, change.UpdateType, change.ObservationInd, pix(1), pix(2));
+        end
+    end
+    
+    % update native painter with track changes
+    if this.blobTracker.v.nativeRun
+        if frameIndWithTrackInfo ~= -1
+            PWSwimmingPoolObserver(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
+        end
+    end
+
+	% update positions history for each track
+    this.recordTrackStatus(frameIndWithTrackInfo,trackStatusList);
+
+    this.promoteMatureTrackCandidates(this.frameInd);
+end
+
+function [imageSwimmers,bodyDescrs] = getSwimmerBlobs(this, image, debug)
     this.frameInd = this.frameInd + 1;
 
     %
@@ -90,69 +159,6 @@ function nextFrame(this, image, elapsedTimeMs, fps, debug)
         centrWorld = this.distanceCompensator.cameraToWorld(centr);
         bodyDescrs(i).CentroidWorld = single(centrWorld);
     end
-    
-    this.detectionsPerFrame{this.frameInd} = bodyDescrs;
-    
-    if debug
-        blobsCount = length(bodyDescrs);
-        fprintf('blobsCount=%d\n', blobsCount);
-        for i=1:blobsCount
-            centr = bodyDescrs(i).Centroid;
-            fprintf('Blob[%d] Centroid=[%.0f %.0f]\n', i, centr(1), centr(2));
-        end
-    end
-    
-    % update native painter with new blobs
-    if ~this.blobTracker.v.nativeRun
-        PWSwimmingPoolObserver(this.trackPainterHandle, 'setBlobs', int32(this.frameInd), bodyDescrs);
-    else
-        PWSwimmingPoolObserver(this.trackPainterHandle, 'processBlobs', int32(this.frameInd), imageSwimmers, bodyDescrs);
-        
-        pruneWindow=6;
-        readyFrameInd = this.frameInd - pruneWindow;
-        if readyFrameInd < 1
-            readyFrameInd = -1;
-        end
-        this.v.queryFrameInd=readyFrameInd;
-
-        return;
-    end
-    
-    
-    %
-    [frameIndWithTrackInfo,trackStatusList] = this.blobTracker.trackBlobs(this.frameInd, elapsedTimeMs, fps, bodyDescrs, imageSwimmers, debug);
-    
-    % remember index of the last ready frame 
-    this.v.queryFrameInd = frameIndWithTrackInfo;
-    
-    if true % assert
-        for i=1:length(trackStatusList)
-            change = trackStatusList(i);
-            assert(~isempty(change.EstimatedPosWorld));
-            assert(~isempty(change.ObservationPosPixExactOrApprox));
-        end
-    end
-    
-    if debug
-        fprintf('trackStatusList.length=%d\n', length(trackStatusList));
-        for i=1:length(trackStatusList)
-            change = trackStatusList(i);
-            pix = change.ObservationPosPixExactOrApprox;
-            fprintf('change %d: UpdType=%d ObsId=%d [%f %f]\n', i, change.UpdateType, change.ObservationInd, pix(1), pix(2));
-        end
-    end
-    
-    % update native painter with track changes
-    if frameIndWithTrackInfo ~= -1
-        if ~this.blobTracker.v.nativeRun
-            PWSwimmingPoolObserver(this.trackPainterHandle, 'setTrackChangesPerFrame', int32(frameIndWithTrackInfo), trackStatusList);
-        end
-    end
-
-	% update positions history for each track
-    this.recordTrackStatus(frameIndWithTrackInfo,trackStatusList);
-
-    this.promoteMatureTrackCandidates(this.frameInd);
 end
 
 function recordTrackStatus(this, frameIndWithTrackInfo, trackStatusList)
