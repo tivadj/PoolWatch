@@ -1,5 +1,7 @@
 import std.stdio;
 import std.string;
+import std.stdint;
+import std.algorithm;
 import PoolWatchInteropDLangTests;
 import PoolWatchHelpersDLang.GraphHelpers;
 import PoolWatchHelpersDLang.PoolWatchInteropDLang;
@@ -24,18 +26,40 @@ void run()
 	const int openBracketLex = -1;
 	const int closeBracketLex = -2;
 
-	auto mxArrayFuns = createMxArrayFuns;
+	Int32Allocator int32Alloc = createInt32Allocator();
 
-	mxArrayPtr pIncompEdgeMat = computeTrackIncopatibilityGraph		
+	int32_t* p1;
+	printf("size=%d\n", p1.sizeof);
+
+	Int32PtrPair nodeIdsRange = computeTrackIncopatibilityGraph		
 		(&encodedTree[0], cast(int)encodedTree.length, collisionIgnoreNodeId, 
-		 openBracketLex, closeBracketLex, &mxArrayFuns);
-	//scope(exit) pwFree(pIncompEdgeListColumnwise);
+		 openBracketLex, closeBracketLex, int32Alloc);
+	scope(exit) int32Alloc.DestroyArrayInt32(nodeIdsRange.pFirst, int32Alloc.pUserData);
 
-	size_t incompEdgeCount = mxArrayFuns.GetNumberOfElements(pIncompEdgeMat);
-	debugFun(format("incompEdgeCount=%s", incompEdgeCount).toStringz);
+	size_t idsCount = nodeIdsRange.pLast - nodeIdsRange.pFirst;
+	size_t edgesCount = idsCount / 2;
+	debugFun(format("idsCount=%d\n", idsCount).toStringz);
 
-	int* pNodeIds = cast(int*)mxArrayFuns.GetDataPtr(pIncompEdgeMat);
-	for (auto i=0; i< incompEdgeCount; ++i)
-	    write(" ", pNodeIds[i]);
+	assert(edgesCount == 5, "Must be 5 edges");
+
+	auto nodeIds = nodeIdsRange.pFirst[0..idsCount];
+	for (auto i=0; i< idsCount; ++i)
+	    write(" ", nodeIds[i]);
 	writeln;
+
+	// normalize edges from less id to greater id
+
+	int32_t[2][] edgesIds = new int32_t[2][edgesCount];
+	for (auto edgeId=0; edgeId < edgesCount; ++edgeId)
+	{
+		auto a1 = nodeIds[edgeId*2+0];
+		auto a2 = nodeIds[edgeId*2+1];
+		edgesIds[edgeId][0] = min(a1, a2);
+		edgesIds[edgeId][1] = max(a1, a2);
+	}
+
+	bool lexFirst(int32_t[2] edgeX, int32_t[2] edgeY) { return edgeX[0] < edgeY[0]; }
+	sort!(lexFirst)(edgesIds);
+
+	assert(edgesIds == [[91, 92], [91, 93], [92, 93], [92, 94], [93, 94]]);
 }

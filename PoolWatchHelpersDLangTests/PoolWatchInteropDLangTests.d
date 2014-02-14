@@ -1,5 +1,6 @@
 import std.stdio;
 import std.string;
+import std.stdint;
 import core.memory;
 import PoolWatchHelpersDLang.PoolWatchInteropDLang;
 //import PoolWatchHelpersDLang.PoolWatchInteropDLang;
@@ -62,7 +63,7 @@ extern (C) size_t pwGetNumberOfElementsDImpl(mxArrayPtr pMat)
 
 extern (C) void debugFun(const(char)* msg) 
 {
-	//printf(msg); 
+	printf(msg); 
 	return; 
 };
 
@@ -77,6 +78,15 @@ mxArrayFuns_tag createMxArrayFuns()
 	mxArrayFuns.logDebug = &debugFun;
 
 	return mxArrayFuns;
+}
+
+Int32Allocator createInt32Allocator()
+{
+	Int32Allocator alloc;
+	alloc.CreateArrayInt32 = function int32_t*(size_t size, void* pUserData) { auto result = new int32_t[size]; return &result[0]; };
+	alloc.DestroyArrayInt32 = function void(int32_t* p, void* pUserData) { destroy(p); };
+	alloc.pUserData = null; // do not pass around helper data
+	return alloc;
 }
 
 private void test1()

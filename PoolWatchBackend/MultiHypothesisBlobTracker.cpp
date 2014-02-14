@@ -4,6 +4,7 @@
 #include <cassert>
 #include <iostream>
 #include <memory>
+#include <array>
 
 #include "opencv2/video/tracking.hpp"
 
@@ -15,7 +16,12 @@ using namespace std;
 
 extern "C"
 {
-	mxArrayPtr computeTrackIncopatibilityGraph(const int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, mxArrayFuns_tag* mxArrayFuns);
+	struct Int32PtrPair
+	{
+		int32_t* pFirst;
+		int32_t* pLast;
+	};
+	Int32PtrPair computeTrackIncopatibilityGraph(const int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, Int32Allocator int32Alloc);
 }
 
 MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraProjector> cameraProjector, int pruneWindow, float fps)
@@ -450,16 +456,32 @@ void MultiHypothesisBlobTracker::hypothesisTreeToTreeStringRec(const TrackHypoth
 
 mxArray* MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLang(const vector<int32_t>& encodedTreeString)
 {
-	mxArrayFuns_tag mxArrayFuns;
-	mxArrayFuns.CreateArrayInt32 = &pwCreateArrayInt32;
-	mxArrayFuns.GetDataPtr = &pwGetDataPtr;
-	mxArrayFuns.GetNumberOfElements = &pwGetNumberOfElements;
-	mxArrayFuns.DestroyArray = &pwDestroyArray;
-	mxArrayFuns.logDebug = &PWmexPrintf;
+	mxArray* pIncompNodesMat = nullptr;
 
-	mxArrayPtr pIncompNodesVoid = computeTrackIncopatibilityGraph(&encodedTreeString[0], (int)encodedTreeString.size(),
-		trackHypothesisForestPseudoNode_.Id, openBracket, closeBracket, &mxArrayFuns);
-	mxArray* pIncompNodesMat = reinterpret_cast<mxArray*>(pIncompNodesVoid);
+	Int32Allocator int32Alloc;
+	int32Alloc.pUserData = &pIncompNodesMat;
+	int32Alloc.CreateArrayInt32 = [](size_t celem, void* pUserData) -> int32_t*
+	{
+		mxArray** ppMat = reinterpret_cast<mxArray**>(pUserData);
+		assert(*ppMat == nullptr && "computeTrackIncopatibilityGraph must request memory only once");
+
+		*ppMat = mxCreateNumericMatrix(1, celem, mxINT32_CLASS, mxREAL);
+
+		return reinterpret_cast<int32_t*>(mxGetData(*ppMat));
+	};
+	int32Alloc.DestroyArrayInt32 = [](int32_t* pInt32, void* pUserData) -> void
+	{
+		mxArray** ppMat = reinterpret_cast<mxArray**>(pUserData);
+		assert(*ppMat != nullptr && "computeTrackIncopatibilityGraph at first must allocate memory");
+		mxDestroyArray(*ppMat);
+	};
+
+	Int32PtrPair incompNodesRange = computeTrackIncopatibilityGraph(&encodedTreeString[0], (int)encodedTreeString.size(),
+		trackHypothesisForestPseudoNode_.Id, openBracket, closeBracket, int32Alloc);
+	
+	assert(pIncompNodesMat != nullptr);
+	assert(incompNodesRange.pFirst == mxGetData(pIncompNodesMat));
+
 	return pIncompNodesMat;
 }
 

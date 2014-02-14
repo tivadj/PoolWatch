@@ -1,6 +1,7 @@
 module PoolWatchHelpersDLang.PoolWatchInteropDLang;
 
 import std.stdio;
+import std.stdint;
 import std.algorithm;
 import std.format;
 import std.string;
@@ -48,7 +49,7 @@ extern (C)
 	alias size_t function (mxArrayPtr pMat) pwGetNumberOfElementsFun;
 	alias void function(mxArrayPtr pMat) pwDestroyArrayFun;
 	alias void function(const(char)* msg) DebugFun;
-
+	
 	struct mxArrayFuns_tag
 	{
 		pwCreateArrayInt32Fun CreateArrayInt32;
@@ -56,6 +57,22 @@ extern (C)
 		pwGetNumberOfElementsFun GetNumberOfElements;
 		pwDestroyArrayFun DestroyArray;
 		DebugFun logDebug;
+	};
+
+	alias int32_t* function(size_t celem, void* pUserData) pwCreateArrayInt32FunNew;
+	alias void function(int32_t* pInt32, void* pUserData) pwDestroyArrayInt32FunNew;
+
+	struct Int32Allocator
+	{
+		pwCreateArrayInt32FunNew CreateArrayInt32;
+		pwDestroyArrayInt32FunNew DestroyArrayInt32;
+		void* pUserData; // data which will be passed to Create/Destroy methods by server code
+	};
+
+	struct Int32PtrPair
+	{
+		int32_t* pFirst;
+		int32_t* pLast;
 	};
 }
 
@@ -184,8 +201,12 @@ extern (C) int computeConnectedComponentsCount(int* pEdgeListColumnwise, int edg
 // encodedTree = for example, [1, 86, -1 , 2, 87, -1, 21, 91, 22, 92, -2, 3, 88, -2, -2]
 // $(D collisionIgnoreNodeId) is not taken into account, when calculating incompatibility graph (this id represent eg. rootId)
 extern (C) 
-mxArrayPtr computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, mxArrayFuns_tag* mxArrayFuns)
+Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, Int32Allocator allocator)
 {
+	int32_t* p1;
+	printf("size=%d\n", p1.sizeof);
+	auto p1Size = p1.sizeof;
+
 	assert(pEncodedTree != null);
 
 	int[] encodedTree = pEncodedTree[0..encodedTreeLength];
@@ -351,18 +372,23 @@ mxArrayPtr computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeLen
 	// populate result
 	{
 		auto len = edgesCount * 2; // (from,two) edge pairs
-		mxArrayPtr nodeIdsArray = mxArrayFuns.CreateArrayInt32(len);
-		scope(failure) mxArrayFuns.DestroyArray(nodeIdsArray);
 
-		auto pNodeIds = cast(int*)mxArrayFuns.GetDataPtr(nodeIdsArray);
+		int32_t* pNodeIdsArray = allocator.CreateArrayInt32(len, allocator.pUserData);
+		scope(failure) allocator.DestroyArrayInt32(pNodeIdsArray, allocator.pUserData);
+
+		int32_t[] nodeIds = pNodeIdsArray[0..len];
+
 		int outInd = 0;
 		foreach(edgeTuple; edgeList)
 		{
-			pNodeIds[outInd++] = edgeTuple[0];
-			pNodeIds[outInd++] = edgeTuple[1];
+			nodeIds[outInd++] = edgeTuple[0];
+			nodeIds[outInd++] = edgeTuple[1];
 		}
 		assert(len == outInd, "error in data assignment");
-
-		return nodeIdsArray;
+		
+		Int32PtrPair result;
+		result.pFirst = pNodeIdsArray;
+		result.pLast = pNodeIdsArray + len;
+		return  result;
 	}
 }
