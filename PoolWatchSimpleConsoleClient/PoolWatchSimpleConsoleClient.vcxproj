@@ -11,22 +11,23 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{2A4DE587-03E1-4609-8140-EF6576CE750F}</ProjectGuid>
+    <ProjectGuid>{0899D5F7-2242-48F7-AFC5-EE044A47BB8D}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>PoolWatchMatlabExecutables</RootNamespace>
+    <RootNamespace>PoolWatchSimpleConsoleClient</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v120</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -37,19 +38,27 @@
     <Import Project="..\build-config\PoolWatchCommon.props" />
     <Import Project="..\build-config\MatlabBuild.props" />
     <Import Project="..\build-config\OpenCV.props" />
+    <Import Project="..\build-config\Qt.props" />
+    <Import Project="..\build-config\boost.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\build-config\PoolWatchCommon.props" />
     <Import Project="..\build-config\MatlabBuild.props" />
     <Import Project="..\build-config\OpenCV.props" />
+    <Import Project="..\build-config\Qt.props" />
+    <Import Project="..\build-config\boost.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(PoolWatchDir)PoolWatchBackend;$(IncludePath)</IncludePath>
+    <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(PoolWatchDir)build\x64\PWMatlabProxy\src\;$(PoolWatchDir)PoolWatchBackend\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(PoolWatchDir)build\x64\PWMatlabProxy\src;$(OutDir);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(PoolWatchDir)PoolWatchBackend;$(IncludePath)</IncludePath>
+    <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(PoolWatchDir)build\x64\PWMatlabProxy\src\;$(PoolWatchDir)PoolWatchBackend\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(PoolWatchDir)build\x64\PWMatlabProxy\src;$(OutDir);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -57,12 +66,13 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;PWMatlabProxy.lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -73,26 +83,38 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;PWMatlabProxy.lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="PWMaxWeightInependentSetMaxFirst.cpp" />
-    <ClCompile Include="PWSwimmingPoolObserver.cpp" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="targetver.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="PoolBoundaryDetectorTests.cpp" />
+    <ClCompile Include="Program.cpp" />
+    <ClCompile Include="WaterClassifierTests.cpp" />
+    <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="SvgImageMaskSerializerTests.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <Target Name="BuildPoolWatchMexLibraries" AfterTargets="Build">
-    <Message Text="MatlabDir=$(MatlabDir)" Importance="high" />
-    <Exec Command="$(MatlabDir)bin\mex -I$(PoolWatchDir)PoolWatchBackend -lPoolWatchBackend$(LibSuffix) -L$(OutDir) -outdir $(OutDir) $(ProjectDir)PWSwimmingPoolObserver.cpp" />
-    <Exec Command="$(MatlabDir)bin\mex -I$(PoolWatchDir)PoolWatchBackend -lPoolWatchBackend$(LibSuffix) -L$(OutDir) -outdir $(OutDir) $(ProjectDir)PWMaxWeightInependentSetMaxFirst.cpp" />
+  <Target Name="PWSimpleConsoleClientDeploy" AfterTargets="Build">
+    <Copy SourceFiles="$(PoolWatchDir)build\x64\PWMatlabProxy\src\PWMatlabProxy.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />
+    <!--Required to run Matlab's compiled dll-->
+    <!--<Copy SourceFiles="$(MatlabDir)runtime\win64\mclmcrrt8_1.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
+    <!--<Copy SourceFiles="$(MatlabDir)bin\win64\mclbase.dll " DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
+    <!--<Copy SourceFiles="$(MatlabDir)bin\win64\mclmcr.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
+    <!--<Copy SourceFiles="$(MatlabDir)bin\win64\libmx.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
+    <!--<Copy SourceFiles="$(MatlabDir)bin\win64\libmat.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
   </Target>
 </Project>

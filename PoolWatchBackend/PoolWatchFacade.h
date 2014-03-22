@@ -3,11 +3,11 @@
 #include "mex.h"
 #include <opencv2/core.hpp>
 
-//#ifdef POOLWATCH_EXPORTS
-//#define POOLWATCH_API __declspec(dllexport)
-//#else
-//#define POOLWATCH_API __declspec(dllimport)
-//#endif
+#ifdef POOLWATCH_EXPORTS
+#define POOLWATCH_API __declspec(dllexport)
+#else
+#define POOLWATCH_API __declspec(dllimport)
+#endif
 
 typedef void (*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
 
@@ -56,5 +56,10 @@ __declspec(dllexport) void executeMexFunctionSafe(MexFunctionDelegate mexFun, in
 
 //
 
-__declspec(dllexport) void TrackPaintMexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
+__declspec(dllexport) void TrackPaintMexFunction                    (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
+__declspec(dllexport) void MaxWeightInependentSetMaxFirstMexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
 
+__declspec(dllexport) void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask);
+__declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels);
+
+__declspec(dllexport) void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);

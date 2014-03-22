@@ -5,6 +5,15 @@
   <PropertyGroup Label="UserMacros">
     <PoolWatchDir>$(SolutionDir)..\</PoolWatchDir>
     <OutDir>$(PoolWatchDir)build\$(PlatformTarget)\$(Configuration)\</OutDir>
-    <IntDir>$(OutDir)$(ProjectName).obj\</IntDir>
+    <IntDir>$(OutDir)$(ProjectName)_obj\</IntDir>
+
+    <LibSuffix Condition="'$(Configuration)' == 'Debug'">d</LibSuffix>
+    <LibSuffix Condition="'$(Configuration)' != 'Debug'"></LibSuffix>
+  </PropertyGroup>
+
+  <!--Suffixes should be added for dll/libs (except executables) -->
+  <PropertyGroup Label="UserMacros" Condition="'$(ConfigurationType)' == 'DynamicLibrary' OR '$(ConfigurationType)' == 'StaticLibrary'">
+
+    <TargetName>$(ProjectName)$(LibSuffix)</TargetName>
   </PropertyGroup>
 </Project>

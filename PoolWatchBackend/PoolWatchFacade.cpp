@@ -1,6 +1,7 @@
 #include <opencv2\core.hpp>
-#include "PoolWatchFacade.h"
 #include <opencv2\matlab\mxarray.hpp>
+
+#include "PoolWatchFacade.h"
 
 /** Safe wrapper around Matlab mexFunction. */
 void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
@@ -30,3 +31,4 @@ TrackChangePerFrame* TrackInfoHistory::getTrackChangeForFrame(int frameOrd)
 	return &Assignments[frameOrd - FirstAppearanceFrameIdx];
 
 }
+

@@ -3,7 +3,7 @@
   <ImportGroup Label="PropertySheets" />
 
   <PropertyGroup Label="UserMacros">
-    <MatlabDir>E:\Programs\MATLAB\R2013b\</MatlabDir>
+    <MatlabDir>E:\Programs\MATLAB\R2013a\</MatlabDir>
     <!--<PortAudioDir>$(SolutionDir)..\ExternalsSrc\portaudio\</PortAudioDir>
     <PortAudioFilename>portaudio_$(PlatformShortName)</PortAudioFilename>
     <PortAudioFullPath>$(OutDir)..\Release\$(PortAudioFilename).dll</PortAudioFullPath>-->

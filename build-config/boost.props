@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <BoostDir>C:\progs\boost_1_53_0\</BoostDir>
+  </PropertyGroup>
+  <PropertyGroup>
+    <IncludePath>$(BoostDir);$(IncludePath)</IncludePath>
+    <LibraryPath>$(BoostDir)lib\vs2013-x64-hh\lib\;$(LibraryPath)</LibraryPath>
+    <BoostDllSuffix Condition="'$(Configuration)' == 'Debug'">-gd</BoostDllSuffix>
+    <BoostDllSuffix Condition="'$(Configuration)' != 'Debug'"></BoostDllSuffix>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions>BOOST_ALL_DYN_LINK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <!--<Link>
+      <AdditionalDependencies>boost_thread-vc110-mt-gd-1_53.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>-->
+    </ItemDefinitionGroup>
+
+  <Target Name="BoostDeploy" AfterTargets="Build">
+    <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_thread-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_system-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+  </Target>
+  
+  </Project>

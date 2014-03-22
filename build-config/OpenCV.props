@@ -17,9 +17,11 @@
   <ItemDefinitionGroup>
     <Link>
       <AdditionalDependencies>opencv_core300$(OpenCVDllSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_imgproc300$(OpenCVDllSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies>opencv_highgui300$(OpenCVDllSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies>opencv_video300$(OpenCVDllSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies>opencv_calib3d300$(OpenCVDllSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_ml300$(OpenCVDllSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -39,6 +41,8 @@
     <!--required by opencv_calib3d-->
     <Copy SourceFiles="$(OpenCVBinDir)opencv_flann300$(OpenCVDllSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
     <Copy SourceFiles="$(OpenCVBinDir)opencv_features2d300$(OpenCVDllSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+
+    <Copy SourceFiles="$(OpenCVBinDir)opencv_ml300$(OpenCVDllSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
   </Target>
 
 </Project>
