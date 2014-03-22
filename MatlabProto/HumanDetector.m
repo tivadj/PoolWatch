@@ -32,6 +32,7 @@ function obj = HumanDetector(skinClassifierFun, waterClassifierFun, distanceComp
     obj.labTransformation = makecform('srgb2lab');
 end
 
+% Parameter frameId is used in testing to identify camera image.
 function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
     if debug
         imshow(image), title('Original image');
