@@ -99,6 +99,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="HumanBodiesTests.cpp" />
     <ClCompile Include="PoolBoundaryDetectorTests.cpp" />
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="WaterClassifierTests.cpp" />

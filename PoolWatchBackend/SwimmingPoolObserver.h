@@ -29,3 +29,4 @@ private:
 	void adornImageInternal(const cv::Mat& image, int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage);
 };
 
+__declspec(dllexport) void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std::vector<DetectedBlob>& blobs);

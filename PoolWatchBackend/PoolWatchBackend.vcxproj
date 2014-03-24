@@ -104,6 +104,7 @@
   <ItemGroup>
     <ClCompile Include="algos1.cpp" />
     <ClCompile Include="CameraProjector.cpp" />
+    <ClCompile Include="HumanDetector.cpp" />
     <ClCompile Include="MatrixUndirectedGraph.cpp" />
     <ClCompile Include="MaxWeightInependentSetMaxFirstMexFunction.cpp" />
     <ClCompile Include="MultiHypothesisBlobTracker.cpp" />

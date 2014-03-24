@@ -17,8 +17,8 @@ struct DetectedBlob
 	int Id;
 	cv::Rect2f BoundingBox;
 	cv::Point2f Centroid;
-	cv::Mat OutlinePixels;
-	cv::Mat FilledImage;
+	cv::Mat OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
+	cv::Mat FilledImage; // [W,H] image contains only bounding box of this blob
 	cv::Point3f CentroidWorld;
 };
 
