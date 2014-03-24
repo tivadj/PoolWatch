@@ -10,8 +10,8 @@ using namespace std;
 
 SwimmingPoolObserver::SwimmingPoolObserver(int pruneWindow, float fps)
 {
-	auto cp = make_shared<CameraProjector>();
-	blobTracker_.swap(make_unique<MultiHypothesisBlobTracker>(cp, pruneWindow, fps));
+	cameraProjector_ = make_shared<CameraProjector>();
+	blobTracker_.swap(make_unique<MultiHypothesisBlobTracker>(cameraProjector_, pruneWindow, fps));
 }
 
 SwimmingPoolObserver::~SwimmingPoolObserver()
@@ -35,7 +35,7 @@ void SwimmingPoolObserver::setBlobs(size_t frameOrd, const vector<DetectedBlob>&
 	blobsPerFrame_[frameOrd] = blobs;
 }
 
-void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, const vector<DetectedBlob>& blobs)
+void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, const vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo)
 {
 	setBlobs(frameOrd, blobs);
 
@@ -49,6 +49,9 @@ void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, c
 	{
 		setTrackChangesPerFrame(frameIndWithTrackInfo, trackChangeList);
 	}
+
+	if (pFrameIndWithTrackInfo != nullptr)
+		*pFrameIndWithTrackInfo = frameIndWithTrackInfo;
 }
 
 void SwimmingPoolObserver::toString(stringstream& bld)
@@ -183,4 +186,9 @@ cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist
 
 	int colInd = trackHist.TrackCandidateId % trackColors.size();
 	return trackColors[colInd];
+}
+
+std::shared_ptr<CameraProjector> SwimmingPoolObserver::cameraProjector()
+{
+	return cameraProjector_;
 }

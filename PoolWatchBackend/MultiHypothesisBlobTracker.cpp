@@ -78,7 +78,7 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 
 	if (frameIndWithTrackInfo != -1)
 	{
-		assert(trackStatusList.empty());
+		//assert(!trackStatusList.empty());
 	}
 
 

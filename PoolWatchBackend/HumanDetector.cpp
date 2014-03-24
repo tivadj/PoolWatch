@@ -93,6 +93,9 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
 		auto& contour = contourInfos[i];
+		if (contour.markDeleted)
+			continue;
+
 		cv::RotatedRect rotRec = cv::fitEllipse(contour.outlinePixels);
 		
 		auto minorAxis = std::min(rotRec.size.width, rotRec.size.height);

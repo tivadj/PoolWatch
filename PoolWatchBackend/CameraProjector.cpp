@@ -30,7 +30,7 @@ void CameraProjector::init()
 	float cameraMatrixArray[] = { fx, 0, cx, 0, fy, cy, 0, 0, 1 };
 	cv::Mat_<float> cameraMatrix(3, 3, cameraMatrixArray);
 	cameraMatrix.copyTo(cameraMatrix33_);
-	cout << "cameraMatrix33_=" << cameraMatrix33_ << endl;
+	//cout << "cameraMatrix33_=" << cameraMatrix33_ << endl;
 
 	cameraMatrix33Inv_ = cameraMatrix33_.inv();
 	//cout << "cameraMatrix33Inv_=" << cameraMatrix33Inv_ << endl;
@@ -112,7 +112,7 @@ cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos)
 	row(0, 1) = cameraToWorld44_(2, 1);
 	row(0, 2) = cameraToWorld44_(2, 2);
 	cv::Mat tmp = row * camPos;
-	cout << "tmp=" << tmp << endl;
+	//cout << "tmp=" << tmp << endl;
 
 	float homZ = (zeroHeight - tmp.at<float>(0, 0)) / cameraToWorld44_(2, 3);
 

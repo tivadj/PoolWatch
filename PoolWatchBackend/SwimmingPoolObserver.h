@@ -8,11 +8,12 @@
 #include "MultiHypothesisBlobTracker.h"
 
 /** Decorates frame images with tracks pathes and swimmer shapes. */
-class SwimmingPoolObserver
+class POOLWATCH_API SwimmingPoolObserver
 {
 	std::vector<std::vector<DetectedBlob>> blobsPerFrame_;
 	std::map<int, TrackInfoHistory> trackIdToHistory_;
 	std::unique_ptr<MultiHypothesisBlobTracker> blobTracker_;
+	std::shared_ptr<CameraProjector> cameraProjector_;
 public:
 	SwimmingPoolObserver(int pruneWindow, float fps);
 	SwimmingPoolObserver(const SwimmingPoolObserver& tp) = delete;
@@ -22,7 +23,9 @@ public:
 	void setTrackChangesPerFrame(int frameOrd, const std::vector<TrackChangePerFrame>& trackChanges);
 	void adornImage(const cv::Mat& image, int frameOrd, int trailLength, cv::Mat& resultImage);
 
-	void processBlobs(size_t frameOrd, const cv::Mat& image, const std::vector<DetectedBlob>& blobs);
+	void processBlobs(size_t frameOrd, const cv::Mat& image, const std::vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo = nullptr);
+
+	std::shared_ptr<CameraProjector> cameraProjector();
 	
 private:
 	static cv::Scalar getTrackColor(const TrackInfoHistory& trackHist);

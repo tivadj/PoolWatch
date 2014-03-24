@@ -16,6 +16,7 @@ namespace SvgImageMaskSerializerNS { void run(); }
 namespace WaterClassifierTestsNS { void run(); }
 namespace PoolBoundaryDetectorTestsNS { void run(); }
 namespace HumanBodiesTestsNS { void run(); }
+namespace SwimmingPoolVideoFileTrackerTestsNS { void run(); }
 
 #ifdef SAMPLE_MATLABPROX
 // NOTE: path to Matlab's runtime dlls 
@@ -86,7 +87,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	//SvgImageMaskSerializerNS::run();
 	//WaterClassifierTestsNS::run();
 	//PoolBoundaryDetectorTestsNS::run();
-	HumanBodiesTestsNS::run();
+	//HumanBodiesTestsNS::run();
+	SwimmingPoolVideoFileTrackerTestsNS::run();
 
 	return 0;
 }

@@ -1,8 +1,9 @@
 #pragma once
+#include "PoolWatchFacade.h"
 
 /// Class to map camera's image coordinates (X,Y in pixels) and swimming 
 /// pool world coordinates ([x y z] in meters).
-class CameraProjector
+class POOLWATCH_API CameraProjector
 {
 	const float zeroHeight = 0;
 
