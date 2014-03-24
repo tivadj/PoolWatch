@@ -136,12 +136,12 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 		blob.Centroid = cv::Point2f(bnd.x + cx, bnd.y + cy);
 
 		// [N,2] of (Y,X) pairs, N=number of points
-		cv::Mat outlPix = cv::Mat(contour.outlinePixels.size(), 2, CV_32FC1);
+		auto outlPix = cv::Mat_<int32_t>(contour.outlinePixels.size(), 2);
 		for (size_t i = 0; i < contour.outlinePixels.size(); ++i)
 		{
 			auto point = contour.outlinePixels[i];
-			outlPix.at<float>(i, 0) = point.y;
-			outlPix.at<float>(i, 1) = point.x;
+			outlPix(i, 0) = point.y;
+			outlPix(i, 1) = point.x;
 		}
 		blob.OutlinePixels = outlPix;
 		

@@ -162,12 +162,12 @@ void SwimmingPoolObserver::adornImageInternal(const cv::Mat& image, int fromFram
 			const auto& blobs = blobsPerFrame_[toFrameOrd];
 			const auto& obs = blobs[pLastChange->ObservationInd];
 
-			const cv::Mat& outlinePixMat = obs.OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
+			const cv::Mat_<int32_t>& outlinePixMat = obs.OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
 
 			// populate points array
 			std::vector<cv::Point> outlinePoints(outlinePixMat.rows);
 			for (int i = 0; i < outlinePixMat.rows; ++i)
-				outlinePoints[i] = cv::Point(outlinePixMat.at<int32_t>(i, 1), outlinePixMat.at<int32_t>(i, 0));
+				outlinePoints[i] = cv::Point(outlinePixMat(i, 1), outlinePixMat(i, 0));
 
 			cv::polylines(resultImage, outlinePoints, true, color);
 		}

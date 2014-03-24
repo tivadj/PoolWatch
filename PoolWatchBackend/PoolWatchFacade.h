@@ -1,5 +1,5 @@
 #pragma once
-
+#include <stdint.h>
 #include "mex.h"
 #include <opencv2/core.hpp>
 
@@ -17,7 +17,7 @@ struct DetectedBlob
 	int Id;
 	cv::Rect2f BoundingBox;
 	cv::Point2f Centroid;
-	cv::Mat OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
+	cv::Mat_<int32_t> OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
 	cv::Mat FilledImage; // [W,H] image contains only bounding box of this blob
 	cv::Point3f CentroidWorld;
 };
