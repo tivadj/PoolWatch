@@ -66,4 +66,30 @@ void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat
 	const int dividerPadding = 5;
 	auto selPad = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(dividerPadding, dividerPadding));
 	cv::erode(poolMask, poolMask, selPad);
+
+	// some objects may obstruct pool from camera
+	// hence here we glue all islands of pixels
+	// Also people in a pool are not detected as water. This leads to incorrect (smaller) pool boundary due to cavities and
+	// real swimmers may be cut off in frame processing. Hence all blob parts of the pool are made convex.
+	contours.clear();
+	cv::findContours(poolMask, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+	// merge points of all blobs
+
+	// TODO: resolve poolMask was not found use case
+	// if there is no blob found, then just return flag; then eg client may use previous pool mask
+	std::vector<cv::Point> allBlobPoints;
+	if (!contours.empty())
+		allBlobPoints.swap(std::move(contours[0]));
+	for (size_t i = 1; i < contours.size(); ++i)
+		std::copy(begin(contours[i]), end(contours[i]), std::back_inserter(allBlobPoints));
+
+	std::vector<cv::Point> poolConvexHullPoints;
+	cv::convexHull(allBlobPoints, poolConvexHullPoints);
+
+	// aquire pool mask
+	std::vector<std::vector<cv::Point>> entireOutline(1);
+	entireOutline[0] = std::move(poolConvexHullPoints);
+	poolMask.setTo(0); // reset pool mask, because it was corrupted by cv::findCountours
+	cv::drawContours(poolMask, entireOutline, 0, cv::Scalar::all(255), CV_FILLED);
 }
