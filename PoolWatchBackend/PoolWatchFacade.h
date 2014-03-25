@@ -63,3 +63,8 @@ __declspec(dllexport) void loadImageAndMask(const std::string& svgFilePath, cons
 __declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels);
 
 __declspec(dllexport) void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
+
+namespace PoolWatch
+{
+	__declspec(dllexport) std::string timeStampNow();
+}

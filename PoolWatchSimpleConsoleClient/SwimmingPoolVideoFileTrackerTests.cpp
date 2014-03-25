@@ -1,7 +1,10 @@
 #include <iostream>
 
-#include <opencv2\core.hpp>
-#include <opencv2\highgui.hpp> // imread
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp> // imread
+#include <opencv2/highgui/highgui_c.h> // CV_FOURCC
+
+#include <boost/filesystem/path.hpp>
 
 #include "PoolWatchFacade.h"
 #include "algos1.h"
@@ -21,7 +24,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		auto pWc = WaterClassifier::read(fs);
 		WaterClassifier& wc = *pWc;
 
-		cv::VideoCapture videoCapture("../../output/mvi3177_blueWomanLane3.avi");
+		boost::filesystem::path outDir("../../output");
+		boost::filesystem::path videoPath = outDir / "mvi3177_blueWomanLane3.avi";
+		cv::VideoCapture videoCapture(videoPath.string());
 		if (!videoCapture.isOpened())
 		{
 			cerr << "can't open video file";
@@ -41,6 +46,20 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
 
 		int framesCount = (int)videoCapture.get(cv::CAP_PROP_FRAME_COUNT);
+
+		// prepare video writing
+		std::string timeStamp = PoolWatch::timeStampNow();
+		std::string  fileNameNoExt = videoPath.stem().string();
+
+		stringstream strBuf;
+		strBuf <<fileNameNoExt << "_" << timeStamp << "_n" << framesCount << ".avi";
+		std::string outVideoFileName = strBuf.str();
+		std::string outVideoPath = (outDir / outVideoFileName).string();
+
+		cv::VideoWriter videoWriter;
+		videoWriter.open(outVideoPath, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(frameWidth, frameHeight), true);
+
+		// video processing loop
 
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
@@ -96,6 +115,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			cv::imshow("visualTracking", imageAdornment);
 			if (cv::waitKey(100) == 27)
 				return;
+
+			// dump adorned video to file
+			videoWriter.write(imageAdornment);
 		}
 	}
 

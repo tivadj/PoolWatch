@@ -22,6 +22,7 @@
   <Target Name="BoostDeploy" AfterTargets="Build">
     <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_thread-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
     <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_system-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_filesystem-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
   </Target>
   
   </Project>
