@@ -35,19 +35,16 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		const int pruneWindow = 6;
 		float fps = (float)videoCapture.get(cv::CAP_PROP_FPS);
+		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
+		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
+		int framesCount = (int)videoCapture.get(cv::CAP_PROP_FRAME_COUNT);
+
+		//
 		SwimmingPoolObserver poolObserver(pruneWindow, fps);
 		CameraProjector& cameraProjector = *poolObserver.cameraProjector();
 
-
-		cv::Mat imageFrame;
-
-		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
-		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
-		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
-
-		int framesCount = (int)videoCapture.get(cv::CAP_PROP_FRAME_COUNT);
-
 		// prepare video writing
+
 		std::string timeStamp = PoolWatch::timeStampNow();
 		std::string  fileNameNoExt = videoPath.stem().string();
 
@@ -59,7 +56,17 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		cv::VideoWriter videoWriter;
 		videoWriter.open(outVideoPath, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(frameWidth, frameHeight), true);
 
+		// store recent video frames to adorn the correct one with track info
+
+		PoolWatch::CyclicHistoryBuffer<cv::Mat> videoBuffer(pruneWindow + 1);
+		videoBuffer.init([=](size_t index, cv::Mat& frame)
+		{
+			frame = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
+		});
+
 		// video processing loop
+
+		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
 
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
@@ -69,6 +76,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			// TODO: tracking doesn't work when processing the same image repeatedly
 
 			//cv::Mat imageFrame = cv::imread("data/MVI_3177_0127_640x476.png");
+
+			cv::Mat& imageFrame = videoBuffer.requestNew();
 			videoCapture >> imageFrame;
 
 			// find water mask
@@ -103,13 +112,22 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			// visualize tracking
 
-			imageFrame.copyTo(imageAdornment);
-
 			if (frameIndWithTrackInfo != -1)
 			{
 				int trailLength = 255;
-				// TODO: process previous frame from looped cache
-				poolObserver.adornImage(imageFrame, frameIndWithTrackInfo, trailLength, imageAdornment);
+
+				// get frame with frameIndWithTrackInfo index
+				int backIndex = - (frameOrd - frameIndWithTrackInfo);
+				
+				cv::Mat& readyFrame = videoBuffer.queryHistory(backIndex);
+				readyFrame.copyTo(imageAdornment);
+
+				poolObserver.adornImage(readyFrame, frameIndWithTrackInfo, trailLength, imageAdornment);
+			}
+			else
+			{
+				// tracking data is not available yet; just output empty frame
+				imageAdornment.setTo(0);
 			}
 
 			cv::imshow("visualTracking", imageAdornment);
