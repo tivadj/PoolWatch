@@ -62,7 +62,7 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 		});
 	}
 
-#if _DEBUG
+#if PW_DEBUG
 	cv::Mat imageNoExtremeBlobs = cv::Mat_<uchar>::zeros(image.rows, image.cols);
 #endif
 
@@ -76,7 +76,7 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 
 		if (contour.area >= shapeMinAreaPixels && contour.area < swimmerShapeAreaMax)
 		{
-#if _DEBUG
+#if PW_DEBUG
 			cv::drawContours(imageNoExtremeBlobs, contours, i, cv::Scalar::all(255), CV_FILLED);
 #endif
 		}
@@ -86,7 +86,7 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 
 	// remove elongated stripes created by lane markers and water 'blique'
 
-#if _DEBUG
+#if PW_DEBUG
 	cv::Mat imageNoSticks = cv::Mat_<uchar>::zeros(image.rows, image.cols);
 #endif
 
@@ -107,7 +107,7 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 			contour.markDeleted = true;
 		else
 		{
-#if _DEBUG
+#if PW_DEBUG
 			cv::drawContours(imageNoSticks, contours, i, cv::Scalar::all(255), CV_FILLED);
 #endif
 		}
