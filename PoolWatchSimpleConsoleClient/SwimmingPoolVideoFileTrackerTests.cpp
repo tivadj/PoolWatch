@@ -4,7 +4,9 @@
 #include <opencv2/highgui.hpp> // imread
 #include <opencv2/highgui/highgui_c.h> // CV_FOURCC
 
+#include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include "PoolWatchFacade.h"
 #include "algos1.h"
@@ -14,6 +16,16 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 {
 	using namespace cv;
 	using namespace std;
+	using namespace PoolWatch;
+
+	void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjector& cameraProjector)
+	{
+		// update blobs CentroidWorld
+		for (auto& blob : blobs)
+		{
+			blob.CentroidWorld = cameraProjector.cameraToWorld(blob.Centroid);
+		}
+	}
 
 	void trackVideoFileTest()
 	{
@@ -24,8 +36,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		auto pWc = WaterClassifier::read(fs);
 		WaterClassifier& wc = *pWc;
 
-		boost::filesystem::path outDir("../../output");
-		boost::filesystem::path videoPath = outDir / "mvi3177_blueWomanLane3.avi";
+		boost::filesystem::path srcDir("../../output");
+		boost::filesystem::path videoPath = srcDir / "mvi3177_blueWomanLane3.avi";
 		cv::VideoCapture videoCapture(videoPath.string());
 		if (!videoCapture.isOpened())
 		{
@@ -33,28 +45,36 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			return;
 		}
 
-		const int pruneWindow = 6;
 		float fps = (float)videoCapture.get(cv::CAP_PROP_FPS);
 		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
 		int framesCount = (int)videoCapture.get(cv::CAP_PROP_FRAME_COUNT);
 
 		//
+		const int pruneWindow = 6;
 		SwimmingPoolObserver poolObserver(pruneWindow, fps);
 		CameraProjector& cameraProjector = *poolObserver.cameraProjector();
 
 		// prepare video writing
 
 		std::string timeStamp = PoolWatch::timeStampNow();
-		std::string  fileNameNoExt = videoPath.stem().string();
+		std::string fileNameNoExt = videoPath.stem().string();
 
-		stringstream strBuf;
-		strBuf <<fileNameNoExt << "_" << timeStamp << "_n" << framesCount << ".avi";
-		std::string outVideoFileName = strBuf.str();
-		std::string outVideoPath = (outDir / outVideoFileName).string();
+		stringstream fileNameBuf;
+		fileNameBuf <<fileNameNoExt << "_" << timeStamp <<"_track" << ".avi";
+		std::string outVideoFileName = fileNameBuf.str();
+		boost::filesystem::path outVideoPath = srcDir / "debug" / outVideoFileName;
 
 		cv::VideoWriter videoWriter;
-		videoWriter.open(outVideoPath, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(frameWidth, frameHeight), true);
+		int sourceFourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+		videoWriter.open(outVideoPath.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
+
+#if PW_DEBUG
+		std::string videoFileNameBlobs = fileNameNoExt + "_" + timeStamp + "_blobs.avi";
+		boost::filesystem::path videoPathBlobs = srcDir / "debug" / videoFileNameBlobs;
+		cv::VideoWriter videoWriterBlobs;
+		videoWriterBlobs.open(videoPathBlobs.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
+#endif
 
 		// store recent video frames to adorn the correct one with track info
 
@@ -63,6 +83,11 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		{
 			frame = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
 		});
+
+		//
+#if PW_DEBUG
+		PaintHelper paintHelper;
+#endif
 
 		// video processing loop
 
@@ -78,7 +103,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			//cv::Mat imageFrame = cv::imread("data/MVI_3177_0127_640x476.png");
 
 			cv::Mat& imageFrame = videoBuffer.requestNew();
-			videoCapture >> imageFrame;
+			bool readOp = videoCapture.read(imageFrame);
+			CV_Assert(readOp);
 
 			// find water mask
 
@@ -100,12 +126,15 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			//
 			std::vector<DetectedBlob> blobs;
 			getHumanBodies(imageFamePoolOnly, waterMask, blobs);
+			fixBlobs(blobs, cameraProjector);
 
-			// update blobs CentroidWorld
-			for (auto& blob : blobs)
-			{
-				blob.CentroidWorld = cameraProjector.cameraToWorld(blob.Centroid);
-			}
+#if PW_DEBUG
+			// show blobs
+			auto blobsImageDbg = imageFamePoolOnly.clone();
+			for (const auto& blob : blobs)
+				paintHelper.paintBlob(blob, blobsImageDbg);
+			videoWriterBlobs.write(blobsImageDbg);
+#endif
 
 			int frameIndWithTrackInfo;
 			poolObserver.processBlobs(frameOrd, imageFrame, blobs, &frameIndWithTrackInfo);

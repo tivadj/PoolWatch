@@ -20,7 +20,7 @@ public:
 private:
 	void init();
 public:
-	cv::Point2f worldToCamera(const cv::Point3f& world);
-	cv::Point3f cameraToWorld(const cv::Point2f& imagePos);
+	cv::Point2f worldToCamera(const cv::Point3f& world) const;
+	cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const;
 };
 

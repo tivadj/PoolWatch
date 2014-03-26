@@ -108,6 +108,7 @@
     <ClCompile Include="MatrixUndirectedGraph.cpp" />
     <ClCompile Include="MaxWeightInependentSetMaxFirstMexFunction.cpp" />
     <ClCompile Include="MultiHypothesisBlobTracker.cpp" />
+    <ClCompile Include="PaintHelper.cpp" />
     <ClCompile Include="PoolBoundaryDetector.cpp" />
     <ClCompile Include="PoolWatchFacade.cpp" />
     <ClCompile Include="MatlabInterop.cpp" />

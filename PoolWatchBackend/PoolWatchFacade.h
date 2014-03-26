@@ -10,6 +10,8 @@
 #define POOLWATCH_API __declspec(dllimport)
 #endif
 
+//#define PW_EXPORTS __declspec(dllexport)
+
 typedef void (*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
 
 /** Rectangular region of tracket target, which is detected in camera's image frame. */
@@ -18,6 +20,7 @@ struct DetectedBlob
 	int Id;
 	cv::Rect2f BoundingBox;
 	cv::Point2f Centroid;
+	// TODO: analyze usage to check whether to represent it as a vector of points?
 	cv::Mat_<int32_t> OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
 	cv::Mat FilledImage; // [W,H] image contains only bounding box of this blob
 	cv::Point3f CentroidWorld;
@@ -67,7 +70,11 @@ __declspec(dllexport) void getPoolMask(const cv::Mat& image, const cv::Mat_<ucha
 
 namespace PoolWatch
 {
+	// utils
+
 	__declspec(dllexport) std::string timeStampNow();
+
+	//
 
 	// Represents buffer of elements with cyclic sematics. When new element is requested from buffer, the reference to
 	// already allocated element is returned.
@@ -118,6 +125,20 @@ namespace PoolWatch
 
 			return result;
 		};
+	};
 
+	// painting
+
+	struct __declspec(dllexport) PaintHelper
+	{
+	private:
+		std::vector<cv::Scalar> trackColors_;
+
+	public:
+		static void getWellKnownColors(std::vector<cv::Scalar>& trackColors);
+
+		PaintHelper();
+
+		void paintBlob(const DetectedBlob& blob, cv::Mat& image);
 	};
 }

@@ -86,7 +86,7 @@ void CameraProjector::init()
 	//cout << "cameraToWorld44_=" <<cameraToWorld44_ << endl;
 }
 
-cv::Point2f CameraProjector::worldToCamera(const cv::Point3f& world)
+cv::Point2f CameraProjector::worldToCamera(const cv::Point3f& world) const
 { 
 	vector<cv::Point3f> worldPoints;
 	worldPoints.push_back(world);
@@ -96,7 +96,7 @@ cv::Point2f CameraProjector::worldToCamera(const cv::Point3f& world)
 	return imagePointsProj[0];
 }
 
-cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos)
+cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos) const
 {
 	// image to camera coordinates
 	cv::Mat_<float> imagePosMat(3, 1);
