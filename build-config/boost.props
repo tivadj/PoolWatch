@@ -3,26 +3,24 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <BoostDir>C:\progs\boost_1_53_0\</BoostDir>
+    <BoostBinDir>$(BoostDir)lib\msvc120-x64-hh\lib\</BoostBinDir>
   </PropertyGroup>
   <PropertyGroup>
     <IncludePath>$(BoostDir);$(IncludePath)</IncludePath>
-    <LibraryPath>$(BoostDir)lib\vs2013-x64-hh\lib\;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(BoostBinDir);$(LibraryPath)</LibraryPath>
     <BoostDllSuffix Condition="'$(Configuration)' == 'Debug'">-gd</BoostDllSuffix>
     <BoostDllSuffix Condition="'$(Configuration)' != 'Debug'"></BoostDllSuffix>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>BOOST_ALL_DYN_LINK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BOOST_ALL_DYN_LINK;%(PreprocessorDefinitions)</PreprocessorDefinitions> <!--link with boost DLLs-->
     </ClCompile>
-    <!--<Link>
-      <AdditionalDependencies>boost_thread-vc110-mt-gd-1_53.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>-->
     </ItemDefinitionGroup>
 
   <Target Name="BoostDeploy" AfterTargets="Build">
-    <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_thread-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
-    <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_system-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
-    <Copy SourceFiles="$(BoostDir)lib\vs2013-x64-hh\lib\boost_filesystem-vc110-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(BoostBinDir)boost_thread-vc120-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(BoostBinDir)boost_system-vc120-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(BoostBinDir)boost_filesystem-vc120-mt$(BoostDllSuffix)-1_53.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
   </Target>
   
   </Project>

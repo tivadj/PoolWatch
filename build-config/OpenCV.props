@@ -3,15 +3,15 @@
   <ImportGroup Label="PropertySheets" />
 
   <PropertyGroup Label="UserMacros">
-    <OpenCVDir>C:\devb\cplex\opencv\build-vs2012-x64-3\install\</OpenCVDir>
-    <OpenCVBinDir>$(OpenCVDir)x64\vc11\bin\</OpenCVBinDir>
+    <OpenCVDir>C:\devb\cplex\opencv\build-msvc120-x64\install\</OpenCVDir>
+    <OpenCVBinDir>$(OpenCVDir)x64\vc12\bin\</OpenCVBinDir>
     <OpenCVDllSuffix Condition="'$(Configuration)' == 'Debug'">d</OpenCVDllSuffix>
     <OpenCVDllSuffix Condition="'$(Configuration)' != 'Debug'"></OpenCVDllSuffix>
   </PropertyGroup>
 
   <PropertyGroup>
-    <IncludePath>$(OpenCVDir)\include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(OpenCVDir)\x64\vc11\lib\;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(OpenCVDir)include\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OpenCVDir)x64\vc12\lib\;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
@@ -31,6 +31,8 @@
     
     <!--has Kalman Filter -->
     <Copy SourceFiles="$(OpenCVBinDir)opencv_video300$(OpenCVDllSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <!--may be required to read video-->
+    <Copy SourceFiles="$(OpenCVBinDir)opencv_ffmpeg300_64.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
     
     <!--required by opencv_video-->
     <Copy SourceFiles="$(OpenCVBinDir)opencv_imgproc300$(OpenCVDllSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
