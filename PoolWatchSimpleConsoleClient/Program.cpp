@@ -3,12 +3,19 @@
 
 #include "stdafx.h"
 #include <iostream>
+#include <cassert>
 
 //#define SAMPLE_MATLABPROX 1
 
 #ifdef SAMPLE_MATLABPROX
 #include "PWMatlabProxy.h"
 #endif
+
+#include <log4cxx/basicconfigurator.h>
+#include <log4cxx/PropertyConfigurator.h>
+
+#include <QFile>
+#include <QDir>
 
 using namespace std;
 
@@ -80,9 +87,27 @@ int testMatlabRuntime()
 }
 #endif
 
+void configureLog4cxx(QDir logFolder)
+{
+	// Set up a simple configuration that logs on the console.
+	//::log4cxx::BasicConfigurator::configure();
+
+	QString logConfigAbsPath = logFolder.absoluteFilePath("log4cxx.properties");
+
+	::log4cxx::PropertyConfigurator::configure(logConfigAbsPath.toStdString());
+}
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+	_TCHAR* exePath = argv[0];
+
+	//
+	QDir logFolder(QString::fromWCharArray(exePath));
+	auto dirUpOp = logFolder.cdUp();
+	assert(dirUpOp);
+	
+	configureLog4cxx(logFolder);
+
 	//return testMatlabRuntime();
 	//SvgImageMaskSerializerNS::run();
 	//WaterClassifierTestsNS::run();
@@ -92,4 +117,3 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	return 0;
 }
-

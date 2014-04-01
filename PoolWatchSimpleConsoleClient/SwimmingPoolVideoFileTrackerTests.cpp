@@ -8,6 +8,13 @@
 #include <boost/filesystem/path.hpp>
 #include <boost/lexical_cast.hpp>
 
+#include <log4cxx/logger.h>
+#include <log4cxx/helpers/exception.h>
+#include <log4cxx/rollingfileappender.h>
+#include <log4cxx/patternlayout.h>
+
+#include <QDir>
+
 #include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
@@ -18,6 +25,11 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 	using namespace std;
 	using namespace PoolWatch;
 
+	using namespace log4cxx;
+	using namespace log4cxx::helpers;
+
+	log4cxx::LoggerPtr log_(log4cxx::Logger::getLogger("PW.App"));
+
 	void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjector& cameraProjector)
 	{
 		// update blobs CentroidWorld
@@ -26,22 +38,52 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			blob.CentroidWorld = cameraProjector.cameraToWorld(blob.Centroid);
 		}
 	}
+	
+	void configureLogToFileAppender(const QDir& logFolder, const QString& logFileName)
+	{
+		// create rolling file appending to a runtime generated log
+
+		QString fileRollAbsPath = logFolder.absoluteFilePath(logFileName);
+
+		auto pLayout = log4cxx::helpers::ObjectPtr(new log4cxx::PatternLayout(L"%-5p %c - %m%n"));
+		auto pRollingFileApp = log4cxx::helpers::ObjectPtr(new log4cxx::RollingFileAppender(pLayout, fileRollAbsPath.toStdWString()));
+
+		log4cxx::LoggerPtr rootLoggerPtr = log4cxx::Logger::getRootLogger();
+		rootLoggerPtr->addAppender(pRollingFileApp);
+	}
 
 	void trackVideoFileTest()
 	{
+		boost::filesystem::path srcDir("../../output");
+		
+		std::string timeStamp = PoolWatch::timeStampNow();
+		boost::filesystem::path outDir = srcDir / "debug" / timeStamp;
+		QDir outDir2 = QDir(outDir.string().c_str());
+
+		// 
+		configureLogToFileAppender(outDir2, "app.log");
+		LOG4CXX_DEBUG(log_, "test debug");
+		LOG4CXX_INFO(log_, "test info");
+		LOG4CXX_ERROR(log_, "test error");
+
 		// init water classifier
+
 		cv::FileStorage fs;
 		if (!fs.open("1.yml", cv::FileStorage::READ))
+		{
+			LOG4CXX_ERROR(log_, "Can't find file '1.yml' (change working directory)");
 			return;
+		}
 		auto pWc = WaterClassifier::read(fs);
 		WaterClassifier& wc = *pWc;
 
-		boost::filesystem::path srcDir("../../output");
-		boost::filesystem::path videoPath = srcDir / "mvi3177_blueWomanLane3.avi";
+		//
+
+		boost::filesystem::path videoPath = boost::filesystem::absolute("mvi3177_blueWomanLane3.avi", srcDir).normalize();
 		cv::VideoCapture videoCapture(videoPath.string());
 		if (!videoCapture.isOpened())
 		{
-			cerr << "can't open video file";
+			LOG4CXX_ERROR(log_, "can't open video file");
 			return;
 		}
 
@@ -50,6 +92,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
 		int framesCount = (int)videoCapture.get(cv::CAP_PROP_FRAME_COUNT);
 
+		LOG4CXX_INFO(log_, "opened " <<videoPath);
+		LOG4CXX_INFO(log_, "WxH=[" << frameWidth << " " << frameHeight << "] framesCount=" << framesCount <<" fps=" << fps);
+
 		//
 		const int pruneWindow = 6;
 		SwimmingPoolObserver poolObserver(pruneWindow, fps);
@@ -57,21 +102,15 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		// prepare video writing
 
-		std::string timeStamp = PoolWatch::timeStampNow();
-		std::string fileNameNoExt = videoPath.stem().string();
-
-		stringstream fileNameBuf;
-		fileNameBuf <<fileNameNoExt << "_" << timeStamp <<"_track" << ".avi";
-		std::string outVideoFileName = fileNameBuf.str();
-		boost::filesystem::path outVideoPath = srcDir / "debug" / outVideoFileName;
+		boost::filesystem::path outVideoPath = outDir / "track.avi";
 
 		cv::VideoWriter videoWriter;
 		int sourceFourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
 		videoWriter.open(outVideoPath.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
 
 #if PW_DEBUG
-		std::string videoFileNameBlobs = fileNameNoExt + "_" + timeStamp + "_blobs.avi";
-		boost::filesystem::path videoPathBlobs = srcDir / "debug" / videoFileNameBlobs;
+		boost::filesystem::path videoPathBlobs = outDir / "blobs.avi";
+
 		cv::VideoWriter videoWriterBlobs;
 		videoWriterBlobs.open(videoPathBlobs.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
 #endif
@@ -96,7 +135,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
 		{
-			cout << "frameOrd= " << frameOrd <<" of " <<framesCount <<endl;
+			LOG4CXX_DEBUG(log_, "frameOrd= " << frameOrd << " of " << framesCount);
 
 			// TODO: tracking doesn't work when processing the same image repeatedly
 
@@ -111,7 +150,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			cv::Mat_<uchar> waterMask;
 			classifyAndGetMask(imageFrame, [&wc](const cv::Vec3d& pix) -> bool
 			{
-				return wc.predict(pix);
+				//bool b1 = wc.predict(pix);
+				bool b2 = wc.predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
+				//assert(b1 == b2);
+				return b2;
 			}, waterMask);
 
 
@@ -135,6 +177,14 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				paintHelper.paintBlob(blob, blobsImageDbg);
 			videoWriterBlobs.write(blobsImageDbg);
 #endif
+			if (log_->isDebugEnabled())
+			{
+				stringstream bld;
+				bld << "Found " << blobs.size() << " blobs" <<endl;
+				for (const auto& blob : blobs)
+					bld << "Id=" << blob.Id << " Centroid=" << blob.Centroid << endl;
+				LOG4CXX_DEBUG(log_, bld.str());
+			}
 
 			int frameIndWithTrackInfo;
 			poolObserver.processBlobs(frameOrd, imageFrame, blobs, &frameIndWithTrackInfo);
@@ -143,28 +193,28 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			if (frameIndWithTrackInfo != -1)
 			{
-				int trailLength = 255;
-
 				// get frame with frameIndWithTrackInfo index
 				int backIndex = - (frameOrd - frameIndWithTrackInfo);
 				
 				cv::Mat& readyFrame = videoBuffer.queryHistory(backIndex);
 				readyFrame.copyTo(imageAdornment);
 
+				int trailLength = 255;
 				poolObserver.adornImage(readyFrame, frameIndWithTrackInfo, trailLength, imageAdornment);
+
+				cv::imshow("visualTracking", imageAdornment);
+
+				// dump adorned video to file
+				videoWriter.write(imageAdornment);
 			}
 			else
 			{
-				// tracking data is not available yet; just output empty frame
-				imageAdornment.setTo(0);
+				// tracking data is not available yet
+				// do not write 'blank screen' here to keep original and tracks-adorned video streams in sync
 			}
 
-			cv::imshow("visualTracking", imageAdornment);
-			if (cv::waitKey(100) == 27)
+			if (cv::waitKey(1) == 27)
 				return;
-
-			// dump adorned video to file
-			videoWriter.write(imageAdornment);
 		}
 	}
 
