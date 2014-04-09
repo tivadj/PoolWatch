@@ -12,6 +12,9 @@ enum class TrackHypothesisCreationReason
 	NoObservation = 3              // this hypothesis assumes that there is no observation of the tracked object in this frame
 };
 
+std::string toString(TrackHypothesisCreationReason reason);
+
+
 /** Represents node in the tree of hypothesis. */
 struct TrackHypothesisTreeNode
 {
@@ -31,5 +34,6 @@ struct TrackHypothesisTreeNode
 
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
+	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild);
 };
 

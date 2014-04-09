@@ -5,14 +5,30 @@
 #include <iostream>
 #include <memory>
 #include <array>
+#include <set>
 
 #include "opencv2/video/tracking.hpp"
+
+#include <log4cxx/logger.h>
+#include <log4cxx/helpers/exception.h>
+
+#ifdef HAVE_GRAPHVIZ
+extern "C"
+{
+#include <gvc.h>
+#include "gvplugin.h"
+#include "gvconfig.h"
+#include <cghdr.h> // agfindnode_by_id
+}
+#endif
 
 #include "MatlabInterop.h"
 #include "algos1.h"
 #include "MultiHypothesisBlobTracker.h"
 
 using namespace std;
+using namespace log4cxx;
+//using namespace log4cxx::helpers;
 
 extern "C"
 {
@@ -23,6 +39,8 @@ extern "C"
 	};
 	Int32PtrPair computeTrackIncopatibilityGraph(const int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, Int32Allocator int32Alloc);
 }
+
+log4cxx::LoggerPtr MultiHypothesisBlobTracker::log_ = log4cxx::Logger::getLogger("PW.MultiHypothesisBlobTracker");
 
 MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraProjector> cameraProjector, int pruneWindow, float fps)
 	:cameraProjector_(cameraProjector),
@@ -52,42 +70,95 @@ MultiHypothesisBlobTracker::~MultiHypothesisBlobTracker()
 {
 }
 
-void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, const cv::Mat& image, float fps, float elapsedTimeMs, int& frameIndWithTrackInfo,
+void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& frameIndWithTrackInfo,
 	std::vector<TrackChangePerFrame>& trackStatusList)
 {
+#if 0 //_DEBUG
+	// the set of tracked families
+	// it must not decrease during track hypothesis generation and pruning
+	std::set<int> familyIdSet;
+	for (const std::unique_ptr<TrackHypothesisTreeNode>& pRoot : trackHypothesisForestPseudoNode_.Children)
+		familyIdSet.insert(pRoot->FamilyId);
+#endif
+
 	float shapeCentroidNoise = 0.5f;
 	//swimmerMaxShiftPerFrameM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
 	float swimmerMaxShiftPerFrameM = elapsedTimeMs * swimmerMaxSpeed_ / 1000 + shapeCentroidNoise;
 	growTrackHyposhesisTree(frameInd, blobs, fps, swimmerMaxShiftPerFrameM);
 
+	if (log_->isDebugEnabled())
+		logHypothesisTree(frameInd, "beforePruning", vector<TrackHypothesisTreeNode*>());
+
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
 
-#if PRINTF
-	cout << "leafSet.count=" << leafSet.size() <<" (after growth)" << endl;
-#endif
+	LOG4CXX_DEBUG(log_, "leafSet.count=" << leafSet.size() << " (after growth)");
 	
 	vector<TrackHypothesisTreeNode*> bestTrackLeafs; // 
 	findBestTracks(leafSet, bestTrackLeafs);
 
-#if PRINTF
-	cout << "bestTrackLeafs.count=" << bestTrackLeafs.size() << endl;
-#endif
+	LOG4CXX_DEBUG(log_, "bestTrackLeafs.count=" << bestTrackLeafs.size());
 
-	frameIndWithTrackInfo = collectTrackChanges(frameInd, bestTrackLeafs, trackStatusList);
+	std::vector<TrackChangePerFrame> trackStatusListTmp;
+	int frameIndWithTrackInfo2 = collectTrackChanges(frameInd, bestTrackLeafs, trackStatusListTmp);
+	
+	pruneHypothesisTreeNew(frameInd, bestTrackLeafs, frameIndWithTrackInfo, trackStatusList);
+
+	if (log_->isDebugEnabled())
+		logHypothesisTree(frameInd, "afterPruning", bestTrackLeafs);
+
+	//CV_Assert(frameIndWithTrackInfo2 == frameIndWithTrackInfo);
+	//CV_Assert(trackStatusListTmp.size() == trackStatusList.size());
 
 	if (frameIndWithTrackInfo != -1)
 	{
 		//assert(!trackStatusList.empty());
 	}
 
+	if (log_->isDebugEnabled())
+	{
+		// list track hypothesis changes
 
-#if PRINTF
-	cout << "frameIndWithTrackInfo=" << frameIndWithTrackInfo 
-		 << " trackStatusList=" << trackStatusList.size()  << endl;
-#endif
+		stringstream bld;
+		bld << "frameIndWithTrackInfo=" << frameIndWithTrackInfo << " trackStatusList=" << trackStatusList.size() <<endl;
+		for (const TrackChangePerFrame& change : trackStatusList)
+		{
+			switch (change.UpdateType)
+			{
+			case TrackChangeUpdateType::New:
+				bld << "new";
+				break;
+			case TrackChangeUpdateType::ObservationUpdate:
+				bld << "upd";
+				break;
+			case TrackChangeUpdateType::NoObservation:
+				bld << "noObs";
+				break;
+			case TrackChangeUpdateType::Pruned:
+				bld << "del";
+				break;
+			}
+
+			bld << " FamilyId=" << change.FamilyId <<" ObsInd=" <<change.ObservationInd <<" " <<change.ObservationPosPixExactOrApprox <<endl;
+		}
+		log_->debug(bld.str());
+	}
 	
-	pruneHypothesisTree(bestTrackLeafs);
+	//pruneHypothesisTree(bestTrackLeafs);
+
+#if 0//_DEBUG
+	// check all family roots are preserved (generation of new families is possible)
+	std::set<int> familyIdSetAfter;
+	for (const std::unique_ptr<TrackHypothesisTreeNode>& pRoot : trackHypothesisForestPseudoNode_.Children)
+		familyIdSetAfter.insert(pRoot->FamilyId);
+	
+	CV_Assert(familyIdSet.size() <= familyIdSetAfter.size());
+	for (int familyId : familyIdSet)
+	{
+		bool found = familyIdSetAfter.find(familyId) != familyIdSetAfter.end();
+		CV_Assert(found && "OldRoot from previous iteration was not traversed from new set of best leaves");
+	}
+#endif
 }
 
 void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float swimmerMaxShiftPerFrameM)
@@ -95,9 +166,11 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
 
+#if _DEBUG
 	int addedDueNoObservation = 0;
 	int addedDueCorrespondence = 0;
 	int addedNew = 0;
+#endif
 
 	//
 	// penalty for missed observation
@@ -173,8 +246,12 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.KalmanFilterState = kalmanFilter.statePost;
 			childHyp.KalmanFilterStateCovariance = kalmanFilter.errorCovPost;
 
+			LOG4CXX_DEBUG(log_, "grow FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " Corresp ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd <<" " << pChildHyp->ObservationPos);
+
 			pLeaf->addChildNode(std::move(pChildHyp));
+#if _DEBUG
 			addedDueCorrespondence++;
+#endif
 		}
 	}
 
@@ -221,15 +298,19 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.KalmanFilterState = kalmanFilter.statePost;
 			childHyp.KalmanFilterStateCovariance = kalmanFilter.errorCovPost;
 
+			LOG4CXX_DEBUG(log_, "grow FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " NoObs ChildId=" << pChildHyp->Id);
+
 			pLeaf->addChildNode(std::move(pChildHyp));
+#if _DEBUG
 			addedDueNoObservation++;
+#endif
 		}
 	}
 
 	// "New track" hypothesis - track got the initial observation in this frame
 	
 	// try to initiate new track sparingly(each N frames)
-	const int initNewTrackDelay = 60;
+	const int initNewTrackDelay = 7;
 
 	if (frameInd % initNewTrackDelay == 0)
 	{
@@ -282,15 +363,18 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			state(1) = blobCentrWorld.y;
 			childHyp.KalmanFilterState = state;
 			childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(KalmanFilterDynamicParamsCount, KalmanFilterDynamicParamsCount);
+			
+			LOG4CXX_DEBUG(log_, "grow New ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos);
 
 			trackHypothesisForestPseudoNode_.addChildNode(std::move(pChildHyp));
+#if _DEBUG
 			addedNew++;
+#endif
 		}
 	}
 
-#if PRINTF
-	cout << "addedNew=" << addedNew << " addedDueCorrespondence=" << addedDueCorrespondence << " addedDueNoObservation=" << addedDueNoObservation
-		<< endl;
+#if _DEBUG
+	LOG4CXX_DEBUG(log_, "addedNew=" << addedNew << " addedDueCorrespondence=" << addedDueCorrespondence << " addedDueNoObservation=" << addedDueNoObservation);
 #endif
 }
 
@@ -579,23 +663,6 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 		}
 }
 
-void MultiHypothesisBlobTracker::pruneHypothesisTree(const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
-{
-	vector<unique_ptr<TrackHypothesisTreeNode>> newFamilyRoots;
-	// gather new family roots
-	for (const auto pLeaf : bestTrackLeafs)
-	{
-		newFamilyRoots.push_back(findNewFamilyRoot(pLeaf));
-	}
-	
-	// assume the set of newFamilyRoots are unique, this is because bestTrackLeafs do not collide on any observation
-	trackHypothesisForestPseudoNode_.Children.clear();
-	for (auto& familtyRoot : newFamilyRoots)
-	{
-		trackHypothesisForestPseudoNode_.addChildNode(std::move(familtyRoot));
-	}
-}
-
 unique_ptr<TrackHypothesisTreeNode> MultiHypothesisBlobTracker::findNewFamilyRoot(TrackHypothesisTreeNode* leaf)
 {
 	// find new root
@@ -630,7 +697,57 @@ unique_ptr<TrackHypothesisTreeNode> MultiHypothesisBlobTracker::findNewFamilyRoo
 	return std::move(result);
 }
 
-bool MultiHypothesisBlobTracker::isPseudoRoot(const TrackHypothesisTreeNode& node)
+TrackHypothesisTreeNode* MultiHypothesisBlobTracker::findNewFamilyRoot2(TrackHypothesisTreeNode* leaf)
+{
+	assert(leaf != nullptr);
+	assert(!isPseudoRoot(*leaf) && "Assume starting from terminal, not pseudo node");
+
+	// find new root
+	auto current = leaf;
+	int stepBack = 1;
+	while (true)
+	{
+		if (stepBack == pruneWindow_)
+			return current;
+
+		assert(current->Parent != nullptr && "Current node always have the parent node or pseudo root");
+
+		// stop if parent is the pseudo root
+		if (isPseudoRoot(*current->Parent))
+			return current;
+
+		current = current->Parent;
+		stepBack++;
+	}
+}
+
+void MultiHypothesisBlobTracker::enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result) const
+{
+	assert(leaf != nullptr);
+	assert(!isPseudoRoot(*leaf) && "Assume starting from terminal, not pseudo node");
+
+	// find new root
+	auto current = leaf;
+	int stepBack = 1;
+	while (true)
+	{
+		result.push_back(current);
+
+		if (stepBack == pruneWindow)
+			return;
+
+		assert(current->Parent != nullptr && "Current node always have the parent node or pseudo root");
+
+		// stop if parent is the pseudo root
+		if (isPseudoRoot(*current->Parent))
+			return;
+
+		current = current->Parent;
+		stepBack++;
+	}
+}
+
+bool MultiHypothesisBlobTracker::isPseudoRoot(const TrackHypothesisTreeNode& node) const
 {
 	return node.Id == trackHypothesisForestPseudoNode_.Id;	
 }
@@ -673,6 +790,48 @@ void MultiHypothesisBlobTracker::initKalmanFilter(cv::KalmanFilter& kalmanFilter
 	setIdentity(kalmanFilter.measurementNoiseCov, cv::Scalar::all(measS*measS));
 }
 
+void MultiHypothesisBlobTracker::pruneHypothesisTree(const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
+{
+	vector<unique_ptr<TrackHypothesisTreeNode>> newFamilyRoots;
+	// gather new family roots
+	for (const auto pLeaf : bestTrackLeafs)
+	{
+		newFamilyRoots.push_back(findNewFamilyRoot(pLeaf));
+	}
+
+	// assume the set of newFamilyRoots are unique, this is because bestTrackLeafs do not collide on any observation
+	trackHypothesisForestPseudoNode_.Children.clear();
+	for (auto& familtyRoot : newFamilyRoots)
+	{
+		trackHypothesisForestPseudoNode_.addChildNode(std::move(familtyRoot));
+	}
+}
+
+TrackChangePerFrame MultiHypothesisBlobTracker::createTrackChange(TrackHypothesisTreeNode* pNode)
+{
+	TrackChangePerFrame result;
+	result.FamilyId = pNode->FamilyId;
+
+	if (pNode->CreationReason == TrackHypothesisCreationReason::New)
+		result.UpdateType = TrackChangeUpdateType::New;
+	else if (pNode->CreationReason == TrackHypothesisCreationReason::SequantialCorrespondence)
+		result.UpdateType = TrackChangeUpdateType::ObservationUpdate;
+	else if (pNode->CreationReason == TrackHypothesisCreationReason::NoObservation)
+		result.UpdateType = TrackChangeUpdateType::NoObservation;
+
+	auto estimatedPos = pNode->EstimatedPosWorld;
+
+	result.EstimatedPosWorld = estimatedPos;
+	result.ObservationInd = pNode->ObservationInd;
+
+	auto obsPos = pNode->ObservationPos;
+	if (obsPos.x == NullPosX)
+		obsPos = cameraProjector_->worldToCamera(estimatedPos);
+	result.ObservationPosPixExactOrApprox = obsPos;
+
+	return result;
+}
+
 int MultiHypothesisBlobTracker::collectTrackChanges(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, std::vector<TrackChangePerFrame>& trackStatusList)
 {
 	int readyFrameInd = frameInd - pruneWindow_;
@@ -689,7 +848,7 @@ int MultiHypothesisBlobTracker::collectTrackChanges(int frameInd, const std::vec
 			continue;
 
 		TrackChangePerFrame change;
-		change.TrackCandidateId = pFixedAncestor->FamilyId;
+		change.FamilyId = pFixedAncestor->FamilyId;
 		
 		if (pFixedAncestor->CreationReason == TrackHypothesisCreationReason::New)
 			change.UpdateType = TrackChangeUpdateType::New;
@@ -712,6 +871,205 @@ int MultiHypothesisBlobTracker::collectTrackChanges(int frameInd, const std::vec
 	}
 
 	return readyFrameInd;
+}
+
+void MultiHypothesisBlobTracker::pruneHypothesisTreeNew(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges)
+{
+	// find frame with ready track info
+
+	readyFrameInd = frameInd - pruneWindow_;
+	if (readyFrameInd < 0)
+	{
+		// no ready track info yet
+		readyFrameInd = -1;
+		return;
+	}
+
+	//
+
+	vector<unique_ptr<TrackHypothesisTreeNode>> newFamilyRoots;
+	// gather new family roots
+	for (const auto pLeaf : bestTrackLeafs)
+	{
+		TrackHypothesisTreeNode* newRoot = findNewFamilyRoot2(pLeaf);
+
+		TrackHypothesisTreeNode* newRootParent = newRoot->Parent;
+		if (isPseudoRoot(*newRootParent))
+		{
+			// track change is not ready yet so old and new root will be the same node
+		}
+		else
+		{
+			TrackChangePerFrame change = createTrackChange(newRootParent);
+			trackChanges.push_back(change);
+		}
+
+		// remember new root
+
+		auto newRootUnique = std::move(newRootParent->pullChild(newRoot));
+		newFamilyRoots.push_back(std::move(newRootUnique));
+	}
+
+	// find pruned families (the set of tracks, initiated from the same observation)
+
+	std::set<int> familyIdSetBeforePrune;
+	for (const std::unique_ptr<TrackHypothesisTreeNode>& pRoot : trackHypothesisForestPseudoNode_.Children)
+	{
+		if (pRoot != nullptr)
+			familyIdSetBeforePrune.insert(pRoot->FamilyId);
+	}
+
+	// collect pruned hypothesis changes
+
+	for (const std::unique_ptr<TrackHypothesisTreeNode>& pRoot : trackHypothesisForestPseudoNode_.Children)
+	{
+		if (pRoot == nullptr)
+			continue;
+		int familyId = pRoot->FamilyId;
+
+		bool found = familyIdSetBeforePrune.find(familyId) != familyIdSetBeforePrune.end();
+		if (!found)
+		{
+			// family was pruned
+			TrackChangePerFrame change = createTrackChange(pRoot.get());
+			change.UpdateType = TrackChangeUpdateType::Pruned;
+			trackChanges.push_back(change);
+		}
+	}
+
+	// do pruning
+	// assume the set of newFamilyRoots are unique, this is because bestTrackLeafs do not collide on any observation
+
+	trackHypothesisForestPseudoNode_.Children.clear();
+	for (auto& familtyRoot : newFamilyRoots)
+	{
+		trackHypothesisForestPseudoNode_.addChildNode(std::move(familtyRoot));
+	}
+}
+
+#ifdef HAVE_GRAPHVIZ
+
+const char* LayoutNodeNameStr = "name";
+
+char *nodeIdToText(void *state, int objtype, unsigned long id)
+{
+	Agraph_t *g = (Agraph_t *)state;
+	auto node = agfindnode_by_id(g, id);
+	if (node == nullptr)
+		return "";
+	char* name = agget(node, const_cast<char*>(LayoutNodeNameStr));
+	return name;
+}
+
+void generateHypothesisLayoutTree(Agraph_t *g, Agnode_t* parentOrNull, const TrackHypothesisTreeNode& hypNode, const std::set<int>& liveHypNodeIds)
+{
+	Agnode_t* layoutNode = agnode(g, nullptr, 1);
+
+	std::stringstream name;
+	if (hypNode.Parent != nullptr && hypNode.Parent->Parent == nullptr) // family root
+		name << "F" << hypNode.FamilyId;
+	name << "#" << hypNode.Id;
+	agsafeset(layoutNode, const_cast<char*>(LayoutNodeNameStr), const_cast<char*>(name.str().c_str()), ""); // label
+
+	// tooltip
+	name.str("");
+	name << "FrameInd=" << hypNode.FrameInd << "\r\n";
+	name << "FamilyId=" << hypNode.FamilyId << "\n\r";
+	name << "ObsInd=" << hypNode.ObservationInd << "\r";
+	name << "ObsPos=" << hypNode.ObservationPos << "\n";
+	name << "Score=" << hypNode.Score << endl;
+	name << "Reason=" << toString(hypNode.CreationReason);
+	agsafeset(layoutNode, "tooltip", const_cast<char*>(name.str().c_str()), "");
+
+	agsafeset(layoutNode, "margin", "0", ""); // edge length=0
+	agsafeset(layoutNode, "fixedsize", "false", ""); // size is dynamically calculated
+	agsafeset(layoutNode, "width", "0", ""); // windth=minimal
+	agsafeset(layoutNode, "height", "0", "");
+
+	if (liveHypNodeIds.find(hypNode.Id) != std::end(liveHypNodeIds))
+		agsafeset(layoutNode, "color", "green", "");
+
+	if (parentOrNull != nullptr)
+	{
+		Agedge_t* edge = agedge(g, parentOrNull, layoutNode, nullptr, 1);
+	}
+
+	for (const std::unique_ptr<TrackHypothesisTreeNode>& pChildHyp : hypNode.Children)
+	{
+		generateHypothesisLayoutTree(g, layoutNode, *pChildHyp.get(), liveHypNodeIds);
+	}
+}
+
+extern "C"
+{
+	__declspec(dllimport) gvplugin_library_t gvplugin_dot_layout_LTX_library;
+	__declspec(dllimport) gvplugin_library_t gvplugin_core_LTX_library;
+}
+
+#endif
+
+void MultiHypothesisBlobTracker::logHypothesisTree(int frameInd, const std::string& fileNameTag, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs) const
+{
+#ifdef HAVE_GRAPHVIZ
+	CV_Assert(logDir_ != nullptr && "Log directory must be set");
+
+	// prepare the set of new hypothesis
+	std::set<int> liveNodeIds;
+	std::vector<TrackHypothesisTreeNode*> pathNodes;
+	for (const auto pLeaf : bestTrackLeafs)
+	{
+		pathNodes.clear();
+		enumerateBranchNodesReversed(pLeaf, pruneWindow_, pathNodes);
+
+		for (auto pNode : pathNodes)
+		{
+			liveNodeIds.insert(pNode->Id);
+		}
+	}
+
+	lt_symlist_t lt_preloaded_symbols[] = {
+		{ "gvplugin_core_LTX_library", (void*)(&gvplugin_core_LTX_library) },
+		{ "gvplugin_dot_layout_LTX_library", (void*)(&gvplugin_dot_layout_LTX_library) },
+		{ 0, 0 }
+	};
+
+	/* set up a graphviz context */
+	const int demandLoading = 1;
+	GVC_t *gvc = gvContextPlugins(lt_preloaded_symbols, demandLoading);
+
+	/* Create a simple digraph */
+	Agraph_t *g = agopen(nullptr, Agdirected, nullptr);
+	
+	// change node formatting function
+	g->clos->disc.id->print = nodeIdToText; 
+	
+	agsafeset(g, "rankdir", "LR", "");
+	//agsafeset(g, "ratio", "1.3", "");
+	agsafeset(g, "ranksep", "0", "");
+	agsafeset(g, "nodesep", "0", ""); // distance between nodes in one rank
+
+	generateHypothesisLayoutTree(g, nullptr, trackHypothesisForestPseudoNode_, liveNodeIds);
+
+	gvLayout(gvc, g, "dot");
+
+	std::stringstream outFileName;
+	outFileName << "hypTree_";
+	outFileName.fill('0');
+	outFileName.width(4);
+	outFileName << frameInd << "_" << fileNameTag << ".svg";
+	boost::filesystem::path outFilePath = *logDir_ / outFileName.str();
+
+	gvRenderFilename(gvc, g, "svg", outFilePath.string().c_str());
+
+	/* Free layout data */
+	gvFreeLayout(gvc, g);
+
+	/* Free graph structures */
+	agclose(g);
+
+	/* close output file, free context, and return number of errors */
+	gvFreeContext(gvc);
+#endif
 }
 
 float normalizedDistance(const cv::Mat& pos, const cv::Mat& mu, const cv::Mat& sigma)

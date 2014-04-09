@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+
+
+  <PropertyGroup Label="UserMacros">
+    <GraphVizDir>C:\devb\cplex\graphviz-2.36.0\</GraphVizDir>
+    <GraphVizBinDir>$(GraphVizDir)x64\$(Configuration)\</GraphVizBinDir>
+    <!--<GraphVizBinDir>$(GraphVizDir)x64\Release\</GraphVizBinDir>-->
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IncludePath>$(GraphVizDir)\lib\common\;$(IncludePath)</IncludePath>
+    <IncludePath>$(GraphVizDir)\lib\graphviz\;$(IncludePath)</IncludePath>
+    <IncludePath>$(GraphVizDir)\lib\gvc\;$(IncludePath)</IncludePath>
+    <IncludePath>$(GraphVizDir)\lib\cgraph\;$(IncludePath)</IncludePath>
+    <IncludePath>$(GraphVizDir)\lib\cdt\;$(IncludePath)</IncludePath>
+    <IncludePath>$(GraphVizDir)\lib\pathplan\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(GraphVizBinDir);$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>cgraph.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gvc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gvplugin_core.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gvplugin_dot_layout.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <Target Name="GraphVizDeploy" AfterTargets="Build">
+    <Copy SourceFiles="$(GraphVizBinDir)gvc.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)gvplugin_dot_layout.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)cgraph.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)cdt.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)Pathplan.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)gvplugin_core.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+
+    <!--dynamic plugins-->
+    <!--<Copy SourceFiles="$(GraphVizBinDir)config6" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)libexpat.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(GraphVizBinDir)ltdl.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    -->
+
+  </Target>
+
+</Project>
