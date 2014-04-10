@@ -1,4 +1,3 @@
-#include "SwimmingPoolObserver.h"
 #include <cassert>
 #include <iostream>
 #include <stdint.h>
@@ -6,7 +5,18 @@
 #include "opencv2/contrib/compat.hpp"
 #include "opencv2/highgui/highgui_c.h"
 
+#include <boost/lexical_cast.hpp>
+
+#include "SwimmingPoolObserver.h"
+#include "PoolWatchFacade.h"
+
 using namespace std;
+
+SwimmingPoolObserver::SwimmingPoolObserver(unique_ptr<MultiHypothesisBlobTracker> blobTracker, shared_ptr<CameraProjectorBase> cameraProjector)
+: cameraProjector_(cameraProjector)
+{
+	blobTracker_.swap(blobTracker);
+}
 
 SwimmingPoolObserver::SwimmingPoolObserver(int pruneWindow, float fps)
 {
@@ -35,7 +45,7 @@ void SwimmingPoolObserver::setBlobs(size_t frameOrd, const vector<DetectedBlob>&
 	blobsPerFrame_[frameOrd] = blobs;
 }
 
-void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, const vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo)
+void SwimmingPoolObserver::processBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo)
 {
 	setBlobs(frameOrd, blobs);
 
@@ -43,7 +53,7 @@ void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, c
 	auto elapsedTimeMs = 1000.0f / fps;
 	int frameIndWithTrackInfo = -1;
 	vector<TrackChangePerFrame> trackChangeList;
-	blobTracker_->trackBlobs((int)frameOrd, blobs, image, fps, elapsedTimeMs, frameIndWithTrackInfo, trackChangeList);
+	blobTracker_->trackBlobs((int)frameOrd, blobs, fps, elapsedTimeMs, frameIndWithTrackInfo, trackChangeList);
 
 	if (frameIndWithTrackInfo != -1)
 	{
@@ -54,17 +64,85 @@ void SwimmingPoolObserver::processBlobs(size_t frameOrd, const cv::Mat& image, c
 		*pFrameIndWithTrackInfo = frameIndWithTrackInfo;
 }
 
+void SwimmingPoolObserver::finishTrackHistory(int frameInd)
+{
+	vector<TrackHypothesisTreeNode*> bestTrackLeaves;
+	bool isBestTrackLeafsInitied = false;
+	int frameIndWithTrackInfo = -1;
+	vector<TrackChangePerFrame> trackChangeList;
+	int pruneWindow = -1;
+	
+	for (bool continue1 = true; continue1; pruneWindow--)
+	{
+		trackChangeList.clear();
+		continue1 = blobTracker_->collectPendingTrackChanges(frameInd, frameIndWithTrackInfo, trackChangeList, bestTrackLeaves, isBestTrackLeafsInitied, pruneWindow);
+
+		// bestTrackLeaves is initialized on the first call
+		if (!isBestTrackLeafsInitied)
+			isBestTrackLeafsInitied = true;
+
+		CV_Assert(frameIndWithTrackInfo != -1);
+
+		setTrackChangesPerFrame(frameIndWithTrackInfo, trackChangeList);
+		
+		if (pruneWindow == 0)
+			bestTrackLeaves.clear(); // leaves are invalid
+
+		blobTracker_->logVisualHypothesisTree(frameInd, "hypTree", bestTrackLeaves);
+	}
+}
+
 void SwimmingPoolObserver::toString(stringstream& bld)
 {
 	bld << "framesCount=" << blobsPerFrame_.size() << std::endl;
 	bld << "trackChanges=" << trackIdToHistory_.size() << std::endl;
 }
 
+void SwimmingPoolObserver::dumpTrackHistory(stringstream& bld) const
+{
+	bld << "tracks.count=" << trackIdToHistory_.size() << std::endl;
+	for (const auto& trackIdHistPair : trackIdToHistory_)
+	{
+		int trackId = trackIdHistPair.first;
+		const TrackInfoHistory& hist = trackIdHistPair.second;
+		bld << "track Id=" << trackId;
+
+		assert(!hist.Assignments.empty());
+		bld << " FamilyId=" << hist.Assignments[0].FamilyId;
+
+		bld << " FirstFrameInd=" << hist.FirstAppearanceFrameIdx;
+		bld << " LastFrameInd=" << hist.LastAppearanceFrameIdx;
+		if (hist.LastAppearanceFrameIdx != TrackInfoHistory::IndexNull)
+		{
+			int trackedOn = hist.LastAppearanceFrameIdx - hist.FirstAppearanceFrameIdx + 1;
+			bld << " framesCount=" << trackedOn;
+		}
+		bld << std::endl;
+
+		for (size_t i = 0; i < hist.Assignments.size(); ++i)
+		{
+			int frameInd = hist.FirstAppearanceFrameIdx + i;
+			bld << "frameInd=" << frameInd;
+
+			const auto& change = hist.Assignments[i];
+
+			std::string changeStr;
+			::toString(change.UpdateType, changeStr);
+			bld <<" " << changeStr;
+				
+			bld << " obsInd=" << change.ObservationInd;
+			bld << " ImgPos=" << change.ObservationPosPixExactOrApprox;
+			bld << " WorldPos=" << change.EstimatedPosWorld;
+			bld << endl;
+		}
+	}
+}
+
 void SwimmingPoolObserver::setTrackChangesPerFrame(int frameOrd, const vector<TrackChangePerFrame>& trackChanges)
 {
 	for (auto& change : trackChanges)
 	{
-		auto trackCandidateId = change.TrackCandidateId;
+		auto trackCandidateId = change.FamilyId;
 
 		// get or create track
 
@@ -75,32 +153,41 @@ void SwimmingPoolObserver::setTrackChangesPerFrame(int frameOrd, const vector<Tr
 			TrackInfoHistory track;
 			track.TrackCandidateId = trackCandidateId;
 			track.FirstAppearanceFrameIdx = frameOrd;
+			track.LastAppearanceFrameIdx = TrackInfoHistory::IndexNull;
 			trackIdToHistory_.insert(make_pair(trackCandidateId, track));
 		}
 
-		TrackInfoHistory& track = trackIdToHistory_[trackCandidateId];
-		auto localIndex = frameOrd - track.FirstAppearanceFrameIdx;
-		
+		// TODO: how to handle the case, when there is no change for a track for some frame
+
+		TrackInfoHistory& trackHistory = trackIdToHistory_[trackCandidateId];
+		auto localIndex = frameOrd - trackHistory.FirstAppearanceFrameIdx;
+
 		// allow consequent 'put' requests
-		if (localIndex == track.Assignments.size())
+		if (localIndex == trackHistory.Assignments.size())
 		{
-			track.Assignments.resize(localIndex + 1); // reserve space for new element
+			trackHistory.Assignments.resize(localIndex + 1); // reserve space for new element
 		}
-		else if (localIndex == track.Assignments.size() - 1)
+		else if (localIndex == trackHistory.Assignments.size() - 1)
 		{
-			// ok, space for next element is reserved
+			// allow multiple modification to the last assignment
 		}
 		else
 		{
 			CV_Assert(false && "Can't randomly modify track positions");
 		}
 
-		assert(localIndex == track.Assignments.size() - 1 && "Modification must be applied to the last element of track history");
-		track.Assignments[localIndex] = change;
+		if (change.UpdateType == TrackChangeUpdateType::Pruned)
+		{
+			trackHistory.LastAppearanceFrameIdx = frameOrd;
+			assert(trackHistory.LastAppearanceFrameIdx == trackHistory.FirstAppearanceFrameIdx + trackHistory.Assignments.size() - 1 && "FrameInd of the last appearance must be the last in the assignments array");
+		}
+
+		CV_Assert(localIndex == trackHistory.Assignments.size() - 1 && "Modification must be applied to the last element of track history");
+		trackHistory.Assignments[localIndex] = change;
 	}
 }
 
-void SwimmingPoolObserver::adornImage(const cv::Mat& image, int frameOrd, int trailLength, cv::Mat& resultImage)
+void SwimmingPoolObserver::adornImage(int frameOrd, int trailLength, cv::Mat& resultImage)
 {
 	int processedFramesCount = static_cast<int>(blobsPerFrame_.size());
 	CV_Assert(frameOrd >= 0 && frameOrd < processedFramesCount && "Parameter frameOrd is out of range");
@@ -111,66 +198,39 @@ void SwimmingPoolObserver::adornImage(const cv::Mat& image, int frameOrd, int tr
 	if (fromFrameOrd >= processedFramesCount)
 		fromFrameOrd = processedFramesCount - 1;
 
-	adornImageInternal(image, fromFrameOrd, frameOrd, trailLength, resultImage);
+	adornImageInternal(fromFrameOrd, frameOrd, trailLength, resultImage);
 }
 
-void SwimmingPoolObserver::adornImageInternal(const cv::Mat& image, int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage)
+void SwimmingPoolObserver::adornImageInternal(int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage)
 {
 	for (auto& trackIdToHist : trackIdToHistory_)
 	{
-		auto& track = trackIdToHist.second;
+		const TrackInfoHistory& track = trackIdToHist.second;
 		auto color = getTrackColor(track);
 
-		// draw circle in the center of initial observation of the track
+		// limit to available observations
 
-		if (track.FirstAppearanceFrameIdx == fromFrameOrd)
-		{
-			auto pChange = track.getTrackChangeForFrame(fromFrameOrd);
-			if (pChange == nullptr)
-				continue;
+		int maxUpper = track.isFinished() ? track.LastAppearanceFrameIdx : (track.FirstAppearanceFrameIdx + track.Assignments.size() - 1);
 
-			auto& cent = pChange->ObservationPosPixExactOrApprox;
-			cv::circle(resultImage, cent, 3, color);
-		}
+		int localFromFrameOrd = fromFrameOrd;
+		if (localFromFrameOrd > maxUpper)
+			continue;
+		else if (localFromFrameOrd < track.FirstAppearanceFrameIdx)
+			localFromFrameOrd = track.FirstAppearanceFrameIdx;
 
-		// draw track path in frames range of interest
+		int localToFrameOrd = toFrameOrd;
+		if (localToFrameOrd < track.FirstAppearanceFrameIdx)
+			continue;
+		if (localToFrameOrd < maxUpper) // do not show tracks, finished some time ago
+			continue;
+		else if (localToFrameOrd > maxUpper)
+			localToFrameOrd = maxUpper;
+		
+		assert(localFromFrameOrd <= localToFrameOrd);
 
-		cv::Point2f prevPoint(-1, -1);;
-		for (int frameInd = fromFrameOrd; frameInd <= toFrameOrd; ++frameInd)
-		{
-			auto pChange = track.getTrackChangeForFrame(frameInd);
-			// TODO: implement track termination
-			// positions for track can't just stop because tracker approximates track in case of no observation
-			//assert(pChange != nullptr);
-			if (pChange == nullptr)
-				continue; // assume track is finished
-			
-			auto cent = pChange->ObservationPosPixExactOrApprox;
+		//
 
-			bool hasPrevPoint = prevPoint.x != -1;
-			if (hasPrevPoint)
-				cv::line(resultImage, prevPoint, cent, color);
-			
-			prevPoint = cent;
-		}
-
-		// draw shape outline for the last frame
-
-		auto pLastChange = track.getTrackChangeForFrame(toFrameOrd);
-		if (pLastChange != nullptr && pLastChange->ObservationInd >= 0)
-		{
-			const auto& blobs = blobsPerFrame_[toFrameOrd];
-			const auto& obs = blobs[pLastChange->ObservationInd];
-
-			const cv::Mat_<int32_t>& outlinePixMat = obs.OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
-
-			// populate points array
-			std::vector<cv::Point> outlinePoints(outlinePixMat.rows);
-			for (int i = 0; i < outlinePixMat.rows; ++i)
-				outlinePoints[i] = cv::Point(outlinePixMat(i, 1), outlinePixMat(i, 0));
-
-			cv::polylines(resultImage, outlinePoints, true, color);
-		}
+		PoolWatch::PaintHelper::paintTrack(track, localFromFrameOrd, localToFrameOrd, color, blobsPerFrame_, resultImage);
 	}
 }
 
@@ -188,7 +248,7 @@ cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist
 	return trackColors[colInd];
 }
 
-std::shared_ptr<CameraProjector> SwimmingPoolObserver::cameraProjector()
+std::shared_ptr<CameraProjectorBase> SwimmingPoolObserver::cameraProjector()
 {
 	return cameraProjector_;
 }
