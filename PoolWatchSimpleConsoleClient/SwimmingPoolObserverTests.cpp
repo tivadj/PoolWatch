@@ -35,6 +35,10 @@ namespace SwimmingPoolObserverTestsNS
 		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
 		blobTracker->swimmerMaxSpeed_ = 1.1;
 		blobTracker->shapeCentroidNoise_ = 0;
+		blobTracker->initNewTrackDelay_ = 1;
+
+		auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1,0,0));
+		blobTracker->setMovementPredictor(std::move(movementPredictor));
 
 		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 		auto outDirPtr = make_shared<boost::filesystem::path>(outDir);
@@ -65,7 +69,7 @@ namespace SwimmingPoolObserverTestsNS
 
 		//
 		assert(framesCount >= 1 && "Must be at least one frame");
-		poolObserver.finishTrackHistory(framesCount - 1);
+		poolObserver.flushTrackHypothesis(framesCount - 1);
 
 		std::stringstream bld;
 		poolObserver.dumpTrackHistory(bld);

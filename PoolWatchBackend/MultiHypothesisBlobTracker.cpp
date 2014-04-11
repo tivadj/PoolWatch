@@ -7,8 +7,6 @@
 #include <array>
 #include <set>
 
-#include "opencv2/video/tracking.hpp"
-
 #include <log4cxx/logger.h>
 #include <log4cxx/helpers/exception.h>
 
@@ -48,8 +46,7 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 	pruneWindow_(pruneWindow),
 	nextTrackCandidateId_(1),
 	swimmerMaxSpeed_(2.3f),         // max speed for swimmers 2.3m/s
-	shapeCentroidNoise_(0.5f),
-	kalmanFilter_(cv::KalmanFilter(4, 2))
+	shapeCentroidNoise_(0.5f)
 {
 	CV_DbgAssert(fps > 0);
 	CV_DbgAssert(pruneWindow_ >= 0);
@@ -62,8 +59,8 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 	trackHypothesisForestPseudoNode_.FrameInd = 0;
 	trackHypothesisForestPseudoNode_.ObservationInd = 0;
 
-	//
-	initKalmanFilter(kalmanFilter_, fps);
+	// default to Kalman Filter
+	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps);
 }
 
 
@@ -71,17 +68,9 @@ MultiHypothesisBlobTracker::~MultiHypothesisBlobTracker()
 {
 }
 
-void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& frameIndWithTrackInfo,
-	std::vector<TrackChangePerFrame>& trackStatusList)
+void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& readyFrameInd,
+	std::vector<TrackChangePerFrame>& trackChanges)
 {
-#if 0 //_DEBUG
-	// the set of tracked families
-	// it must not decrease during track hypothesis generation and pruning
-	std::set<int> familyIdSet;
-	for (const std::unique_ptr<TrackHypothesisTreeNode>& pRoot : trackHypothesisForestPseudoNode_.Children)
-		familyIdSet.insert(pRoot->FamilyId);
-#endif
-
 	//swimmerMaxShiftM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
 	float swimmerMaxShiftM = (elapsedTimeMs * 0.001f) * swimmerMaxSpeed_ + shapeCentroidNoise_;
 	growTrackHyposhesisTree(frameInd, blobs, fps, swimmerMaxShiftM);
@@ -95,60 +84,37 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	findBestTracks(leafSet, bestTrackLeafs);
 
 	LOG4CXX_DEBUG(log_, "bestTrackLeafs.count=" << bestTrackLeafs.size());
+#if PW_DEBUG_DETAIL
 	if (log_->isDebugEnabled())
 		logVisualHypothesisTree(frameInd, "1beforePruning", bestTrackLeafs);
+#endif
 
-	std::vector<TrackChangePerFrame> trackStatusListTmp;
-	int frameIndWithTrackInfo2 = collectTrackChanges(frameInd, bestTrackLeafs, trackStatusListTmp);
-	
-	pruneHypothesisTreeNew(frameInd, bestTrackLeafs, frameIndWithTrackInfo, trackStatusList, pruneWindow_);
+	pruneHypothesisTree(frameInd, bestTrackLeafs, readyFrameInd, trackChanges, pruneWindow_);
 
+#if PW_DEBUG_DETAIL
 	if (log_->isDebugEnabled())
 		logVisualHypothesisTree(frameInd, "2afterPruning", bestTrackLeafs);
-
-	//CV_Assert(frameIndWithTrackInfo2 == frameIndWithTrackInfo);
-	//CV_Assert(trackStatusListTmp.size() == trackStatusList.size());
-
-	if (frameIndWithTrackInfo != -1)
-	{
-		//assert(!trackStatusList.empty());
-	}
+#endif
 
 	if (log_->isDebugEnabled())
 	{
 		// list track hypothesis changes
 
 		stringstream bld;
-		bld << "frameIndWithTrackInfo=" << frameIndWithTrackInfo << " trackStatusList=" << trackStatusList.size();
-		if (!trackStatusList.empty())
+		bld << "Track Changes for FrameInd=" << readyFrameInd << " ChangesCount=" << trackChanges.size();
+		if (!trackChanges.empty())
 		{
 			bld << endl;
-			for (const TrackChangePerFrame& change : trackStatusList)
+			for (const TrackChangePerFrame& change : trackChanges)
 			{
 				std::string changeStr;
 				toString(change.UpdateType, changeStr);
 
-				bld << changeStr << " FamilyId=" << change.FamilyId << " ObsInd=" << change.ObservationInd << " " << change.ObservationPosPixExactOrApprox;
+				bld << changeStr << " FamilyId=" << change.FamilyId << " ObsInd=" << change.ObservationInd << " " << change.ObservationPosPixExactOrApprox <<endl;
 			}
 		}
 		log_->debug(bld.str());
 	}
-	
-	//pruneHypothesisTree(bestTrackLeafs);
-
-#if 0//_DEBUG
-	// check all family roots are preserved (generation of new families is possible)
-	std::set<int> familyIdSetAfter;
-	for (const std::unique_ptr<TrackHypothesisTreeNode>& pRoot : trackHypothesisForestPseudoNode_.Children)
-		familyIdSetAfter.insert(pRoot->FamilyId);
-	
-	CV_Assert(familyIdSet.size() <= familyIdSetAfter.size());
-	for (int familyId : familyIdSet)
-	{
-		bool found = familyIdSetAfter.find(familyId) != familyIdSetAfter.end();
-		CV_Assert(found && "OldRoot from previous iteration was not traversed from new set of best leaves");
-	}
-#endif
 }
 
 void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float swimmerMaxShiftM)
@@ -156,7 +122,7 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
 
-#if _DEBUG
+#if 1 // && log.isDebugEnabled()
 	int addedDueNoObservation = 0;
 	int addedDueCorrespondence = 0;
 	int addedNew = 0;
@@ -197,51 +163,24 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.ObservationPos = blob.Centroid;
 			childHyp.ObservationPosWorld = blobCentrWorld;
 			childHyp.CreationReason = hypothesisReason;
-
-			//cv::Mat_<float> state(1, 4, 0.0f); // [X,Y, vx=0, vy=0]
-			//state(0, 0) = blobCentrWorld.x;
-			//state(0, 1) = blobCentrWorld.y;
-			//childHyp.KalmanFilterState = state;
-			//childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(state.cols, state.cols);
-			//childHyp.KalmanFilterStatePrev = cv::Mat_<float>();
-			//childHyp.KalmanFilterStateCovariancePrev = cv::Mat_<float>();
-
-			//float score = calcTrackShiftScoreNew(pLeaf, blobCentrWorld, hypothesisReason, fps,
-			//	childHyp.EstimatedPosWorld,
-			//	childHyp.KalmanFilterState,
-			//	childHyp.KalmanFilterStateCovariance);
-			//childHyp.ScoreKalman = score;
-
-			// prepare Kalman Filter state
-			cv::KalmanFilter& kalmanFilter = kalmanFilter_; // use cached Kalman Filter object
-			kalmanFilter.statePost = pLeaf->KalmanFilterState;
-			kalmanFilter.errorCovPost = pLeaf->KalmanFilterStateCovariance;
+			childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
+			childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
 
 			//
-			cv::Mat predictedPos2 = kalmanFilter.predict();
-			cv::Point3f predictedPos = cv::Point3f(predictedPos2.at<float>(0, 0), predictedPos2.at<float>(1, 0), zeroHeight);
+			float score;
+			cv::Point3f estPos;
+			movementPredictor_->estimateAndSave(*pLeaf, blobCentrWorld, estPos, score, childHyp);
+			childHyp.Score = score;
+			childHyp.EstimatedPosWorld = estPos;
 
-			//
-			auto obsPosWorld2 = cv::Mat_<float>(2, 1); // ignore Z
-			obsPosWorld2(0) = blobCentrWorld.x;
-			obsPosWorld2(1) = blobCentrWorld.y;
-
-			auto estPosMat = kalmanFilter.correct(obsPosWorld2);
-			childHyp.EstimatedPosWorld = cv::Point3f(estPosMat.at<float>(0, 0), estPosMat.at<float>(1, 0), zeroHeight);
-
-			auto shiftScore = kalmanFilterDistance(kalmanFilter, obsPosWorld2);
-			childHyp.Score = pLeaf->Score + shiftScore;
-
-			// save Kalman Filter state
-			childHyp.KalmanFilterState = kalmanFilter.statePost;
-			childHyp.KalmanFilterStateCovariance = kalmanFilter.errorCovPost;
-
+#if PW_DEBUG_DETAIL
 			LOG4CXX_DEBUG(log_, "grow FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " Corresp ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd <<" " << pChildHyp->ObservationPos);
+#endif
 
 			pLeaf->addChildNode(std::move(pChildHyp));
-#if _DEBUG
-			addedDueCorrespondence++;
-#endif
+
+			if (log_->isDebugEnabled())
+				addedDueCorrespondence++;
 		}
 	}
 
@@ -264,45 +203,32 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.ObservationPos = cv::Point2f(NullPosX, NullPosX);
 			childHyp.ObservationPosWorld = blobCentrWorld;
 			childHyp.CreationReason = hypothesisReason;
-
-			//float score = calcTrackShiftScoreNew(nullptr, blobCentrWorld, hypothesisReason, fps,
-			//	childHyp.EstimatedPosWorld,
-			//	childHyp.KalmanFilterState,
-			//	childHyp.KalmanFilterStateCovariance);
-			//childHyp.ScoreKalman = score;
-
-			// prepare Kalman Filter state
-			cv::KalmanFilter& kalmanFilter = kalmanFilter_; // use cached Kalman Filter object
-			kalmanFilter.statePost = pLeaf->KalmanFilterState;
-			kalmanFilter.errorCovPost = pLeaf->KalmanFilterStateCovariance;
+			childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
+			childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
 
 			//
-			cv::Mat predictedPos2 = kalmanFilter.predict();
-			cv::Point3f predictedPos = cv::Point3f(predictedPos2.at<float>(0, 0), predictedPos2.at<float>(1, 0), 0); // z=0
-			
-			// as there is no observation, the predicted position is the best estimate
-			childHyp.EstimatedPosWorld = predictedPos;
-			childHyp.Score = pLeaf->Score + penalty; // punish for no observation
+			float score;
+			cv::Point3f estPos;
+			movementPredictor_->estimateAndSave(*pLeaf, blobCentrWorld, estPos, score, childHyp);
+			childHyp.Score = score;
+			childHyp.EstimatedPosWorld = estPos;
 
-			// save Kalman Filter state
-			childHyp.KalmanFilterState = kalmanFilter.statePost;
-			childHyp.KalmanFilterStateCovariance = kalmanFilter.errorCovPost;
-
+#if PW_DEBUG_DETAIL
 			LOG4CXX_DEBUG(log_, "grow FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " NoObs ChildId=" << pChildHyp->Id);
+#endif
 
 			pLeaf->addChildNode(std::move(pChildHyp));
-#if _DEBUG
-			addedDueNoObservation++;
-#endif
+
+			if (log_->isDebugEnabled())
+				addedDueNoObservation++;
 		}
 	}
 
 	// "New track" hypothesis - track got the initial observation in this frame
 	
-	// try to initiate new track sparingly(each N frames)
-	const int initNewTrackDelay = 7;
+	// initiate new track sparingly(each N frames)
 
-	if (frameInd % initNewTrackDelay == 0)
+	if (frameInd % initNewTrackDelay_ == 0)
 	{
 		// associate hypothesis node with each observation
 		for (int blobInd = 0; blobInd < (int)blobs.size(); ++blobInd)
@@ -325,184 +251,24 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.ObservationPosWorld = blobCentrWorld;
 			childHyp.CreationReason = hypothesisReason;
 			childHyp.EstimatedPosWorld = blobCentrWorld;
+			childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
+			childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
+			float score;
+			movementPredictor_->initScoreAndState(blobCentrWorld, score, childHyp);
+			childHyp.Score = score;
 			
-			// initial track score
-			int nt = 5; // number of expected targets
-			int fa = 25; // number of expected FA(false alarms)
-			float precision = nt / (float)(nt + fa);
-			float initialScore = -log(precision);
-
-			// if initial score is large, then tracks with missed detections may
-			// be evicted from hypothesis tree
-			initialScore = abs(6 * penalty);
-
-			childHyp.Score = initialScore;
-
-			//float score = calcTrackShiftScoreNew(nullptr, blobCentrWorld, hypothesisReason, fps,
-			//	childHyp.EstimatedPosWorld,
-			//	childHyp.KalmanFilterState,
-			//	childHyp.KalmanFilterStateCovariance);
-			//childHyp.ScoreKalman = score;
-
-			//float score = calcTrackShiftScore(nullptr, &childHyp, fps);
-			//childHyp.ScoreKalman = score;
-
-			// save Kalman Filter state
-			cv::Mat_<float> state(KalmanFilterDynamicParamsCount, 1, 0.0f); // [X,Y, vx=0, vy=0]'
-			state(0) = blobCentrWorld.x;
-			state(1) = blobCentrWorld.y;
-			childHyp.KalmanFilterState = state;
-			childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(KalmanFilterDynamicParamsCount, KalmanFilterDynamicParamsCount);
-			
+#if PW_DEBUG_DETAIL
 			LOG4CXX_DEBUG(log_, "grow New ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos);
+#endif
 
 			trackHypothesisForestPseudoNode_.addChildNode(std::move(pChildHyp));
-#if _DEBUG
-			addedNew++;
-#endif
+			
+			if (log_->isDebugEnabled())
+				addedNew++;
 		}
 	}
 
-#if _DEBUG
 	LOG4CXX_DEBUG(log_, "addedNew=" << addedNew << " addedDueCorrespondence=" << addedDueCorrespondence << " addedDueNoObservation=" << addedDueNoObservation);
-#endif
-}
-
-float MultiHypothesisBlobTracker::calcTrackShiftScore(const TrackHypothesisTreeNode* parentNode,
-	const TrackHypothesisTreeNode* trackNode, float fps)
-{
-	// penalty for missed observation
-	// prob 0.4 - penalty - 0.9163
-	// prob 0.6 - penalty - 0.5108
-	float probDetection = 0.6f;
-	float penalty = log(1 - probDetection);
-
-	// initial track score
-	int nt = 5; // number of expected targets
-	int fa = 25; // number of expected FA(false alarms)
-	float precision = nt / (float)(nt + fa);
-	float initialScore = -log(precision);
-
-	// if initial score is large, then tracks with missed detections may
-	// be evicted from hypothesis tree
-	initialScore = abs(6 * penalty);
-
-	if (trackNode->CreationReason == TrackHypothesisCreationReason::New)
-	{
-		assert(parentNode == nullptr);
-		return initialScore;
-	}
-	
-	assert(parentNode != nullptr);
-
-	//cv::KalmanFilter kalmanFilter(4, 2);
-	//kalmanFilter.transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1);
-	//
-	//// 2.3m / s is max speed for swimmers
-	//// let say 0.5m / s is an average speed
-	//// estimate sigma as one third of difference between max and mean shift per frame
-	//float maxShiftM = 2.3f / fps;
-	//float meanShiftM = 0.5f / fps;
-	//float sigma = (maxShiftM - meanShiftM) / 3;
-	//kalmanFilter.processNoiseCov = (cv::Mat_<float>(1, 1) << sigma ^ 2);
-
-	//kalmanFilter.measurementMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 0, 0, 0, 1, 0, 0);
-	//kalmanFilter.measurementNoiseCov = (cv::Mat_<float>(1, 1) << (5.0 / 3) ^ 2);
-
-	cv::KalmanFilter& kalmanFilter = kalmanFilter_;
-	initKalmanFilter(kalmanFilter, fps);
-	kalmanFilter.statePost= parentNode->KalmanFilterState;
-	kalmanFilter.errorCovPost = parentNode->KalmanFilterStateCovariance;
-
-	//
-	cv::Mat predictedPos2 = kalmanFilter.predict();
-	cv::Point3f predictedPos = cv::Point3f(predictedPos2.at<float>(0, 0), predictedPos2.at<float>(1, 0), 0); // z=0
-	
-	if (trackNode->ObservationPosWorld.x == NullPosX)
-		return penalty;
-
-	auto obsPosWorld = cv::Mat_<float>(3, 1);
-	obsPosWorld(0, 0) = trackNode->ObservationPosWorld.x;
-	obsPosWorld(1, 0) = trackNode->ObservationPosWorld.y;
-	obsPosWorld(2, 0) = trackNode->ObservationPosWorld.z;
-	
-	auto result = kalmanFilterDistance(kalmanFilter, obsPosWorld);	
-	return result;
-}
-
-void MultiHypothesisBlobTracker::calcTrackShiftScoreNew(const TrackHypothesisTreeNode* parentNode,
-	const cv::Point3f& blobPosWorld, TrackHypothesisCreationReason hypothesisReason, float fps,
-	float& resultScore,
-	cv::Point3f& resultEstimatedPosWorld,
-	cv::Mat_<float>& resultKalmanFilterState,
-	cv::Mat_<float>& resultKalmanFilterStateCovariance)
-{
-	// penalty for missed observation
-	// prob 0.4 - penalty - 0.9163
-	// prob 0.6 - penalty - 0.5108
-	const float probDetection = 0.6f;
-	float penalty = log(1 - probDetection);
-
-	if (hypothesisReason == TrackHypothesisCreationReason::New)
-	{
-		assert(parentNode == nullptr);
-		
-		// initial track score
-		int nt = 5; // number of expected targets
-		int fa = 25; // number of expected FA(false alarms)
-		float precision = nt / (float)(nt + fa);
-		float initialScore = -log(precision);
-
-		// if initial score is large, then tracks with missed detections may
-		// be evicted from hypothesis tree
-		initialScore = abs(6 * penalty);
-
-		//
-		resultScore = initialScore;
-		resultEstimatedPosWorld = blobPosWorld;
-
-		cv::Mat_<float> state(1, 4, 0.0f); // [X,Y, vx=0, vy=0]
-		state(0, 0) = blobPosWorld.x;
-		state(0, 1) = blobPosWorld.y;
-		resultKalmanFilterState = state;
-
-		resultKalmanFilterStateCovariance = cv::Mat_<float>::eye(state.cols, state.cols);
-	}
-
-	assert(parentNode != nullptr);
-
-	cv::KalmanFilter& kalmanFilter = kalmanFilter_; // use cached Kalman Filter object
-	kalmanFilter.statePost = parentNode->KalmanFilterState;
-	kalmanFilter.errorCovPost = parentNode->KalmanFilterStateCovariance;
-
-	//
-	cv::Mat predictedPos2 = kalmanFilter.predict();
-	cv::Point3f predictedPos = cv::Point3f(predictedPos2.at<float>(0, 0), predictedPos2.at<float>(1, 0), 0); // z=0
-
-	if (hypothesisReason == TrackHypothesisCreationReason::NoObservation)
-	{
-		assert(blobPosWorld.x == NullPosX);
-
-		resultScore = penalty;
-		resultEstimatedPosWorld = predictedPos;
-	}
-	else
-	{
-		assert(hypothesisReason == TrackHypothesisCreationReason::SequantialCorrespondence);
-
-		auto obsPosWorld = cv::Mat_<float>(3, 1);
-		obsPosWorld(0, 0) = blobPosWorld.x;
-		obsPosWorld(1, 0) = blobPosWorld.y;
-		obsPosWorld(2, 0) = blobPosWorld.z;
-
-		auto estPosMat = kalmanFilter.correct(obsPosWorld);
-		resultEstimatedPosWorld = cv::Point3f(estPosMat.at<float>(0, 0), estPosMat.at<float>(1, 0), estPosMat.at<float>(2, 0));
-
-		resultScore = kalmanFilterDistance(kalmanFilter, obsPosWorld);
-	}
-	
-	resultKalmanFilterState = kalmanFilter.statePost;
-	resultKalmanFilterStateCovariance = kalmanFilter.errorCovPost;
 }
 
 int MultiHypothesisBlobTracker::compoundObservationId(const TrackHypothesisTreeNode& node)
@@ -653,41 +419,7 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 		}
 }
 
-unique_ptr<TrackHypothesisTreeNode> MultiHypothesisBlobTracker::findNewFamilyRoot(TrackHypothesisTreeNode* leaf)
-{
-	// find new root
-	auto current = leaf;
-	int stepBack = 1;
-	while (true)
-	{
-		if (stepBack == pruneWindow_)
-			break;
-
-		// stop if parent is the pseudo root
-		if (current->Parent == nullptr || isPseudoRoot(*current->Parent))
-			break;
-
-		current = current->Parent;
-		stepBack++;
-	}
-
-	assert(current->Parent != nullptr);
-
-	// ask parent to find unique_ptr corresponding to current
-	unique_ptr<TrackHypothesisTreeNode> result;
-	for (auto& childPtr : current->Parent->Children)
-	{
-		if (childPtr.get() == current)
-		{
-			result.swap(childPtr);
-			break;
-		}
-	}
-	assert(result != nullptr);
-	return std::move(result);
-}
-
-TrackHypothesisTreeNode* MultiHypothesisBlobTracker::findNewFamilyRoot2(TrackHypothesisTreeNode* leaf, int pruneWindow)
+TrackHypothesisTreeNode* MultiHypothesisBlobTracker::findNewFamilyRoot(TrackHypothesisTreeNode* leaf, int pruneWindow)
 {
 	CV_Assert(pruneWindow >= 0);
 	if (pruneWindow == 0)
@@ -769,42 +501,6 @@ void MultiHypothesisBlobTracker::getLeafSet(TrackHypothesisTreeNode* startNode, 
 	}
 }
 
-void MultiHypothesisBlobTracker::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps)
-{
-	kalmanFilter.init(KalmanFilterDynamicParamsCount, 2, 0);
-	
-	kalmanFilter.transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1);
-
-	// 2.3m / s is max speed for swimmers
-	// let say 0.5m / s is an average speed
-	// estimate sigma as one third of difference between max and mean shift per frame
-	float maxShiftM = 2.3f / fps;
-	float meanShiftM = 0.5f / fps;
-	float sigma = (maxShiftM - meanShiftM) / 3;
-	setIdentity(kalmanFilter.processNoiseCov, cv::Scalar::all(sigma*sigma));
-
-	kalmanFilter.measurementMatrix = (cv::Mat_<float>(2, 4) << 1, 0, 0, 0, 0, 1, 0, 0);
-	const float measS = 5.0f / 3;
-	setIdentity(kalmanFilter.measurementNoiseCov, cv::Scalar::all(measS*measS));
-}
-
-void MultiHypothesisBlobTracker::pruneHypothesisTree(const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
-{
-	vector<unique_ptr<TrackHypothesisTreeNode>> newFamilyRoots;
-	// gather new family roots
-	for (const auto pLeaf : bestTrackLeafs)
-	{
-		newFamilyRoots.push_back(findNewFamilyRoot(pLeaf));
-	}
-
-	// assume the set of newFamilyRoots are unique, this is because bestTrackLeafs do not collide on any observation
-	trackHypothesisForestPseudoNode_.Children.clear();
-	for (auto& familtyRoot : newFamilyRoots)
-	{
-		trackHypothesisForestPseudoNode_.addChildNode(std::move(familtyRoot));
-	}
-}
-
 TrackChangePerFrame MultiHypothesisBlobTracker::createTrackChange(TrackHypothesisTreeNode* pNode)
 {
 	TrackChangePerFrame result;
@@ -827,51 +523,12 @@ TrackChangePerFrame MultiHypothesisBlobTracker::createTrackChange(TrackHypothesi
 		obsPos = cameraProjector_->worldToCamera(estimatedPos);
 	result.ObservationPosPixExactOrApprox = obsPos;
 
+	result.FrameInd = pNode->FrameInd;
+
 	return result;
 }
 
-int MultiHypothesisBlobTracker::collectTrackChanges(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, std::vector<TrackChangePerFrame>& trackStatusList)
-{
-	int readyFrameInd = frameInd - pruneWindow_;
-	if (readyFrameInd < 0)
-		readyFrameInd = -1;
-
-	for (const auto pNode : bestTrackLeafs)
-	{
-		auto pFixedAncestor = pNode->getAncestor(pruneWindow_); 
-		
-		if (pFixedAncestor == nullptr)
-			continue;
-		if (isPseudoRoot(*pFixedAncestor))
-			continue;
-
-		TrackChangePerFrame change;
-		change.FamilyId = pFixedAncestor->FamilyId;
-		
-		if (pFixedAncestor->CreationReason == TrackHypothesisCreationReason::New)
-			change.UpdateType = TrackChangeUpdateType::New;
-		else if (pFixedAncestor->CreationReason == TrackHypothesisCreationReason::SequantialCorrespondence)
-			change.UpdateType = TrackChangeUpdateType::ObservationUpdate;
-		else if (pFixedAncestor->CreationReason == TrackHypothesisCreationReason::NoObservation)
-			change.UpdateType = TrackChangeUpdateType::NoObservation;
-
-		auto estimatedPos = pFixedAncestor->EstimatedPosWorld;
-
-		change.EstimatedPosWorld = estimatedPos;
-		change.ObservationInd = pFixedAncestor->ObservationInd;
-		
-		auto obsPos = pFixedAncestor->ObservationPos;
-		if (obsPos.x == NullPosX)
-			obsPos = cameraProjector_->worldToCamera(estimatedPos);
-		change.ObservationPosPixExactOrApprox = obsPos;
-
-		trackStatusList.push_back(change);
-	}
-
-	return readyFrameInd;
-}
-
-void MultiHypothesisBlobTracker::pruneHypothesisTreeNew(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges, int pruneWindow)
+void MultiHypothesisBlobTracker::pruneHypothesisTree(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges, int pruneWindow)
 {
 	// find frame with ready track info
 
@@ -889,7 +546,7 @@ void MultiHypothesisBlobTracker::pruneHypothesisTreeNew(int frameInd, const std:
 	vector<unique_ptr<TrackHypothesisTreeNode>> newFamilyRoots;
 	for (const auto pLeaf : bestTrackLeafs)
 	{
-		TrackHypothesisTreeNode* newRoot = findNewFamilyRoot2(pLeaf, pruneWindow);
+		TrackHypothesisTreeNode* newRoot = findNewFamilyRoot(pLeaf, pruneWindow);
 		
 		if (isPseudoRoot(*newRoot))
 		{
@@ -959,7 +616,7 @@ void MultiHypothesisBlobTracker::pruneHypothesisTreeNew(int frameInd, const std:
 	}
 }
 
-bool MultiHypothesisBlobTracker::collectPendingTrackChanges(int frameInd, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackChangeList, 
+bool MultiHypothesisBlobTracker::flushTrackHypothesis(int frameInd, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges,
 	vector<TrackHypothesisTreeNode*>& bestTrackLeafsCache, bool isBestTrackLeafsInitied, int& pruneWindow)
 {
 	// nothing to collect for empty hypothesis tree
@@ -982,9 +639,9 @@ bool MultiHypothesisBlobTracker::collectPendingTrackChanges(int frameInd, int& f
 	}
 
 	// collect oldest ready hypothesis nodes
-	pruneHypothesisTreeNew(frameInd, bestTrackLeafsCache, frameIndWithTrackInfo, trackChangeList,pruneWindow);
+	pruneHypothesisTree(frameInd, bestTrackLeafsCache, readyFrameInd, trackChanges, pruneWindow);
 	
-	CV_Assert(frameIndWithTrackInfo != -1);
+	CV_Assert(readyFrameInd != -1 && "Can't collect track changes from hypothesis tree");
 
 	bool continue1 = !trackHypothesisForestPseudoNode_.Children.empty();
 	return continue1;
@@ -1020,6 +677,8 @@ void generateHypothesisLayoutTree(Agraph_t *g, Agnode_t* parentOrNull, const Tra
 	{
 		if (hypNode.Parent != nullptr && hypNode.Parent->Parent == nullptr) // family root
 			name << "F" << hypNode.FamilyId;
+
+		name << "#" << hypNode.Id;
 
 		if (hypNode.ObservationInd != -1)
 			name << hypNode.ObservationPos;
@@ -1125,28 +784,8 @@ void MultiHypothesisBlobTracker::logVisualHypothesisTree(int frameInd, const std
 #endif
 }
 
-float normalizedDistance(const cv::Mat& pos, const cv::Mat& mu, const cv::Mat& sigma)
+void MultiHypothesisBlobTracker::setMovementPredictor(unique_ptr<SwimmerMovementPredictor> movementPredictor)
 {
-	cv::Mat zd = pos - mu;
-	cv::Mat mahalanobisDistance = zd.t() * sigma.inv() * zd;
-	//auto md = mahalanobisDistance.at<float>(0, 0);
-	double determinant = cv::determinant(sigma);
-	float dist = mahalanobisDistance.at<float>(0, 0) + static_cast<float>(log(determinant));
-	return dist;
+	movementPredictor_.swap(std::move(movementPredictor));
 }
 
-/// Computes distance between predicted position of the Kalman Filter and given observed position.
-/// It corresponds to Matlab's vision.KalmanFilter.distance() function.
-/// Parameter observedPos is a column vector.
-// http://www.mathworks.com/help/vision/ref/vision.kalmanfilter.distance.html
-float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& observedPos)
-{
-	cv::Mat residualCovariance = kalmanFilter.measurementMatrix * kalmanFilter.errorCovPost * kalmanFilter.measurementMatrix.t() + kalmanFilter.measurementNoiseCov;
-	//auto rc = residualCovariance.at<float>(0, 0);
-
-	cv::Mat mu = kalmanFilter.measurementMatrix * kalmanFilter.statePre;
-	//auto mm = mu.at<float>(0, 0);
-
-	float result = normalizedDistance(observedPos, mu, residualCovariance);
-	return result;
-}

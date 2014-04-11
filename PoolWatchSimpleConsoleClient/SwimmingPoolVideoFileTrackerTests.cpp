@@ -18,6 +18,7 @@
 #include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
+#include "TestingUtils.h"
 
 namespace SwimmingPoolVideoFileTrackerTestsNS
 {
@@ -30,38 +31,16 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 	log4cxx::LoggerPtr log_(log4cxx::Logger::getLogger("PW.App"));
 
-	void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjector& cameraProjector)
-	{
-		// update blobs CentroidWorld
-		for (auto& blob : blobs)
-		{
-			blob.CentroidWorld = cameraProjector.cameraToWorld(blob.Centroid);
-		}
-	}
-	
-	void configureLogToFileAppender(const QDir& logFolder, const QString& logFileName)
-	{
-		// create rolling file appending to a runtime generated log
-
-		QString fileRollAbsPath = logFolder.absoluteFilePath(logFileName);
-
-		auto pLayout = log4cxx::helpers::ObjectPtr(new log4cxx::PatternLayout(L"%-5p %c - %m%n"));
-		auto pRollingFileApp = log4cxx::helpers::ObjectPtr(new log4cxx::RollingFileAppender(pLayout, fileRollAbsPath.toStdWString()));
-
-		log4cxx::LoggerPtr rootLoggerPtr = log4cxx::Logger::getRootLogger();
-		rootLoggerPtr->addAppender(pRollingFileApp);
-	}
-
 	void trackVideoFileTest()
 	{
 		boost::filesystem::path srcDir("../../output");
 		
 		std::string timeStamp = PoolWatch::timeStampNow();
 		boost::filesystem::path outDir = srcDir / "debug" / timeStamp;
-		QDir outDir2 = QDir(outDir.string().c_str());
+		QDir outDirQ = QDir(outDir.string().c_str());
 
 		// 
-		configureLogToFileAppender(outDir2, "app.log");
+		configureLogToFileAppender(outDirQ, "app.log");
 		LOG4CXX_DEBUG(log_, "test debug");
 		LOG4CXX_INFO(log_, "test info");
 		LOG4CXX_ERROR(log_, "test error");
@@ -97,8 +76,12 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		//
 		const int pruneWindow = 6;
-		SwimmingPoolObserver poolObserver(pruneWindow, fps);
-		CameraProjector& cameraProjector = *poolObserver.cameraProjector();
+		auto cameraProjector = make_shared<CameraProjector>();
+		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
+#if PW_DEBUG
+		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
+#endif
 
 		// prepare video writing
 
@@ -135,7 +118,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
 		{
-			LOG4CXX_DEBUG(log_, "frameOrd= " << frameOrd << " of " << framesCount);
+			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " of " << framesCount);
 
 			// TODO: tracking doesn't work when processing the same image repeatedly
 
@@ -168,7 +151,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			//
 			std::vector<DetectedBlob> blobs;
 			getHumanBodies(imageFamePoolOnly, waterMask, blobs);
-			fixBlobs(blobs, cameraProjector);
+			fixBlobs(blobs, *cameraProjector);
 
 #if PW_DEBUG
 			// show blobs
@@ -186,23 +169,23 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				LOG4CXX_DEBUG(log_, bld.str());
 			}
 
-			int frameIndWithTrackInfo;
-			poolObserver.processBlobs(frameOrd, imageFrame, blobs, &frameIndWithTrackInfo);
+			int readyFrameInd;
+			poolObserver.processBlobs(frameOrd, blobs, &readyFrameInd);
 
 			// visualize tracking
 
-			if (frameIndWithTrackInfo != -1)
+			if (readyFrameInd != -1)
 			{
 				// get frame with frameIndWithTrackInfo index
-				int backIndex = - (frameOrd - frameIndWithTrackInfo);
+				int backIndex = - (frameOrd - readyFrameInd);
 				
 				cv::Mat& readyFrame = videoBuffer.queryHistory(backIndex);
 				readyFrame.copyTo(imageAdornment);
 
 				int trailLength = 255;
-				poolObserver.adornImage(readyFrame, frameIndWithTrackInfo, trailLength, imageAdornment);
+				poolObserver.adornImage(readyFrameInd, trailLength, imageAdornment);
 
-				cv::imshow("visualTracking", imageAdornment);
+ 				cv::imshow("visualTracking", imageAdornment);
 
 				// dump adorned video to file
 				videoWriter.write(imageAdornment);

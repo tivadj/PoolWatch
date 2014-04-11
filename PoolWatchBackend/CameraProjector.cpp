@@ -44,19 +44,19 @@ void CameraProjector::init()
 
 	// top, origin(0, 0)
 	imagePoints.push_back(cv::Point2f(242, 166));
-	worldPoints.push_back(cv::Point3f(0, 0, zeroHeight));
+	worldPoints.push_back(cv::Point3f(0, 0, zeroHeight()));
 	
 	//top, 4 marker
 	imagePoints.push_back(cv::Point2f(516, 156));
-	worldPoints.push_back(cv::Point3f(0, 10, zeroHeight));
+	worldPoints.push_back(cv::Point3f(0, 10, zeroHeight()));
 
 	//bottom, 2 marker
 	imagePoints.push_back(cv::Point2f(-71, 304));
-	worldPoints.push_back(cv::Point3f(25, 6, zeroHeight));
+	worldPoints.push_back(cv::Point3f(25, 6, zeroHeight()));
 
 	// bottom, 4 marker
 	imagePoints.push_back(cv::Point2f(730, 365));
-	worldPoints.push_back(cv::Point3f(25, 10, zeroHeight));
+	worldPoints.push_back(cv::Point3f(25, 10, zeroHeight()));
 
 	//
 	cv::Mat_<double> rvecDbl(3, 1);
@@ -114,7 +114,7 @@ cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos) const
 	cv::Mat tmp = row * camPos;
 	//cout << "tmp=" << tmp << endl;
 
-	float homZ = (zeroHeight - tmp.at<float>(0, 0)) / cameraToWorld44_(2, 3);
+	float homZ = (zeroHeight() - tmp.at<float>(0, 0)) / cameraToWorld44_(2, 3);
 
 	//
 	cv::Mat_<float> camPos4(4,1);

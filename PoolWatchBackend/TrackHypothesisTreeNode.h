@@ -14,7 +14,6 @@ enum class TrackHypothesisCreationReason
 
 std::string toString(TrackHypothesisCreationReason reason);
 
-
 /** Represents node in the tree of hypothesis. */
 struct TrackHypothesisTreeNode
 {
@@ -37,3 +36,11 @@ struct TrackHypothesisTreeNode
 	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild);
 };
 
+// Estimates the position of the blob given the state of the blob (position etc).
+class SwimmerMovementPredictor
+{
+public:
+	virtual void initScoreAndState(const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+
+	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const cv::Point3f& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+};

@@ -21,18 +21,17 @@ class __declspec(dllexport) SwimmingPoolObserver
 #endif
 public:
 	SwimmingPoolObserver(std::unique_ptr<MultiHypothesisBlobTracker> blobTracker, std::shared_ptr<CameraProjectorBase> cameraProjector);
-	SwimmingPoolObserver(int pruneWindow, float fps);
 	SwimmingPoolObserver(const SwimmingPoolObserver& tp) = delete;
 	virtual ~SwimmingPoolObserver();
 	void setBlobs(size_t frameOrd, const std::vector<DetectedBlob>& blobs);
 	void toString(std::stringstream& bld);
 	void dumpTrackHistory(std::stringstream& bld) const;
-	void setTrackChangesPerFrame(int frameOrd, const std::vector<TrackChangePerFrame>& trackChanges);
+	void saveSequentialTrackChanges(const std::vector<TrackChangePerFrame>& trackChanges);
 	void adornImage(int frameOrd, int trailLength, cv::Mat& resultImage);
 
 	void processBlobs(size_t frameOrd, const std::vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo = nullptr);
 	
-	void finishTrackHistory(int frameInd);
+	void flushTrackHypothesis(int frameInd);
 
 	std::shared_ptr<CameraProjectorBase> cameraProjector();
 	

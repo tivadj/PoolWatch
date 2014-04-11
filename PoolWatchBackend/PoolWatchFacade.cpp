@@ -23,16 +23,56 @@ void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[
 	}
 }
 
-TrackChangePerFrame* TrackInfoHistory::getTrackChangeForFrame(int frameOrd)
+void toString(TrackChangeUpdateType trackChange, std::string& result)
+{
+	switch (trackChange)
+	{
+	case TrackChangeUpdateType::New:
+		result = "new";
+		break;
+	case TrackChangeUpdateType::ObservationUpdate:
+		result = "upd";
+		break;
+	case TrackChangeUpdateType::NoObservation:
+		result = "noObs";
+		break;
+	case TrackChangeUpdateType::Pruned:
+		result = "end";
+		break;
+	default:
+		result = "TrackChangeUpdateType";
+		break;
+	}
+}
+
+void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjectorBase& cameraProjector)
+{
+	// update blobs CentroidWorld
+	for (auto& blob : blobs)
+	{
+		blob.CentroidWorld = cameraProjector.cameraToWorld(blob.Centroid);
+	}
+}
+
+const TrackChangePerFrame* TrackInfoHistory::getTrackChangeForFrame(int frameOrd) const
 {
 	if (frameOrd < FirstAppearanceFrameIdx)
 		return nullptr;
-	if (frameOrd >= FirstAppearanceFrameIdx + Assignments.size())
+	if (isFinished() && frameOrd > LastAppearanceFrameIdx)
 		return nullptr;
 
-	return &Assignments[frameOrd - FirstAppearanceFrameIdx];
+	int localInd = frameOrd - FirstAppearanceFrameIdx;
+	assert(localInd >= 0);
+	assert(localInd < Assignments.size());
 
+	return &Assignments[localInd];
 }
+
+bool TrackInfoHistory::isFinished() const
+{
+	return LastAppearanceFrameIdx != IndexNull;
+}
+
 
 namespace PoolWatch
 {

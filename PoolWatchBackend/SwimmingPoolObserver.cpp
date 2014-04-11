@@ -18,12 +18,6 @@ SwimmingPoolObserver::SwimmingPoolObserver(unique_ptr<MultiHypothesisBlobTracker
 	blobTracker_.swap(blobTracker);
 }
 
-SwimmingPoolObserver::SwimmingPoolObserver(int pruneWindow, float fps)
-{
-	cameraProjector_ = make_shared<CameraProjector>();
-	blobTracker_.swap(make_unique<MultiHypothesisBlobTracker>(cameraProjector_, pruneWindow, fps));
-}
-
 SwimmingPoolObserver::~SwimmingPoolObserver()
 {
 }
@@ -45,50 +39,54 @@ void SwimmingPoolObserver::setBlobs(size_t frameOrd, const vector<DetectedBlob>&
 	blobsPerFrame_[frameOrd] = blobs;
 }
 
-void SwimmingPoolObserver::processBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo)
+void SwimmingPoolObserver::processBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs, int* pReadyFrameInd)
 {
 	setBlobs(frameOrd, blobs);
 
 	auto fps = blobTracker_->getFps();
 	auto elapsedTimeMs = 1000.0f / fps;
-	int frameIndWithTrackInfo = -1;
+	int readyFrameInd = -1;
 	vector<TrackChangePerFrame> trackChangeList;
-	blobTracker_->trackBlobs((int)frameOrd, blobs, fps, elapsedTimeMs, frameIndWithTrackInfo, trackChangeList);
+	blobTracker_->trackBlobs((int)frameOrd, blobs, fps, elapsedTimeMs, readyFrameInd, trackChangeList);
 
-	if (frameIndWithTrackInfo != -1)
-	{
-		setTrackChangesPerFrame(frameIndWithTrackInfo, trackChangeList);
-	}
+	if (pReadyFrameInd != nullptr)
+		*pReadyFrameInd = readyFrameInd;
 
-	if (pFrameIndWithTrackInfo != nullptr)
-		*pFrameIndWithTrackInfo = frameIndWithTrackInfo;
+	saveSequentialTrackChanges(trackChangeList);
 }
 
-void SwimmingPoolObserver::finishTrackHistory(int frameInd)
+void SwimmingPoolObserver::flushTrackHypothesis(int frameInd)
 {
 	vector<TrackHypothesisTreeNode*> bestTrackLeaves;
 	bool isBestTrackLeafsInitied = false;
-	int frameIndWithTrackInfo = -1;
-	vector<TrackChangePerFrame> trackChangeList;
+	int readyFrameInd = -1;
+	vector<TrackChangePerFrame> trackChanges;
 	int pruneWindow = -1;
 	
 	for (bool continue1 = true; continue1; pruneWindow--)
 	{
-		trackChangeList.clear();
-		continue1 = blobTracker_->collectPendingTrackChanges(frameInd, frameIndWithTrackInfo, trackChangeList, bestTrackLeaves, isBestTrackLeafsInitied, pruneWindow);
+		trackChanges.clear();
+		continue1 = blobTracker_->flushTrackHypothesis(frameInd, readyFrameInd, trackChanges, bestTrackLeaves, isBestTrackLeafsInitied, pruneWindow);
+
+		CV_Assert(readyFrameInd != -1 && "Must be track changes gathered from the hypothesis tree");
 
 		// bestTrackLeaves is initialized on the first call
 		if (!isBestTrackLeafsInitied)
 			isBestTrackLeafsInitied = true;
 
-		CV_Assert(frameIndWithTrackInfo != -1);
-
-		setTrackChangesPerFrame(frameIndWithTrackInfo, trackChangeList);
+		saveSequentialTrackChanges(trackChanges);
 		
 		if (pruneWindow == 0)
-			bestTrackLeaves.clear(); // leaves are invalid
+			bestTrackLeaves.clear(); // all leaves become invalid pointers
 
-		blobTracker_->logVisualHypothesisTree(frameInd, "hypTree", bestTrackLeaves);
+#if PW_DEBUG_DETAIL
+		std::stringstream bld;
+		bld <<"flush";
+		bld.fill('0');
+		bld.width(4);
+		bld << readyFrameInd;
+		blobTracker_->logVisualHypothesisTree(frameInd, bld.str(), bestTrackLeaves);
+#endif
 	}
 }
 
@@ -100,12 +98,12 @@ void SwimmingPoolObserver::toString(stringstream& bld)
 
 void SwimmingPoolObserver::dumpTrackHistory(stringstream& bld) const
 {
-	bld << "tracks.count=" << trackIdToHistory_.size() << std::endl;
+	bld << "TracksCount=" << trackIdToHistory_.size() << std::endl;
 	for (const auto& trackIdHistPair : trackIdToHistory_)
 	{
 		int trackId = trackIdHistPair.first;
 		const TrackInfoHistory& hist = trackIdHistPair.second;
-		bld << "track Id=" << trackId;
+		bld << "TrackId=" << trackId;
 
 		assert(!hist.Assignments.empty());
 		bld << " FamilyId=" << hist.Assignments[0].FamilyId;
@@ -122,7 +120,7 @@ void SwimmingPoolObserver::dumpTrackHistory(stringstream& bld) const
 		for (size_t i = 0; i < hist.Assignments.size(); ++i)
 		{
 			int frameInd = hist.FirstAppearanceFrameIdx + i;
-			bld << "frameInd=" << frameInd;
+			bld << "  frameInd=" << frameInd;
 
 			const auto& change = hist.Assignments[i];
 
@@ -138,7 +136,7 @@ void SwimmingPoolObserver::dumpTrackHistory(stringstream& bld) const
 	}
 }
 
-void SwimmingPoolObserver::setTrackChangesPerFrame(int frameOrd, const vector<TrackChangePerFrame>& trackChanges)
+void SwimmingPoolObserver::saveSequentialTrackChanges(const vector<TrackChangePerFrame>& trackChanges)
 {
 	for (auto& change : trackChanges)
 	{
@@ -152,17 +150,33 @@ void SwimmingPoolObserver::setTrackChangesPerFrame(int frameOrd, const vector<Tr
 			// create new track
 			TrackInfoHistory track;
 			track.TrackCandidateId = trackCandidateId;
-			track.FirstAppearanceFrameIdx = frameOrd;
+			track.FirstAppearanceFrameIdx = change.FrameInd;
 			track.LastAppearanceFrameIdx = TrackInfoHistory::IndexNull;
 			trackIdToHistory_.insert(make_pair(trackCandidateId, track));
 		}
 
-		// TODO: how to handle the case, when there is no change for a track for some frame
-
 		TrackInfoHistory& trackHistory = trackIdToHistory_[trackCandidateId];
-		auto localIndex = frameOrd - trackHistory.FirstAppearanceFrameIdx;
+		auto localIndex = change.FrameInd - trackHistory.FirstAppearanceFrameIdx;
 
-		// allow consequent 'put' requests
+		// finish track if it is pruned
+
+		if (change.UpdateType == TrackChangeUpdateType::Pruned)
+		{
+			trackHistory.LastAppearanceFrameIdx = change.FrameInd;
+
+			// remove short ('noisy') tracks
+
+			int framesDuration = trackHistory.LastAppearanceFrameIdx - trackHistory.FirstAppearanceFrameIdx + 1;
+			const int trackMinDurationFrames = 2;
+			if (framesDuration < trackMinDurationFrames)
+			{
+				trackIdToHistory_.erase(trackCandidateId);
+				continue;
+			}
+		}
+
+		// allocate space for track info in corresponding frame
+
 		if (localIndex == trackHistory.Assignments.size())
 		{
 			trackHistory.Assignments.resize(localIndex + 1); // reserve space for new element
@@ -176,14 +190,17 @@ void SwimmingPoolObserver::setTrackChangesPerFrame(int frameOrd, const vector<Tr
 			CV_Assert(false && "Can't randomly modify track positions");
 		}
 
-		if (change.UpdateType == TrackChangeUpdateType::Pruned)
-		{
-			trackHistory.LastAppearanceFrameIdx = frameOrd;
-			assert(trackHistory.LastAppearanceFrameIdx == trackHistory.FirstAppearanceFrameIdx + trackHistory.Assignments.size() - 1 && "FrameInd of the last appearance must be the last in the assignments array");
-		}
+		// allow consequent 'put' requests only
+		// this condition always true if for each frame the hypothesis tree grows with 
+		// 'correspondence' or 'no observation' hypothesis
 
 		CV_Assert(localIndex == trackHistory.Assignments.size() - 1 && "Modification must be applied to the last element of track history");
 		trackHistory.Assignments[localIndex] = change;
+
+		if (trackHistory.isFinished())
+		{
+			CV_Assert(trackHistory.LastAppearanceFrameIdx == trackHistory.FirstAppearanceFrameIdx + trackHistory.Assignments.size() - 1 && "FrameInd of the last appearance must be the last in the assignments array");
+		}
 	}
 }
 

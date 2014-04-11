@@ -21,7 +21,12 @@ int createTrackPainter(map<int, unique_ptr<SwimmingPoolObserver>>& trackPaintHan
 {
 	auto nextId = static_cast<int>(trackPaintHandlers.size());
 	nextId += 1; // first id=1
-	trackPaintHandlers.insert(make_pair(nextId, std::move(make_unique<SwimmingPoolObserver>(pruneWindow, fps))));
+
+	auto cameraProjector = make_shared<CameraProjector>();
+	auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+	auto poolObserver = make_unique<SwimmingPoolObserver>(std::move(blobTracker), cameraProjector);
+
+	trackPaintHandlers.insert(make_pair(nextId, std::move(poolObserver)));
 	return nextId;
 }
 
@@ -282,7 +287,7 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 		}
 
 		auto pTrackPainter = objIdIt->second.get();
-		pTrackPainter->setTrackChangesPerFrame(frameOrd, trackChanges);
+		pTrackPainter->saveSequentialTrackChanges(trackChanges);
 	}
 	else if (methodName == "processBlobs")
 	{

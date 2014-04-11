@@ -14,6 +14,37 @@
 
 typedef void (*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
 
+class CameraProjectorBase
+{
+public:
+	virtual cv::Point2f worldToCamera(const cv::Point3f& world) const = 0;
+	virtual cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const = 0;
+};
+
+/// Class to map camera's image coordinates (X,Y in pixels) and swimming 
+/// pool world coordinates ([x y z] in meters).
+class POOLWATCH_API CameraProjector : public CameraProjectorBase
+{
+private:
+	cv::Mat_<float> cameraMatrix33_;
+	cv::Mat_<float> cameraMatrix33Inv_;
+	cv::Mat_<float> distCoeffs_;
+	cv::Mat_<float> rvec_;
+	cv::Mat_<float> tvec_;
+	cv::Mat_<float> worldToCamera44_;
+	cv::Mat_<float> cameraToWorld44_;
+public:
+	CameraProjector();
+	virtual ~CameraProjector();
+private:
+	void init();
+public:
+	cv::Point2f worldToCamera(const cv::Point3f& world) const override;
+	cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const override;
+
+	static float zeroHeight() { return 0; }
+};
+
 /** Rectangular region of tracket target, which is detected in camera's image frame. */
 struct DetectedBlob
 {
@@ -26,34 +57,45 @@ struct DetectedBlob
 	cv::Point3f CentroidWorld;
 };
 
+__declspec(dllexport) void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjectorBase& cameraProjector);
+
 enum TrackChangeUpdateType
 {
 	New = 1,
 	ObservationUpdate,
-	NoObservation
+	NoObservation,
+	Pruned
 };
+
+void toString(TrackChangeUpdateType trackChange, std::string& result);
 
 struct TrackChangePerFrame
 {
-	int TrackCandidateId;
+	int FamilyId;
 	TrackChangeUpdateType UpdateType;
 	cv::Point3f EstimatedPosWorld; // [X, Y, Z] corrected by sensor position(in world coord)
 
 	int ObservationInd; // 0 = no observation; >0 observation index
 	cv::Point2f ObservationPosPixExactOrApprox; // [X, Y]; required to avoid world->camera conversion on drawing
+
+	int FrameInd; // used for debugging
 };
 
 struct TrackInfoHistory
 {
+	static const int IndexNull = -1;
+
 	//int Id;
 	//bool IsTrackCandidate; // true = TrackCandidate
 	int TrackCandidateId;
 	int FirstAppearanceFrameIdx;
+	int LastAppearanceFrameIdx; // inclusive
 	//PromotionFramdInd; // the frame when candidate was promoted to track
 
 	std::vector<TrackChangePerFrame> Assignments;
 
-	TrackChangePerFrame* getTrackChangeForFrame(int frameOrd);
+	bool TrackInfoHistory::isFinished() const;
+	const TrackChangePerFrame* getTrackChangeForFrame(int frameOrd) const;
 };
 
 __declspec(dllexport) void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
@@ -140,5 +182,7 @@ namespace PoolWatch
 		PaintHelper();
 
 		void paintBlob(const DetectedBlob& blob, cv::Mat& image);
+		static void paintTriangleHBase(cv::Mat& image, cv::Point center, float side, cv::Scalar color);
+		static void paintTrack(const TrackInfoHistory& track, int fromFrameOrd, int toFrameOrd, const cv::Scalar& color, const std::vector<std::vector<DetectedBlob>>& blobsPerFrame, cv::Mat& resultImage);
 	};
 }
