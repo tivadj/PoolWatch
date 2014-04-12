@@ -26,7 +26,7 @@ namespace HumanBodiesTestsNS { void run(); }
 namespace SwimmingPoolVideoFileTrackerTestsNS { void run(); }
 namespace SwimmingPoolObserverTestsNS { void run(); }
 
-#ifdef SAMPLE_MATLABPROX
+#ifdef SAMPLE_MATLABPROX_EX
 // NOTE: path to Matlab's runtime dlls 
 // (eg. E:\Programs\MATLAB\R2013a\bin\win64\
 //      E:\Programs\MATLAB\R2013a\runtime\win64\ )

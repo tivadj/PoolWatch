@@ -1,6 +1,5 @@
 #pragma once
 #include <opencv2/core.hpp>
-#include "opencv2/video/tracking.hpp" // cv::KalmanFilter
 
 #include <log4cxx/logger.h>
 
@@ -55,7 +54,7 @@ private:
 	int compoundObservationId(const TrackHypothesisTreeNode& node);
 
 	void hypothesisTreeToTreeStringRec(const TrackHypothesisTreeNode& startFrom, std::vector<int32_t>& encodedTreeString);
-	mxArray* createTrackIncopatibilityGraphDLang(const std::vector<int32_t>& encodedTreeString);
+	void createTrackIncopatibilityGraphDLang(const std::vector<int32_t>& encodedTreeString, std::vector<int32_t>& incompGraphEdgePairs) const;
 
 	void findBestTracks(const std::vector<TrackHypothesisTreeNode*>& leafSet,
 		std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs);

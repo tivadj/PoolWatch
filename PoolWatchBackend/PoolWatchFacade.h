@@ -1,7 +1,9 @@
 #pragma once
 #include <stdint.h>
 #include <functional>
+#if SAMPLE_MATLABPROX
 #include "mex.h"
+#endif
 #include <opencv2/core.hpp>
 
 #ifdef POOLWATCH_EXPORTS
@@ -11,8 +13,6 @@
 #endif
 
 //#define PW_EXPORTS __declspec(dllexport)
-
-typedef void (*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
 
 class CameraProjectorBase
 {
@@ -98,17 +98,21 @@ struct TrackInfoHistory
 	const TrackChangePerFrame* getTrackChangeForFrame(int frameOrd) const;
 };
 
-__declspec(dllexport) void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
-
-//
-
-__declspec(dllexport) void TrackPaintMexFunction                    (int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
-__declspec(dllexport) void MaxWeightInependentSetMaxFirstMexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
-
 __declspec(dllexport) void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask);
 __declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels);
 
 __declspec(dllexport) void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
+
+#if SAMPLE_MATLABPROX
+typedef void(*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
+
+__declspec(dllexport) void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
+
+//
+
+__declspec(dllexport) void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
+__declspec(dllexport) void MaxWeightInependentSetMaxFirstMexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
+#endif
 
 namespace PoolWatch
 {

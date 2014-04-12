@@ -167,8 +167,7 @@ void SwimmingPoolObserver::saveSequentialTrackChanges(const vector<TrackChangePe
 			// remove short ('noisy') tracks
 
 			int framesDuration = trackHistory.LastAppearanceFrameIdx - trackHistory.FirstAppearanceFrameIdx + 1;
-			const int trackMinDurationFrames = 2;
-			if (framesDuration < trackMinDurationFrames)
+			if (framesDuration < trackMinDurationFrames_)
 			{
 				trackIdToHistory_.erase(trackCandidateId);
 				continue;
@@ -251,6 +250,23 @@ void SwimmingPoolObserver::adornImageInternal(int fromFrameOrd, int toFrameOrd, 
 	}
 }
 
+int SwimmingPoolObserver::toLocalAssignmentIndex(const TrackInfoHistory& trackHist, int frameInd) const
+{
+	int maxUpper = trackHist.isFinished() ? trackHist.LastAppearanceFrameIdx : (trackHist.FirstAppearanceFrameIdx + trackHist.Assignments.size() - 1);
+
+	int localAssignIndex = frameInd;
+	if (localAssignIndex > maxUpper)
+		localAssignIndex = -1;
+	else if (localAssignIndex < trackHist.FirstAppearanceFrameIdx)
+		localAssignIndex = -1;
+	return localAssignIndex;
+}
+
+int SwimmingPoolObserver::trackHistoryCount() const
+{
+	return (int)trackIdToHistory_.size();
+}
+
 cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist)
 {
 	static vector<cv::Scalar> trackColors;
@@ -263,6 +279,26 @@ cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist
 
 	int colInd = trackHist.TrackCandidateId % trackColors.size();
 	return trackColors[colInd];
+}
+
+const TrackInfoHistory* SwimmingPoolObserver::trackHistoryForBlob(int frameInd, int blobInd)
+{
+	for (const auto& trackIdToTrackHist : trackIdToHistory_)
+	{
+		int trackId = trackIdToTrackHist.first;
+		const TrackInfoHistory& trackHist = trackIdToTrackHist.second;
+
+
+		int assignInd = toLocalAssignmentIndex(trackHist, frameInd);
+		if (assignInd == -1)
+			return nullptr;
+
+		const auto& assign = trackHist.Assignments[assignInd];
+		if (assign.ObservationInd == blobInd)
+			return &trackHist;
+	}
+	
+	return nullptr;
 }
 
 std::shared_ptr<CameraProjectorBase> SwimmingPoolObserver::cameraProjector()

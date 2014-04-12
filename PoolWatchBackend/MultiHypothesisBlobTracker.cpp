@@ -7,6 +7,8 @@
 #include <array>
 #include <set>
 
+#include "opencv2/video/tracking.hpp" // cv::KalmanFilter
+
 #include <log4cxx/logger.h>
 #include <log4cxx/helpers/exception.h>
 
@@ -294,35 +296,37 @@ void MultiHypothesisBlobTracker::hypothesisTreeToTreeStringRec(const TrackHypoth
 	}
 }
 
-mxArray* MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLang(const vector<int32_t>& encodedTreeString)
+void MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLang(const vector<int32_t>& encodedTreeString, vector<int32_t>& incompGraphEdgePairs) const
 {
-	mxArray* pIncompNodesMat = nullptr;
-
 	Int32Allocator int32Alloc;
-	int32Alloc.pUserData = &pIncompNodesMat;
+	int32Alloc.pUserData = &incompGraphEdgePairs;
 	int32Alloc.CreateArrayInt32 = [](size_t celem, void* pUserData) -> int32_t*
 	{
-		mxArray** ppMat = reinterpret_cast<mxArray**>(pUserData);
-		assert(*ppMat == nullptr && "computeTrackIncopatibilityGraph must request memory only once");
+		CV_Assert(celem > 0);
+		std::vector<int32_t>* pVec = reinterpret_cast<std::vector<int32_t>*>(pUserData);
+		pVec->resize(celem);
 
-		*ppMat = mxCreateNumericMatrix(1, celem, mxINT32_CLASS, mxREAL);
-
-		return reinterpret_cast<int32_t*>(mxGetData(*ppMat));
+		return &(*pVec)[0];
 	};
 	int32Alloc.DestroyArrayInt32 = [](int32_t* pInt32, void* pUserData) -> void
 	{
-		mxArray** ppMat = reinterpret_cast<mxArray**>(pUserData);
-		assert(*ppMat != nullptr && "computeTrackIncopatibilityGraph at first must allocate memory");
-		mxDestroyArray(*ppMat);
+		// vector manages its memory
 	};
 
 	Int32PtrPair incompNodesRange = computeTrackIncopatibilityGraph(&encodedTreeString[0], (int)encodedTreeString.size(),
 		trackHypothesisForestPseudoNode_.Id, openBracket, closeBracket, int32Alloc);
 	
-	assert(pIncompNodesMat != nullptr);
-	assert(incompNodesRange.pFirst == mxGetData(pIncompNodesMat));
-
-	return pIncompNodesMat;
+	// Note, we ignore incompNodesRange because the result is populated in incompGraphEdgePairs
+	if (incompNodesRange.pFirst == nullptr)
+	{
+		CV_Assert(incompNodesRange.pLast == nullptr);
+		CV_Assert(incompGraphEdgePairs.empty());
+	}
+	else
+	{
+		size_t sz = incompNodesRange.pLast - incompNodesRange.pFirst;
+		CV_Assert(incompGraphEdgePairs.size() == sz);
+	}
 }
 
 void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesisTreeNode*>& leafSet,
@@ -331,22 +335,17 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 	vector<int32_t> encodedTreeString;
 	hypothesisTreeToTreeStringRec(trackHypothesisForestPseudoNode_, encodedTreeString);
 
-	mxArray* incompatibTrackEdgesMat = createTrackIncopatibilityGraphDLang(encodedTreeString); // [1x(2*edgesCount)]
-	auto pIncompatibTrackEdgesMat = unique_ptr<mxArray, mxArrayDeleter>(incompatibTrackEdgesMat);
+	// incompatibility graph in the form of list of edges, each edge is a pair of vertices
+	vector<int32_t> incompatibTrackEdges;
+	createTrackIncopatibilityGraphDLang(encodedTreeString, incompatibTrackEdges); // [1x(2*edgesCount)]
 
-	size_t dim1 = mxGetM(incompatibTrackEdgesMat);
-	assert(dim1 == 1);
+	CV_Assert(incompatibTrackEdges.size() % 2 == 0 && "Vertices list contains pair (from,to) of vertices for each edge");
 
-	size_t ncols = mxGetN(incompatibTrackEdgesMat);
-	assert(ncols % 2 == 0 && "Vertices list contains pair (from,to) of vertices for each edge");
-
-	int edgesCount = (int)ncols / 2;
-
-	auto pVertices = reinterpret_cast<int32_t*>(mxGetData(incompatibTrackEdgesMat));
+	int edgesCount = incompatibTrackEdges.size() / 2;
 
 	// find vertices array
 
-	vector<int32_t> connectedVertices(pVertices, pVertices + edgesCount*2);
+	vector<int32_t> connectedVertices = incompatibTrackEdges;
 	std::sort(begin(connectedVertices), end(connectedVertices));
 	auto it = std::unique(begin(connectedVertices), end(connectedVertices));
 	auto newSize = std::distance(begin(connectedVertices), it);
@@ -389,18 +388,7 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 		vertexWeights[i] = pNode->Score;
 	}
 	
-	auto edgesListMat = incompatibTrackEdgesMat;
-	auto edgesListDataPtr = (int*)mxGetPr(edgesListMat);
-
-	//vector<int> edgeList(edgesCount * 2);
-	//for (int i = 0; i < edgesCount; ++i)
-	//{
-	//	edgeList[i * 2] = edgesListDataPtr[i];
-	//	//edgeList[i * 2 + 1] = edgesListDataPtr[edgesCount + i];
-	//	edgeList[i * 2 + 1] = edgesListDataPtr[i * 2 + 1];
-	//}
-	vector<int> edgeList(edgesListDataPtr, edgesListDataPtr + edgesCount * 2);
-	auto gMap = createFromEdgeList(connectedVertices, edgeList);
+	auto gMap = createFromEdgeList(connectedVertices, incompatibTrackEdges);
 	auto g = get<0>(gMap);
 
 	for (int i = 0; i < vertexWeights.size(); ++i)
@@ -619,10 +607,6 @@ void MultiHypothesisBlobTracker::pruneHypothesisTree(int frameInd, const std::ve
 bool MultiHypothesisBlobTracker::flushTrackHypothesis(int frameInd, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges,
 	vector<TrackHypothesisTreeNode*>& bestTrackLeafsCache, bool isBestTrackLeafsInitied, int& pruneWindow)
 {
-	// nothing to collect for empty hypothesis tree
-	if (trackHypothesisForestPseudoNode_.Children.empty())
-		return false;
-
 	if (!isBestTrackLeafsInitied)
 	{
 		vector<TrackHypothesisTreeNode*> leafSet;
@@ -643,7 +627,7 @@ bool MultiHypothesisBlobTracker::flushTrackHypothesis(int frameInd, int& readyFr
 	
 	CV_Assert(readyFrameInd != -1 && "Can't collect track changes from hypothesis tree");
 
-	bool continue1 = !trackHypothesisForestPseudoNode_.Children.empty();
+	bool continue1 = pruneWindow > 0;
 	return continue1;
 }
 

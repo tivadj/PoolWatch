@@ -16,6 +16,9 @@ class __declspec(dllexport) SwimmingPoolObserver
 	std::map<int, TrackInfoHistory> trackIdToHistory_;
 	std::unique_ptr<MultiHypothesisBlobTracker> blobTracker_;
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
+public:
+	int trackMinDurationFrames_ = 2; // value>=1; each track must be longer (in frames) than this threshold
+private:
 #if PW_DEBUG
 	std::shared_ptr<boost::filesystem::path> logDir_;
 #endif
@@ -32,8 +35,12 @@ public:
 	void processBlobs(size_t frameOrd, const std::vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo = nullptr);
 	
 	void flushTrackHypothesis(int frameInd);
+	const TrackInfoHistory* trackHistoryForBlob(int frameInd, int blobInd);
+	
+	int toLocalAssignmentIndex(const TrackInfoHistory& track, int frameInd) const;
 
 	std::shared_ptr<CameraProjectorBase> cameraProjector();
+	int trackHistoryCount() const;
 	
 private:
 	static cv::Scalar getTrackColor(const TrackInfoHistory& trackHist);

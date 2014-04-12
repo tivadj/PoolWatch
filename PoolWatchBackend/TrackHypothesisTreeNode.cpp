@@ -1,4 +1,5 @@
 #include "TrackHypothesisTreeNode.h"
+#include <cassert>
 
 std::string toString(TrackHypothesisCreationReason reason)
 {

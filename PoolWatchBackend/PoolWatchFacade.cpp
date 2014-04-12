@@ -5,6 +5,7 @@
 
 #include "PoolWatchFacade.h"
 
+#if SAMPLE_MATLABPROX
 /** Safe wrapper around Matlab mexFunction. */
 void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
@@ -22,6 +23,7 @@ void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[
 		matlab::error("Uncaught exception occurred in mex function");
 	}
 }
+#endif
 
 void toString(TrackChangeUpdateType trackChange, std::string& result)
 {
