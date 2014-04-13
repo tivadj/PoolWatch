@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "TestingUtils.h"
 
 LinearCameraProjector::LinearCameraProjector()

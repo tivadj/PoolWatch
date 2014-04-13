@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "TestingUtils.h"
 
 ConstantVelocityMovementPredictor::ConstantVelocityMovementPredictor(const cv::Point3f& velocity) : velocity_(velocity)

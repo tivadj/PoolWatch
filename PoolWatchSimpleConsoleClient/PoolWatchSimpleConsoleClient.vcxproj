@@ -40,6 +40,7 @@
     <Import Project="..\build-config\OpenCV.props" />
     <Import Project="..\build-config\Qt.props" />
     <Import Project="..\build-config\boost.props" />
+    <Import Project="..\build-config\log4cxx.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -48,6 +49,7 @@
     <Import Project="..\build-config\OpenCV.props" />
     <Import Project="..\build-config\Qt.props" />
     <Import Project="..\build-config\boost.props" />
+    <Import Project="..\build-config\log4cxx.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -92,9 +94,11 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;PWMatlabProxy.lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <Profile>true</Profile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="ProgramUtils.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
@@ -102,10 +106,19 @@
     <ClCompile Include="HumanBodiesTests.cpp" />
     <ClCompile Include="PoolBoundaryDetectorTests.cpp" />
     <ClCompile Include="Program.cpp" />
+    <ClCompile Include="ProgramUtils.cpp" />
     <ClCompile Include="SwimmingPoolVideoFileTrackerTests.cpp" />
     <ClCompile Include="WaterClassifierTests.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="SvgImageMaskSerializerTests.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\log4cxx.properties">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\log4cxx.properties" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
@@ -118,5 +131,6 @@
     <!--<Copy SourceFiles="$(MatlabDir)bin\win64\mclmcr.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
     <!--<Copy SourceFiles="$(MatlabDir)bin\win64\libmx.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
     <!--<Copy SourceFiles="$(MatlabDir)bin\win64\libmat.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
+    <Copy SourceFiles="..\log4cxx.properties" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />
   </Target>
 </Project>

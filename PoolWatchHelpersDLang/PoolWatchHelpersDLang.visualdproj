@@ -186,7 +186,7 @@ where link.exe</preBuildCommand>
   <resfile />
   <exefile>$(OutDir)\$(ProjectName).dll</exefile>
   <useStdLibPath>1</useStdLibPath>
-  <additionalOptions />
+  <additionalOptions>-L/PROFILE</additionalOptions>
   <preBuildCommand>echo SolutionDir=$(SolutionDir)
 echo OutDir=$(OutDir)
 echo &apos;where link&apos;

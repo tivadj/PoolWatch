@@ -18,7 +18,7 @@
 #include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
-#include "TestingUtils.h"
+#include "ProgramUtils.h"
 
 namespace SwimmingPoolVideoFileTrackerTestsNS
 {

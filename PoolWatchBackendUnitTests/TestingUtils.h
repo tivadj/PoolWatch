@@ -1,10 +1,30 @@
 #pragma once
+#include <string>
+#include <tuple>
+
 #include <opencv2/core.hpp>
 
 #include <QDir>
 
+#include <boost/filesystem/path.hpp>
+
+#include <log4cxx/logger.h>
+
 #include "PoolWatchFacade.h"
 #include "KalmanFilterMovementPredictor.h"
+
+boost::filesystem::path getSrcDir();
+boost::filesystem::path getTestResultsDir();
+
+boost::filesystem::path initTestMethodLogFolder(const std::string& className, const std::string& methodName);
+
+
+struct LogFileAppenderUnsubscriber
+{
+	void operator()(log4cxx::helpers::ObjectPtrT<log4cxx::Appender>* pAppender) const;
+};
+
+std::unique_ptr<log4cxx::helpers::ObjectPtrT<log4cxx::Appender>, LogFileAppenderUnsubscriber> scopeLogFileAppenderNew(const boost::filesystem::path& logFolder);
 
 class LinearCameraProjector : public CameraProjectorBase
 {
@@ -36,5 +56,23 @@ private:
 	      cv::Mat& nodeState(      TrackHypothesisTreeNode& node) const;
 };
 
+template <typename Cont, typename ExpectT, typename SelectFun>
+std::tuple<bool, std::wstring> checkAll(const Cont& cont, ExpectT expectedValue, const SelectFun& actualFun)
+{
+	size_t index = 0;
+	typename Cont::const_iterator& it = std::cbegin(cont);
 
-void configureLogToFileAppender(const QDir& logFolder, const QString& logFileName);
+	for (; it != std::cend(cont); ++it, ++index)
+	{
+		const auto& elem = cont[index];
+
+		const auto& actual = actualFun(elem);
+		if (expectedValue != actual)
+		{
+			std::wstringstream buf;
+			buf << L"Failed on index=" << index << L" expected=" << expectedValue << L" actual=" << actual;
+			return std::make_tuple(false, buf.str());
+		}
+	}
+	return std::make_tuple(true, L"");
+}

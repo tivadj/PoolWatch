@@ -24,7 +24,6 @@ namespace WaterClassifierTestsNS { void run(); }
 namespace PoolBoundaryDetectorTestsNS { void run(); }
 namespace HumanBodiesTestsNS { void run(); }
 namespace SwimmingPoolVideoFileTrackerTestsNS { void run(); }
-namespace SwimmingPoolObserverTestsNS { void run(); }
 
 #ifdef SAMPLE_MATLABPROX_EX
 // NOTE: path to Matlab's runtime dlls 
@@ -114,8 +113,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	//WaterClassifierTestsNS::run();
 	//PoolBoundaryDetectorTestsNS::run();
 	//HumanBodiesTestsNS::run();
-	//SwimmingPoolVideoFileTrackerTestsNS::run();
-	SwimmingPoolObserverTestsNS::run();
+	SwimmingPoolVideoFileTrackerTestsNS::run();
 
 	return 0;
 }
