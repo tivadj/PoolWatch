@@ -35,7 +35,7 @@ public:
 	void processBlobs(size_t frameOrd, const std::vector<DetectedBlob>& blobs, int* pFrameIndWithTrackInfo = nullptr);
 	
 	void flushTrackHypothesis(int frameInd);
-	const TrackInfoHistory* trackHistoryForBlob(int frameInd, int blobInd);
+	const TrackInfoHistory* trackHistoryForBlob(int frameInd, int blobInd) const;
 	
 	int toLocalAssignmentIndex(const TrackInfoHistory& track, int frameInd) const;
 

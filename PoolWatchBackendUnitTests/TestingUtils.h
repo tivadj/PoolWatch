@@ -7,11 +7,13 @@
 #include <QDir>
 
 #include <boost/filesystem/path.hpp>
+#include <boost/optional.hpp>
 
 #include <log4cxx/logger.h>
 
 #include "PoolWatchFacade.h"
 #include "KalmanFilterMovementPredictor.h"
+#include <SwimmingPoolObserver.h>
 
 boost::filesystem::path getSrcDir();
 boost::filesystem::path getTestResultsDir();
@@ -36,24 +38,48 @@ public:
 	cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const override;
 };
 
+
+// Data to indirectly compute the FamilyId. For example, if we know ObservationInd in a given frame FrameInd, we can uniquely infer 
+// the corresponding FamilyId.
+struct FamilyIdHint
+{
+	int FrameInd;
+	int ObservationInd;
+	FamilyIdHint(int frameInd, int observationInd) : FrameInd(frameInd), ObservationInd(observationInd) { }
+};
+
 class ConstantVelocityMovementPredictor : public SwimmerMovementPredictor
 {
-	cv::Point3f velocity_;
+	struct SwimmerState
+	{
+		float x;
+		float y;
+		float vx;
+		float vy;
+	};
+	struct TrackVelocity
+	{
+		::FamilyIdHint FamilyIdHint;
+		cv::Point3f Velocity;
+		TrackVelocity(::FamilyIdHint familyIdHint, const cv::Point3f& velocity) : FamilyIdHint(familyIdHint), Velocity(velocity) {}
+	};
+	cv::Point3f defaultVelocity_; // the speed of any swimmer, if exact value is not specified using 'getSwimmerVelocity'
 	float sigma_; // in N(mu,sigma^2) shows how actual and estimated position agree
+	std::vector<TrackVelocity> trackVelocityList_; // list of artificially specified swimmer velocities
 public:
-	ConstantVelocityMovementPredictor(const cv::Point3f& velocity);
+	ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity);
 	ConstantVelocityMovementPredictor(const ConstantVelocityMovementPredictor&) = delete;
 	virtual ~ConstantVelocityMovementPredictor();
 
-	void initScoreAndState(const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) override;
+	void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) override;
 
 	void estimateAndSave(const TrackHypothesisTreeNode& curNode, const cv::Point3f& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) override;
-
+	
+	void setSwimmerVelocity(FamilyIdHint familyIdHint, const cv::Point3f& velocity);
+	boost::optional<cv::Point3f> getSwimmerVelocity(int frameInd, int observationInd) const;
 private:
-	// use Kalman Filter state matrix just to store position of a blob
-	// state = [x y vx vy]' and (vx,vy) components are ignored
-	const cv::Mat& nodeState(const TrackHypothesisTreeNode& node) const;
-	      cv::Mat& nodeState(      TrackHypothesisTreeNode& node) const;
+	const SwimmerState& nodeState(const TrackHypothesisTreeNode& node) const;
+	      SwimmerState& nodeState(TrackHypothesisTreeNode& node) const;
 };
 
 template <typename Cont, typename ExpectT, typename SelectFun>
@@ -71,6 +97,27 @@ std::tuple<bool, std::wstring> checkAll(const Cont& cont, ExpectT expectedValue,
 		{
 			std::wstringstream buf;
 			buf << L"Failed on index=" << index << L" expected=" << expectedValue << L" actual=" << actual;
+			return std::make_tuple(false, buf.str());
+		}
+	}
+	return std::make_tuple(true, L"");
+}
+
+template <typename Cont, typename ExpectT, typename SelectFun>
+std::tuple<bool, std::wstring> checkAll(const Cont& cont, ExpectT expectedValue, const SelectFun& actualFun, ExpectT tolerance)
+{
+	size_t index = 0;
+	typename Cont::const_iterator& it = std::cbegin(cont);
+
+	for (; it != std::cend(cont); ++it, ++index)
+	{
+		const auto& elem = cont[index];
+
+		const auto& actual = actualFun(elem);
+		if (!(std::abs(expectedValue - actual) < tolerance))
+		{
+			std::wstringstream buf;
+			buf << L"Failed on index=" << index << L" expected=" << expectedValue << L" actual=" << actual <<L" tolerance=" <<tolerance;
 			return std::make_tuple(false, buf.str());
 		}
 	}

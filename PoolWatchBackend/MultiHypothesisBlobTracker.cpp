@@ -256,7 +256,7 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
 			childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
 			float score;
-			movementPredictor_->initScoreAndState(blobCentrWorld, score, childHyp);
+			movementPredictor_->initScoreAndState(frameInd, blobInd, blobCentrWorld, score, childHyp);
 			childHyp.Score = score;
 			
 #if PW_DEBUG_DETAIL

@@ -40,7 +40,7 @@ struct TrackHypothesisTreeNode
 class SwimmerMovementPredictor
 {
 public:
-	virtual void initScoreAndState(const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+	virtual void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
 
 	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const cv::Point3f& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
 };

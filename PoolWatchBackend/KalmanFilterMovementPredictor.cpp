@@ -72,7 +72,7 @@ KalmanFilterMovementPredictor::~KalmanFilterMovementPredictor()
 {
 }
 
-void KalmanFilterMovementPredictor::initScoreAndState(cv::Point3f const& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode)
+void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observationInd, cv::Point3f const& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode)
 {
 	TrackHypothesisTreeNode& childHyp = saveNode;
 

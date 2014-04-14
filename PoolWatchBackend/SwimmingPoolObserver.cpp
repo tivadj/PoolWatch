@@ -281,7 +281,7 @@ cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist
 	return trackColors[colInd];
 }
 
-const TrackInfoHistory* SwimmingPoolObserver::trackHistoryForBlob(int frameInd, int blobInd)
+const TrackInfoHistory* SwimmingPoolObserver::trackHistoryForBlob(int frameInd, int blobInd) const
 {
 	for (const auto& trackIdToTrackHist : trackIdToHistory_)
 	{
