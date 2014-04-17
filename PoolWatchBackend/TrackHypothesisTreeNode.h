@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include <opencv2/core.hpp>
+#include <boost/optional.hpp>
 
 #include "PoolWatchFacade.h"
 
@@ -11,6 +12,8 @@ enum class TrackHypothesisCreationReason
 	New = 2,                       // this is brand new hypothesis
 	NoObservation = 3              // this hypothesis assumes that there is no observation of the tracked object in this frame
 };
+
+std::string toString(TrackHypothesisCreationReason reason);
 
 /** Represents node in the tree of hypothesis. */
 struct TrackHypothesisTreeNode
@@ -31,5 +34,14 @@ struct TrackHypothesisTreeNode
 
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
+	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild);
 };
 
+// Estimates the position of the blob given the state of the blob (position etc).
+class SwimmerMovementPredictor
+{
+public:
+	virtual void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+
+	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+};

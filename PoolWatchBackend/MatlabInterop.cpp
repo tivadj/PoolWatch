@@ -1,5 +1,7 @@
 #include "MatlabInterop.h"
 
+#if SAMPLE_MATLABPROX
+
 mxArrayPtr pwCreateArrayInt32(size_t celem)
 {
 	mxArray* outMask = mxCreateNumericMatrix(1, celem, mxINT32_CLASS, mxREAL);
@@ -30,3 +32,5 @@ void PWmexPrintfNull(const char*)
 {
 	// no output
 }
+
+#endif

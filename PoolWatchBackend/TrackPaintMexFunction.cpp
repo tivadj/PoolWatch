@@ -21,7 +21,12 @@ int createTrackPainter(map<int, unique_ptr<SwimmingPoolObserver>>& trackPaintHan
 {
 	auto nextId = static_cast<int>(trackPaintHandlers.size());
 	nextId += 1; // first id=1
-	trackPaintHandlers.insert(make_pair(nextId, std::move(make_unique<SwimmingPoolObserver>(pruneWindow, fps))));
+
+	auto cameraProjector = make_shared<CameraProjector>();
+	auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+	auto poolObserver = make_unique<SwimmingPoolObserver>(std::move(blobTracker), cameraProjector);
+
+	trackPaintHandlers.insert(make_pair(nextId, std::move(poolObserver)));
 	return nextId;
 }
 
@@ -121,7 +126,7 @@ std::tuple<bool,std::string> ParseTrackChangesStruct(const mxArray* trackChanges
 			if (!mxIsInt32(mx))
 				return std::make_tuple(false, "type(Id)==int32 failed");
 			int trackCandidateId = Bridge(mx).toInt();
-			change.TrackCandidateId = trackCandidateId;
+			change.FamilyId = trackCandidateId;
 #if PRINTF
 			mexPrintf("TrackCandidateId=%d\n", trackCandidateId);
 #endif
@@ -282,7 +287,7 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 		}
 
 		auto pTrackPainter = objIdIt->second.get();
-		pTrackPainter->setTrackChangesPerFrame(frameOrd, trackChanges);
+		pTrackPainter->saveSequentialTrackChanges(trackChanges);
 	}
 	else if (methodName == "processBlobs")
 	{
@@ -313,7 +318,7 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 		}
 
 		auto pTrackPainter = objIdIt->second.get();
-		pTrackPainter->processBlobs(frameOrd, imageMat, blobs);
+		pTrackPainter->processBlobs(frameOrd, blobs);
 	}
 	else if (methodName == "adornImage")
 	{
@@ -354,7 +359,7 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 
 		auto pTrackPainter = objIdIt->second.get();
 		cv::Mat adornedImage = image.clone();
-		pTrackPainter->adornImage(image, frameOrd, trailLength, adornedImage);
+		pTrackPainter->adornImage(frameOrd, trailLength, adornedImage);
 
 		if (nlhs > 0)
 		{

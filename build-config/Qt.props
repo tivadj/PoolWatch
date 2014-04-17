@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+
+  
+  <PropertyGroup Label="UserMacros">
+    <!--<QtDir>C:\progs\Qt\Qt5.2.1-msvc2012_64_opengl\5.2.1\msvc2012_64_opengl\</QtDir>-->
+    <QtDir>C:\progs\Qt\Qt5.2.1-msvc2013_64_opengl\qt-everywhere-opensource-src-5.2.1\qtbase\</QtDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IncludePath>$(QtDir)include\;$(IncludePath)</IncludePath>
+    <IncludePath>$(QtDir)include\QtCore;$(IncludePath)</IncludePath>
+    <IncludePath>$(QtDir)include\QtXml;$(IncludePath)</IncludePath>
+    <LibraryPath>$(QtDir)lib\;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>Qt5Core$(LibSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Qt5Xml$(LibSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <Target Name="QtDeploy" AfterTargets="Build">
+    <Copy SourceFiles="$(QtDir)Bin\Qt5Core$(LibSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+    <Copy SourceFiles="$(QtDir)Bin\Qt5Xml$(LibSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+  </Target>
+
+</Project>

@@ -32,6 +32,7 @@ function obj = HumanDetector(skinClassifierFun, waterClassifierFun, distanceComp
     obj.labTransformation = makecform('srgb2lab');
 end
 
+% Parameter frameId is used in testing to identify camera image.
 function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
     if debug
         imshow(image), title('Original image');
@@ -97,7 +98,7 @@ function BodyDescr = GetHumanBodies(this, frameId, image, waterMask, debug)
     % [MinorAxisLength MajorAxisLength]
     % [37.6252 144.0715]=0.261 = human
     % [10.7585 242.3401]=0.044 = light reflection
-    % remove alongated stripes created by lane markers and water 'blique' 
+    % remove elongated stripes created by lane markers and water 'blique' 
     noiseIslands = [connCompProps(:).MinorAxisLength]./[connCompProps(:).MajorAxisLength]<0.1;
     imageNoSticks = HumanDetector.removeIslands(connComp, imageNoBigIslands, noiseIslands);
 

@@ -50,7 +50,7 @@ function this = MultiHypothesisBlobTracker(distanceCompensator)
 end
 
 function purgeMemory(this)
-    this.v.nativeRun = true;
+    this.v.nativeRun = false;
     this.v.nextTrackCandidateId=int32(1);
 
     this.trackHypothesisForestPseudoNode.clearChildren;

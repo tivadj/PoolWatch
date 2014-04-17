@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+
+  
+  <PropertyGroup Label="UserMacros">
+    <Log4cxxDir>C:\devb\cplex\log4cxx\apache-log4cxx-0.10.0\</Log4cxxDir>
+    <Log4cxxBin Condition="'$(Configuration)' == 'Debug'">$(Log4cxxDir)projects\Debug\</Log4cxxBin>
+    <Log4cxxBin Condition="'$(Configuration)' != 'Debug'">$(Log4cxxDir)projects\Release\</Log4cxxBin>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IncludePath>$(Log4cxxDir)src\main\include\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(Log4cxxBin);$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>log4cxx.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <Target Name="Log4cxxDeploy" AfterTargets="Build">
+    <Copy SourceFiles="$(Log4cxxBin)log4cxx$(LibSuffix).dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True"/>
+  </Target>
+
+</Project>

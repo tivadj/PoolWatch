@@ -1,0 +1,3 @@
+module PoolWatchHelpersDLang.connect;
+
+public import PoolWatchHelpersDLang.ConnectedComponentsImpl;

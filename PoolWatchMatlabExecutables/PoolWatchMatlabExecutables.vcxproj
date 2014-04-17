@@ -84,12 +84,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="PWMaxWeightInependentSetMaxFirst.cpp" />
     <ClCompile Include="PWSwimmingPoolObserver.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <Target Name="BuildPoolWatchMexLibraries" AfterTargets="Build">
-    <Exec Command="$(MatlabDir)bin\mex $(ProjectDir)PWSwimmingPoolObserver.cpp -I&quot;$(PoolWatchDir)PoolWatchBackend&quot; -lPoolWatchBackend -L&quot;$(OutDir)&quot; -outdir &quot;$(OutDir)&quot;" />
+    <Message Text="MatlabDir=$(MatlabDir)" Importance="high" />
+    <Exec Command="$(MatlabDir)bin\mex -I$(PoolWatchDir)PoolWatchBackend -lPoolWatchBackend$(LibSuffix) -L$(OutDir) -outdir $(OutDir) $(ProjectDir)PWSwimmingPoolObserver.cpp" />
+    <Exec Command="$(MatlabDir)bin\mex -I$(PoolWatchDir)PoolWatchBackend -lPoolWatchBackend$(LibSuffix) -L$(OutDir) -outdir $(OutDir) $(ProjectDir)PWMaxWeightInependentSetMaxFirst.cpp" />
   </Target>
 </Project>

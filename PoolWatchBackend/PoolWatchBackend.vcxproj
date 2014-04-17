@@ -19,15 +19,15 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v120</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v120</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -37,19 +37,27 @@
     <Import Project="..\build-config\PoolWatchCommon.props" />
     <Import Project="..\build-config\MatlabBuild.props" />
     <Import Project="..\build-config\OpenCV.props" />
+    <Import Project="..\build-config\Qt.props" />
+    <Import Project="..\build-config\boost.props" />
+    <Import Project="..\build-config\log4cxx.props" />
+    <Import Project="..\build-config\graphviz.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\build-config\PoolWatchCommon.props" />
     <Import Project="..\build-config\MatlabBuild.props" />
     <Import Project="..\build-config\OpenCV.props" />
+    <Import Project="..\build-config\Qt.props" />
+    <Import Project="..\build-config\boost.props" />
+    <Import Project="..\build-config\log4cxx.props" />
+    <Import Project="..\build-config\graphviz.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LibraryPath>E:\devb\DLang\lama\TestDLangVS2013ConsoleApp1\bin\x64\Release\;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(OutDir);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LibraryPath>E:\devb\DLang\lama\TestDLangVS2013ConsoleApp1\bin\x64\Release\;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(OutDir);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -57,7 +65,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;POOLWATCH_EXPORTS;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
@@ -74,7 +82,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;POOLWATCH_EXPORTS;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
@@ -83,28 +91,39 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>PoolWatchHelpersDLang.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <Profile>true</Profile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="algos1.h" />
+    <ClInclude Include="algos_amp.cpp" />
     <ClInclude Include="CameraProjector.h" />
     <ClInclude Include="MatrixUndirectedGraph.h" />
     <ClInclude Include="MultiHypothesisBlobTracker.h" />
     <ClInclude Include="PoolWatchFacade.h" />
     <ClInclude Include="MatlabInterop.h" />
+    <ClInclude Include="KalmanFilterMovementPredictor.h" />
     <ClInclude Include="TrackHypothesisTreeNode.h" />
     <ClInclude Include="SwimmingPoolObserver.h" />
+    <ClInclude Include="WaterClassifier.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="algos1.cpp" />
     <ClCompile Include="CameraProjector.cpp" />
+    <ClCompile Include="HumanDetector.cpp" />
+    <ClCompile Include="KalmanFilterMovementPredictor.cpp" />
     <ClCompile Include="MatrixUndirectedGraph.cpp" />
+    <ClCompile Include="MaxWeightInependentSetMaxFirstMexFunction.cpp" />
     <ClCompile Include="MultiHypothesisBlobTracker.cpp" />
+    <ClCompile Include="PaintHelper.cpp" />
+    <ClCompile Include="PoolBoundaryDetector.cpp" />
     <ClCompile Include="PoolWatchFacade.cpp" />
     <ClCompile Include="MatlabInterop.cpp" />
+    <ClCompile Include="SvgImageMaskSerializer.cpp" />
     <ClCompile Include="TrackHypothesisTreeNode.cpp" />
     <ClCompile Include="TrackPaintMexFunction.cpp" />
     <ClCompile Include="SwimmingPoolObserver.cpp" />
+    <ClCompile Include="WaterClassifier.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

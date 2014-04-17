@@ -1,0 +1,13 @@
+;EXETYPE      NT
+LIBRARY      "PoolWatchHelpersDLang.dll"
+;CODE         PRELOAD DISCARDABLE
+;DATA         PRELOAD MULTIPLE
+
+EXPORTS
+	sum
+	sumScope
+	computeMWISP
+	computeConnectedComponentsCount
+	computeConnectedComponentsCount301
+	computeConnectedComponentsCount302
+	computeTrackIncopatibilityGraph

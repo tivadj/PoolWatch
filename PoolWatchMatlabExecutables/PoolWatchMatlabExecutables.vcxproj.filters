@@ -18,5 +18,8 @@
     <ClCompile Include="PWSwimmingPoolObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PWMaxWeightInependentSetMaxFirst.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

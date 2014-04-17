@@ -4,7 +4,7 @@
 #include "opencv2/core.hpp"
 #include "opencv2/calib3d.hpp"
 
-#include "CameraProjector.h"
+#include "PoolWatchFacade.h"
 using namespace std;
 
 CameraProjector::CameraProjector()
@@ -30,7 +30,7 @@ void CameraProjector::init()
 	float cameraMatrixArray[] = { fx, 0, cx, 0, fy, cy, 0, 0, 1 };
 	cv::Mat_<float> cameraMatrix(3, 3, cameraMatrixArray);
 	cameraMatrix.copyTo(cameraMatrix33_);
-	cout << "cameraMatrix33_=" << cameraMatrix33_ << endl;
+	//cout << "cameraMatrix33_=" << cameraMatrix33_ << endl;
 
 	cameraMatrix33Inv_ = cameraMatrix33_.inv();
 	//cout << "cameraMatrix33Inv_=" << cameraMatrix33Inv_ << endl;
@@ -44,19 +44,19 @@ void CameraProjector::init()
 
 	// top, origin(0, 0)
 	imagePoints.push_back(cv::Point2f(242, 166));
-	worldPoints.push_back(cv::Point3f(0, 0, zeroHeight));
+	worldPoints.push_back(cv::Point3f(0, 0, zeroHeight()));
 	
 	//top, 4 marker
 	imagePoints.push_back(cv::Point2f(516, 156));
-	worldPoints.push_back(cv::Point3f(0, 10, zeroHeight));
+	worldPoints.push_back(cv::Point3f(0, 10, zeroHeight()));
 
 	//bottom, 2 marker
 	imagePoints.push_back(cv::Point2f(-71, 304));
-	worldPoints.push_back(cv::Point3f(25, 6, zeroHeight));
+	worldPoints.push_back(cv::Point3f(25, 6, zeroHeight()));
 
 	// bottom, 4 marker
 	imagePoints.push_back(cv::Point2f(730, 365));
-	worldPoints.push_back(cv::Point3f(25, 10, zeroHeight));
+	worldPoints.push_back(cv::Point3f(25, 10, zeroHeight()));
 
 	//
 	cv::Mat_<double> rvecDbl(3, 1);
@@ -86,7 +86,7 @@ void CameraProjector::init()
 	//cout << "cameraToWorld44_=" <<cameraToWorld44_ << endl;
 }
 
-cv::Point2f CameraProjector::worldToCamera(const cv::Point3f& world)
+cv::Point2f CameraProjector::worldToCamera(const cv::Point3f& world) const
 { 
 	vector<cv::Point3f> worldPoints;
 	worldPoints.push_back(world);
@@ -96,7 +96,7 @@ cv::Point2f CameraProjector::worldToCamera(const cv::Point3f& world)
 	return imagePointsProj[0];
 }
 
-cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos)
+cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos) const
 {
 	// image to camera coordinates
 	cv::Mat_<float> imagePosMat(3, 1);
@@ -112,9 +112,9 @@ cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos)
 	row(0, 1) = cameraToWorld44_(2, 1);
 	row(0, 2) = cameraToWorld44_(2, 2);
 	cv::Mat tmp = row * camPos;
-	cout << "tmp=" << tmp << endl;
+	//cout << "tmp=" << tmp << endl;
 
-	float homZ = (zeroHeight - tmp.at<float>(0, 0)) / cameraToWorld44_(2, 3);
+	float homZ = (zeroHeight() - tmp.at<float>(0, 0)) / cameraToWorld44_(2, 3);
 
 	//
 	cv::Mat_<float> camPos4(4,1);

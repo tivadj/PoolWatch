@@ -7,9 +7,10 @@ end
 
 function run(obj)
     debug = 1;
+    dataDirEx = fullfile(cd, '../../dinosaur');
    
     %RunHumanDetector.initHumanDetector(obj,debug);
-    RunHumanDetector.initWaterClassifier(obj, debug);
+    %RunHumanDetector.initWaterClassifier(obj, dataDirEx, debug);
 
     %RunHumanDetector.testHumanDetectorOnImage(obj,debug);
     %RunHumanDetector.testWaterClassifier(obj, debug);
@@ -18,7 +19,7 @@ function run(obj)
     %RunHumanDetector.visualizeHeadPixelsAsVolume(obj, debug);
     %RunHumanDetector.testSegmentPoolBoundary(obj,debug);
     RunHumanDetector.loadWaterNonWaterPixels(obj, debug);
-    %RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
+    RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
     RunHumanDetector.testHowExpectMaxAlgDependsOnNumberOfMixtureComponents(obj, debug);
 end
 
@@ -49,12 +50,12 @@ function initHumanDetector(obj, debug)
     end
 end
 
-function initWaterClassifier(obj, debug)
+function initWaterClassifier(obj, dataDirEx, debug)
     if isfield(obj.v, 'watClassifFun')
         return;
     end
     
-    I = imread('../dinosaur/MVI_3177_0127.png');
+    I = imread(fullfile(dataDirEx, 'MVI_3177_0127.png'));
     imshow(I);
 
     % clean water
