@@ -25,8 +25,10 @@ class __declspec(dllexport) MultiHypothesisBlobTracker
 	
 	const int DetectionIndNoObservation = -1;
 
-	std::shared_ptr<CameraProjectorBase> cameraProjector_;
 	TrackHypothesisTreeNode trackHypothesisForestPseudoNode_;
+	std::shared_ptr<CameraProjectorBase> cameraProjector_;
+	std::unique_ptr<SwimmerMovementPredictor> movementPredictor_;
+	std::vector<DetectedBlob> prevFrameBlobs;
 	float fps_;
 	int pruneWindow_; // the depth of track history (valid value>=1; value=0 purges all hypothesis nodes so that hypothesis tree has the single pseudo node)
 	int nextTrackCandidateId_;
@@ -35,11 +37,9 @@ public: // visible to a test module
 	float shapeCentroidNoise_; // constant to add to the max swimmer speed to get max possible swimmer shift
 	int initNewTrackDelay_ = 7; // value >= 1; generate new track each N frames
 private:
-	std::unique_ptr<SwimmerMovementPredictor> movementPredictor_;
 #if PW_DEBUG
 	std::shared_ptr<boost::filesystem::path> logDir_;
 #endif
-
 public:
 	MultiHypothesisBlobTracker(std::shared_ptr<CameraProjectorBase> cameraProjector, int pruneWindow, float fps);
 	MultiHypothesisBlobTracker(const MultiHypothesisBlobTracker& mht) = delete;

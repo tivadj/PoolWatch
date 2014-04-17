@@ -44,9 +44,10 @@ KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps)
 	// penalty for missed observation
 	// prob 0.4 - penalty - 0.9163
 	// prob 0.6 - penalty - 0.5108
-	const float probDetection = 0.6f;
+	const float probDetection = 0.95f;
 	const float penalty = log(1 - probDetection);
-	penalty_ = penalty;
+	//penalty_ = penalty;
+	penalty_ = -1.79 / 200;
 }
 
 void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps)
@@ -97,7 +98,7 @@ void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observat
 	childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(KalmanFilterDynamicParamsCount, KalmanFilterDynamicParamsCount);
 }
 
-void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const cv::Point3f& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode)
+void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode)
 {
 	const TrackHypothesisTreeNode* pLeaf = &curNode;
 	TrackHypothesisTreeNode& childHyp = saveNode;
@@ -113,12 +114,13 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 
 	// correct position if blob was detected
 
-	bool gotDetection = blobCentrWorld.x != NullPosX;
-	if (gotDetection)
+	if (blobCentrWorld != nullptr)
 	{
+		const auto& blobPosW = blobCentrWorld.get();
+
 		auto obsPosWorld2 = cv::Mat_<float>(2, 1); // ignore Z
-		obsPosWorld2(0) = blobCentrWorld.x;
-		obsPosWorld2(1) = blobCentrWorld.y;
+		obsPosWorld2(0) = blobPosW.x;
+		obsPosWorld2(1) = blobPosW.y;
 
 		auto estPosMat = kalmanFilter.correct(obsPosWorld2);
 		estPos = cv::Point3f(estPosMat.at<float>(0, 0), estPosMat.at<float>(1, 0), CameraProjector::zeroHeight());

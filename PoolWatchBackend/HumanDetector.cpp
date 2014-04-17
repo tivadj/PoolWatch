@@ -144,6 +144,8 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 			outlPix(i, 1) = point.x;
 		}
 		blob.OutlinePixels = outlPix;
+
+		blob.AreaPix = contour.area;
 		
 		//
 		blobs.push_back(blob);

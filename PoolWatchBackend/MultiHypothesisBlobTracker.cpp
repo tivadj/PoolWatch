@@ -90,6 +90,18 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	if (log_->isDebugEnabled())
 		logVisualHypothesisTree(frameInd, "1beforePruning", bestTrackLeafs);
 #endif
+	
+	if (log_->isDebugEnabled() && !bestTrackLeafs.empty())
+	{
+		// list the best nodes
+
+		stringstream bld;
+		for (const TrackHypothesisTreeNode* pLeaf : bestTrackLeafs)
+		{
+			bld <<endl << "  FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ObsInd=" << pLeaf->ObservationInd << " " << pLeaf->ObservationPos << " Score=" << pLeaf->Score;
+		}
+		log_->debug(bld.str());
+	}
 
 	pruneHypothesisTree(frameInd, bestTrackLeafs, readyFrameInd, trackChanges, pruneWindow_);
 
@@ -103,7 +115,7 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 		// list track hypothesis changes
 
 		stringstream bld;
-		bld << "Track Changes for FrameInd=" << readyFrameInd << " ChangesCount=" << trackChanges.size();
+		bld << "Track Changes for FrameInd>=" << readyFrameInd << " ChangesCount=" << trackChanges.size();
 		if (!trackChanges.empty())
 		{
 			bld << endl;
@@ -112,11 +124,15 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 				std::string changeStr;
 				toString(change.UpdateType, changeStr);
 
-				bld << changeStr << " FamilyId=" << change.FamilyId << " ObsInd=" << change.ObservationInd << " " << change.ObservationPosPixExactOrApprox <<endl;
+				bld <<"  " << changeStr << " FamilyId=" << change.FamilyId << " FrameInd=" << change.FrameInd << " ObsInd=" << change.ObservationInd << " " << change.ObservationPosPixExactOrApprox <<" Score=" <<change.Score <<endl;
 			}
 		}
 		log_->debug(bld.str());
 	}
+
+	//
+	prevFrameBlobs.resize(blobs.size());
+	std::copy(begin(blobs), end(blobs), begin(prevFrameBlobs));
 }
 
 void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float swimmerMaxShiftM)
@@ -147,10 +163,23 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 		{
 			const auto& blob = blobs[blobInd];
 
+			// constraint: blob can shift too much (can't leave the blob's gate)
+
 			cv::Point3f blobCentrWorld = blob.CentroidWorld;
 			auto dist = cv::norm(pLeaf->EstimatedPosWorld - blobCentrWorld);
 			if (dist > swimmerMaxShiftM)
 				continue;
+
+			// constraint: area can't change too much
+			if (pLeaf->ObservationInd != -1)
+			{
+				assert(pLeaf->ObservationInd < prevFrameBlobs.size() && "Cache of blobs for the previous frame was not updated");
+				const auto& prevBlob = prevFrameBlobs[pLeaf->ObservationInd];
+				auto areaChangeRatio = std::abs(blob.AreaPix - prevBlob.AreaPix) / prevBlob.AreaPix;
+				const float MaxAreaChangeRatio = 0.6;
+				if (areaChangeRatio > MaxAreaChangeRatio)
+					continue;
+			}
 
 			//
 			auto id = nextTrackCandidateId_++;
@@ -176,7 +205,7 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.EstimatedPosWorld = estPos;
 
 #if PW_DEBUG_DETAIL
-			LOG4CXX_DEBUG(log_, "grow FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " Corresp ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd <<" " << pChildHyp->ObservationPos);
+			LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd <<" " << pChildHyp->ObservationPos <<" Score=" <<pChildHyp->Score);
 #endif
 
 			pLeaf->addChildNode(std::move(pChildHyp));
@@ -195,15 +224,13 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 
 			auto pChildHyp = make_unique<TrackHypothesisTreeNode>();
 
-			auto blobCentrWorld = cv::Point3f(NullPosX, NullPosX, NullPosX);
-
 			TrackHypothesisTreeNode& childHyp = *pChildHyp;
 			childHyp.Id = id;
 			childHyp.FamilyId = pLeaf->FamilyId;
 			childHyp.ObservationInd = DetectionIndNoObservation;
 			childHyp.FrameInd = frameInd;
 			childHyp.ObservationPos = cv::Point2f(NullPosX, NullPosX);
-			childHyp.ObservationPosWorld = blobCentrWorld;
+			childHyp.ObservationPosWorld = cv::Point3f(NullPosX, NullPosX, NullPosX);
 			childHyp.CreationReason = hypothesisReason;
 			childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
 			childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
@@ -211,12 +238,12 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			//
 			float score;
 			cv::Point3f estPos;
-			movementPredictor_->estimateAndSave(*pLeaf, blobCentrWorld, estPos, score, childHyp);
+			movementPredictor_->estimateAndSave(*pLeaf, nullptr, estPos, score, childHyp);
 			childHyp.Score = score;
 			childHyp.EstimatedPosWorld = estPos;
 
 #if PW_DEBUG_DETAIL
-			LOG4CXX_DEBUG(log_, "grow FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " NoObs ChildId=" << pChildHyp->Id);
+			LOG4CXX_DEBUG(log_, "grow NoObs FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ChildId=" << pChildHyp->Id <<" Score=" <<pChildHyp->Score);
 #endif
 
 			pLeaf->addChildNode(std::move(pChildHyp));
@@ -260,7 +287,7 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 			childHyp.Score = score;
 			
 #if PW_DEBUG_DETAIL
-			LOG4CXX_DEBUG(log_, "grow New ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos);
+			LOG4CXX_DEBUG(log_, "grow New ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos <<" Score=" <<pChildHyp->Score);
 #endif
 
 			trackHypothesisForestPseudoNode_.addChildNode(std::move(pChildHyp));
@@ -512,6 +539,7 @@ TrackChangePerFrame MultiHypothesisBlobTracker::createTrackChange(TrackHypothesi
 	result.ObservationPosPixExactOrApprox = obsPos;
 
 	result.FrameInd = pNode->FrameInd;
+	result.Score = pNode->Score;
 
 	return result;
 }

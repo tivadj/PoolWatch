@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include <opencv2/core.hpp>
+#include <boost/optional.hpp>
 
 #include "PoolWatchFacade.h"
 
@@ -42,5 +43,5 @@ class SwimmerMovementPredictor
 public:
 	virtual void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
 
-	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const cv::Point3f& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
 };

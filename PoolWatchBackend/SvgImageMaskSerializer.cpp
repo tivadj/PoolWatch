@@ -75,7 +75,7 @@ void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeC
 				return s.toFloat();
 			});
 
-			CV_DbgAssert(pointsXY.size() % 2 == 0 && "There must be list of (X,Y) pairs");
+			CV_Assert(pointsXY.size() % 2 == 0 && "There must be list of (X,Y) pairs");
 
 			vector<cv::Point2i> points;
 			points.resize(pointsXY.size() / 2);
@@ -104,7 +104,7 @@ void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeC
 
 }
 
-void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels)
+void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask)
 {
 	cv::Mat image;
 	cv::Mat_<bool> mask;
@@ -120,7 +120,10 @@ void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr
 	
 	for (int i = 0; i < maskContinous.cols; ++i)
 	{
-		if (pPixFlag[i])
+		bool usePixel = pPixFlag[i];
+		if (invertMask)
+			usePixel = !usePixel;
+		if (usePixel)
 		{
 			cv::Vec3d pix(pPix[0], pPix[1], pPix[2]);
 			pixels.push_back(pix);
@@ -135,7 +138,7 @@ void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr
 	}
 }
 
-void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels)
+void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask)
 {
 	QFileInfo fileInfo = QFileInfo(QString(folderPath.c_str()));
 	if (fileInfo.isDir())
@@ -149,12 +152,12 @@ void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter
 		for (int i = 0; i < files.count(); ++i)
 		{
 			QString svgAbsPath = dir.absoluteFilePath(files[i]);
-			loadWaterPixelsOne(svgAbsPath, strokeStr, pixels);
+			loadWaterPixelsOne(svgAbsPath, strokeStr, pixels, invertMask);
 		}
 	}
 	else if (fileInfo.isFile())
 	{
-		loadWaterPixelsOne(fileInfo.absoluteFilePath(), strokeStr, pixels);
+		loadWaterPixelsOne(fileInfo.absoluteFilePath(), strokeStr, pixels, invertMask);
 	}
 	else
 		return;

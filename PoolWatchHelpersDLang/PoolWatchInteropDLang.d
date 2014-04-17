@@ -204,7 +204,7 @@ extern (C)
 Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, Int32Allocator allocator)
 {
 	int32_t* p1;
-	printf("size=%d\n", p1.sizeof);
+	debug(PRINTF) printf("size=%d\n", p1.sizeof);
 	auto p1Size = p1.sizeof;
 
 	assert(pEncodedTree != null);
@@ -371,24 +371,32 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 
 	// populate result
 	{
-		auto len = edgesCount * 2; // (from,two) edge pairs
-
-		int32_t* pNodeIdsArray = allocator.CreateArrayInt32(len, allocator.pUserData);
-		scope(failure) allocator.DestroyArrayInt32(pNodeIdsArray, allocator.pUserData);
-
-		int32_t[] nodeIds = pNodeIdsArray[0..len];
-
-		int outInd = 0;
-		foreach(edgeTuple; edgeList)
-		{
-			nodeIds[outInd++] = edgeTuple[0];
-			nodeIds[outInd++] = edgeTuple[1];
-		}
-		assert(len == outInd, "error in data assignment");
-		
 		Int32PtrPair result;
-		result.pFirst = pNodeIdsArray;
-		result.pLast = pNodeIdsArray + len;
+
+		auto len = edgesCount * 2; // (from,two) edge pairs
+		if (len == 0)
+		{
+			result.pFirst = null;
+			result.pLast = null;
+		}
+		else
+		{
+			int32_t* pNodeIdsArray = allocator.CreateArrayInt32(len, allocator.pUserData);
+			scope(failure) allocator.DestroyArrayInt32(pNodeIdsArray, allocator.pUserData);
+
+			int32_t[] nodeIds = pNodeIdsArray[0..len];
+
+			int outInd = 0;
+			foreach(edgeTuple; edgeList)
+			{
+				nodeIds[outInd++] = edgeTuple[0];
+				nodeIds[outInd++] = edgeTuple[1];
+			}
+			assert(len == outInd, "error in data assignment");
+		
+			result.pFirst = pNodeIdsArray;
+			result.pLast = pNodeIdsArray + len;
+		}
 		return  result;
 	}
 }

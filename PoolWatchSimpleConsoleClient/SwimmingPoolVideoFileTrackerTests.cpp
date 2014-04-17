@@ -165,7 +165,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				stringstream bld;
 				bld << "Found " << blobs.size() << " blobs" <<endl;
 				for (const auto& blob : blobs)
-					bld << "Id=" << blob.Id << " Centroid=" << blob.Centroid << endl;
+					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << endl;
 				LOG4CXX_DEBUG(log_, bld.str());
 			}
 
@@ -197,8 +197,13 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			}
 
 			if (cv::waitKey(1) == 27)
-				return;
+				break;
 		}
+		poolObserver.flushTrackHypothesis(frameOrd);
+
+		std::stringstream bld;
+		poolObserver.dumpTrackHistory(bld);
+		LOG4CXX_DEBUG(log_, "Tracks Result " << bld.str());
 	}
 
 	void run()

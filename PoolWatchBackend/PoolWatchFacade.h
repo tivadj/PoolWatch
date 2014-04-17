@@ -55,6 +55,7 @@ struct DetectedBlob
 	cv::Mat_<int32_t> OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
 	cv::Mat FilledImage; // [W,H] image contains only bounding box of this blob
 	cv::Point3f CentroidWorld;
+	float AreaPix; // area of the blob in pixels
 };
 
 __declspec(dllexport) void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjectorBase& cameraProjector);
@@ -79,6 +80,7 @@ struct TrackChangePerFrame
 	cv::Point2f ObservationPosPixExactOrApprox; // [X, Y]; required to avoid world->camera conversion on drawing
 
 	int FrameInd; // used for debugging
+	float Score; // used for debugging
 };
 
 struct TrackInfoHistory
@@ -99,7 +101,7 @@ struct TrackInfoHistory
 };
 
 __declspec(dllexport) void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask);
-__declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels);
+__declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask = false);
 
 __declspec(dllexport) void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
 

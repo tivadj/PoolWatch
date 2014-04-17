@@ -54,17 +54,38 @@ namespace PoolWatch
 
 	void PaintHelper::paintTrack(const TrackInfoHistory& track, int fromFrameOrd, int toFrameOrd, const cv::Scalar& color, const std::vector<std::vector<DetectedBlob>>& blobsPerFrame, cv::Mat& resultImage)
 	{
-		CV_Assert(fromFrameOrd >= track.FirstAppearanceFrameIdx);
-		CV_Assert(toFrameOrd >= track.FirstAppearanceFrameIdx);
+		// limit to available observations
+
+		int maxUpper = track.isFinished() ? track.LastAppearanceFrameIdx : (track.FirstAppearanceFrameIdx + track.Assignments.size() - 1);
+
+		int localFromFrameOrd = fromFrameOrd;
+		if (localFromFrameOrd > maxUpper)
+			return;
+		else if (localFromFrameOrd < track.FirstAppearanceFrameIdx)
+			localFromFrameOrd = track.FirstAppearanceFrameIdx;
+
+		int localToFrameOrd = toFrameOrd;
+		if (localToFrameOrd < track.FirstAppearanceFrameIdx)
+			return;
+		if (localToFrameOrd < maxUpper) // do not show tracks, finished some time ago
+			return;
+		else if (localToFrameOrd > maxUpper)
+			localToFrameOrd = maxUpper;
+
+		assert(localFromFrameOrd <= localToFrameOrd);
+
+		//
+		CV_Assert(localFromFrameOrd >= track.FirstAppearanceFrameIdx);
+		CV_Assert(localToFrameOrd >= track.FirstAppearanceFrameIdx);
 		if (track.isFinished())
 		{
-			CV_Assert(fromFrameOrd <= track.LastAppearanceFrameIdx);
-			CV_Assert(toFrameOrd <= track.LastAppearanceFrameIdx);
+			CV_Assert(localFromFrameOrd <= track.LastAppearanceFrameIdx);
+			CV_Assert(localToFrameOrd <= track.LastAppearanceFrameIdx);
 		}
 
 		// mark the initial track observation with triangle
 		{
-			auto pChange = track.getTrackChangeForFrame(fromFrameOrd);
+			auto pChange = track.getTrackChangeForFrame(localFromFrameOrd);
 			assert(pChange != nullptr);
 
 			auto& cent = pChange->ObservationPosPixExactOrApprox;
@@ -73,7 +94,7 @@ namespace PoolWatch
 
 		// mark the last track observation
 		{
-			auto pChange = track.getTrackChangeForFrame(toFrameOrd);
+			auto pChange = track.getTrackChangeForFrame(localToFrameOrd);
 			assert(pChange != nullptr);
 
 			auto& cent = pChange->ObservationPosPixExactOrApprox;
@@ -84,7 +105,7 @@ namespace PoolWatch
 
 		const int PointXNull = -1;
 		cv::Point2f prevPoint(PointXNull, PointXNull);;
-		for (int frameInd = fromFrameOrd; frameInd <= toFrameOrd; ++frameInd)
+		for (int frameInd = localFromFrameOrd; frameInd <= localToFrameOrd; ++frameInd)
 		{
 			auto pChange = track.getTrackChangeForFrame(frameInd);
 			assert(pChange != nullptr);
@@ -107,7 +128,7 @@ namespace PoolWatch
 
 			if (pLastChange->ObservationInd >= 0)
 			{
-				const std::vector<DetectedBlob>& blobs = blobsPerFrame[toFrameOrd];
+				const std::vector<DetectedBlob>& blobs = blobsPerFrame[localToFrameOrd];
 				const DetectedBlob& obs = blobs[pLastChange->ObservationInd];
 
 				//PoolWatch::PaintHelper pantHelper;

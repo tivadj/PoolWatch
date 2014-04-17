@@ -131,6 +131,7 @@ void SwimmingPoolObserver::dumpTrackHistory(stringstream& bld) const
 			bld << " obsInd=" << change.ObservationInd;
 			bld << " ImgPos=" << change.ObservationPosPixExactOrApprox;
 			bld << " WorldPos=" << change.EstimatedPosWorld;
+			bld << " Score=" << change.Score;
 			bld << endl;
 		}
 	}
@@ -224,29 +225,7 @@ void SwimmingPoolObserver::adornImageInternal(int fromFrameOrd, int toFrameOrd, 
 		const TrackInfoHistory& track = trackIdToHist.second;
 		auto color = getTrackColor(track);
 
-		// limit to available observations
-
-		int maxUpper = track.isFinished() ? track.LastAppearanceFrameIdx : (track.FirstAppearanceFrameIdx + track.Assignments.size() - 1);
-
-		int localFromFrameOrd = fromFrameOrd;
-		if (localFromFrameOrd > maxUpper)
-			continue;
-		else if (localFromFrameOrd < track.FirstAppearanceFrameIdx)
-			localFromFrameOrd = track.FirstAppearanceFrameIdx;
-
-		int localToFrameOrd = toFrameOrd;
-		if (localToFrameOrd < track.FirstAppearanceFrameIdx)
-			continue;
-		if (localToFrameOrd < maxUpper) // do not show tracks, finished some time ago
-			continue;
-		else if (localToFrameOrd > maxUpper)
-			localToFrameOrd = maxUpper;
-		
-		assert(localFromFrameOrd <= localToFrameOrd);
-
-		//
-
-		PoolWatch::PaintHelper::paintTrack(track, localFromFrameOrd, localToFrameOrd, color, blobsPerFrame_, resultImage);
+		PoolWatch::PaintHelper::paintTrack(track, fromFrameOrd, toFrameOrd, color, blobsPerFrame_, resultImage);
 	}
 }
 
