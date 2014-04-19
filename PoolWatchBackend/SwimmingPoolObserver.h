@@ -12,7 +12,9 @@
 /** Decorates frame images with tracks pathes and swimmer shapes. */
 class __declspec(dllexport) SwimmingPoolObserver
 {
+public:
 	std::vector<std::vector<DetectedBlob>> blobsPerFrame_;
+private:
 	std::map<int, TrackInfoHistory> trackIdToHistory_;
 	std::unique_ptr<MultiHypothesisBlobTracker> blobTracker_;
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
@@ -42,6 +44,7 @@ public:
 	std::shared_ptr<CameraProjectorBase> cameraProjector();
 	int trackHistoryCount() const;
 	
+	void predictNextBlobs(int frameOrd, const std::vector<DetectedBlob>& blobs, std::vector<DetectedBlob>& expectedBlobs);
 private:
 	static cv::Scalar getTrackColor(const TrackInfoHistory& trackHist);
 	void adornImageInternal(int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage);
@@ -55,4 +58,4 @@ public:
 #endif
 };
 
-__declspec(dllexport) void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std::vector<DetectedBlob>& blobs);
+__declspec(dllexport) void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);

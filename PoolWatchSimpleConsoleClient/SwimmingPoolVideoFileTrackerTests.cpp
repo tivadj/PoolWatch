@@ -114,6 +114,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		// video processing loop
 
 		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
+		vector<DetectedBlob> expectedBlobs;
 
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
@@ -150,7 +151,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			//
 			std::vector<DetectedBlob> blobs;
-			getHumanBodies(imageFamePoolOnly, waterMask, blobs);
+			getHumanBodies(imageFamePoolOnly, waterMask, expectedBlobs, blobs);
 			fixBlobs(blobs, *cameraProjector);
 
 #if PW_DEBUG
@@ -165,7 +166,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				stringstream bld;
 				bld << "Found " << blobs.size() << " blobs" <<endl;
 				for (const auto& blob : blobs)
-					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << endl;
+					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid <<" Area=" <<blob.AreaPix << endl;
 				LOG4CXX_DEBUG(log_, bld.str());
 			}
 
@@ -195,6 +196,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				// tracking data is not available yet
 				// do not write 'blank screen' here to keep original and tracks-adorned video streams in sync
 			}
+
+			// predict position of next blobs
+			expectedBlobs.clear();
+			poolObserver.predictNextFrameBlobs(frameOrd, blobs, expectedBlobs);
 
 			if (cv::waitKey(1) == 27)
 				break;

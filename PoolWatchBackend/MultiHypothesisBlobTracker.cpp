@@ -659,6 +659,37 @@ bool MultiHypothesisBlobTracker::flushTrackHypothesis(int frameInd, int& readyFr
 	return continue1;
 }
 
+void MultiHypothesisBlobTracker::getMostPossibleHypothesis(int frameInd, std::vector<TrackHypothesisTreeNode*>& hypList)
+{
+	vector<TrackHypothesisTreeNode*> leafSet;
+	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
+
+	vector<TrackHypothesisTreeNode*> bestTrackLeafs; // 
+	findBestTracks(leafSet, bestTrackLeafs);
+
+	std::vector<TrackHypothesisTreeNode*> pathNodes;
+	for (TrackHypothesisTreeNode* pLeaf: bestTrackLeafs)
+	{
+		pathNodes.clear();
+		enumerateBranchNodesReversed(pLeaf, pruneWindow_, pathNodes);
+
+		// find the ancestor with requested frameInd
+		TrackHypothesisTreeNode* mostProbHyp = nullptr;
+		for (TrackHypothesisTreeNode* pCur : pathNodes)
+		{
+			if (pCur->FrameInd <= frameInd)
+			{
+				if (pCur->FrameInd == frameInd)
+					mostProbHyp = pCur;
+				break;
+			}
+		}
+
+		if (mostProbHyp != nullptr)
+			hypList.push_back(mostProbHyp);
+	}
+}
+
 #ifdef HAVE_GRAPHVIZ
 
 const char* LayoutNodeNameStr = "name";

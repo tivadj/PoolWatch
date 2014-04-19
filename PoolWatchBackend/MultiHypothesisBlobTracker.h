@@ -27,8 +27,10 @@ class __declspec(dllexport) MultiHypothesisBlobTracker
 
 	TrackHypothesisTreeNode trackHypothesisForestPseudoNode_;
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
+public:
 	std::unique_ptr<SwimmerMovementPredictor> movementPredictor_;
 	std::vector<DetectedBlob> prevFrameBlobs;
+private:
 	float fps_;
 	int pruneWindow_; // the depth of track history (valid value>=1; value=0 purges all hypothesis nodes so that hypothesis tree has the single pseudo node)
 	int nextTrackCandidateId_;
@@ -77,6 +79,7 @@ public:
 	// Such finalizer object will reuse the set of bestTrackLeafs.
 	bool flushTrackHypothesis(int frameInd, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackChangeList,
 		std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, bool isBestTrackLeafsInitied, int& pruneWindow);
+	void getMostPossibleHypothesis(int frameInd, std::vector<TrackHypothesisTreeNode*>& hypList);
 private:
 	inline bool isPseudoRoot(const TrackHypothesisTreeNode& node) const;
 	void getLeafSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& leafSet);

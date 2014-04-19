@@ -246,6 +246,59 @@ int SwimmingPoolObserver::trackHistoryCount() const
 	return (int)trackIdToHistory_.size();
 }
 
+
+// frameOrd is the current frame. Method computes blobs for consequent frame (frameInd+1).
+void SwimmingPoolObserver::predictNextFrameBlobs(int frameOrd, const std::vector<DetectedBlob>& blobs, std::vector<DetectedBlob>& expectedBlobs)
+{
+	std::vector<TrackHypothesisTreeNode*> hypList;
+	blobTracker_->getMostPossibleHypothesis(frameOrd, hypList);
+
+	TrackHypothesisTreeNode dummyNode;
+	for (TrackHypothesisTreeNode* pNode : hypList)
+	{
+		// enumerate only hypothesis based on observation
+		if (pNode->CreationReason == TrackHypothesisCreationReason::NoObservation)
+			continue;
+
+		const std::vector<DetectedBlob>& curBlobs = blobsPerFrame_[frameOrd];
+		DetectedBlob blob = curBlobs[pNode->ObservationInd];
+		
+		cv::Point3f estPosWorld;
+		float score;
+		blobTracker_->movementPredictor_->estimateAndSave(*pNode, nullptr, estPosWorld, score, dummyNode);
+
+		cv::Point2f estPos = cameraProjector_->worldToCamera(estPosWorld);
+
+		float shiftX = estPos.x - blob.Centroid.x;
+		float shiftY = estPos.y - blob.Centroid.y;
+
+		blob.Centroid = cv::Point2f(estPos.x, estPos.y);
+		auto bnd = blob.BoundingBox;
+		bnd.x += shiftX;
+		bnd.y += shiftY;
+
+		// TODO: limit movement or truncate to image bounds
+		const int W = 640;
+		const int H = 480;
+		if (bnd.x < 0)
+			bnd.x = 0;
+		if (bnd.br().x >= W)
+			bnd.x = W - 1 -bnd.width;
+		
+		if (bnd.y < 0)
+			bnd.y = 0;
+		if (bnd.br().y >= H)
+			bnd.y = H - 1 - bnd.height;
+
+		blob.BoundingBox = bnd;
+		// invalidate unused data fields
+		blob.AreaPix = -1;
+		blob.CentroidWorld = estPosWorld;
+		blob.OutlinePixels = cv::Mat_<int32_t>();
+		expectedBlobs.push_back(blob);
+	}
+}
+
 cv::Scalar SwimmingPoolObserver::getTrackColor(const TrackInfoHistory& trackHist)
 {
 	static vector<cv::Scalar> trackColors;

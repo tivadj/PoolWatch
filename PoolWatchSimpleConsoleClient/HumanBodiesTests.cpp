@@ -34,7 +34,8 @@ namespace HumanBodiesTestsNS
 		i1.copyTo(imageSimple, poolMask);
 
 		vector<DetectedBlob> blobs;
-		getHumanBodies(imageSimple, i1WaterMask, blobs);
+		vector<DetectedBlob> expectedBlobs;
+		getHumanBodies(imageSimple, i1WaterMask, expectedBlobs, blobs);
 	}
 
 	void run()

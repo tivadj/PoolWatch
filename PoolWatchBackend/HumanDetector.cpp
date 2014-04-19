@@ -9,7 +9,71 @@
 using namespace std;
 using namespace cv;
 
-void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std::vector<DetectedBlob>& blobs)
+// Accumulates all given blobs into the single mask.
+void buildBlobsMask(const std::vector<DetectedBlob>& blobs, cv::Mat& outMask)
+{
+	assert(!outMask.empty());
+
+	cv::Mat curBlobExtended = cv::Mat::zeros(outMask.rows, outMask.cols, CV_8UC1); // minimal image extended to the size of the original image
+	for (const auto& blob : blobs)
+	{
+		// extend blob to the
+
+		curBlobExtended.setTo(0);
+		auto bnds = blob.BoundingBox;
+
+		auto dstMat = curBlobExtended(bnds);
+		blob.FilledImage.copyTo(dstMat);
+
+		cv::bitwise_or(outMask, curBlobExtended, outMask);
+	}
+}
+
+// Split large blobs into parts taking into account the expected layout of blobs.
+void splitBlobsAccordingToPreviousFrameBlobs(const cv::Mat& imageBodyBin, const std::vector<DetectedBlob>& expectedBlobs, cv::Mat& imageBodySplit)
+{
+	if (!expectedBlobs.empty())
+	{
+		// construct expected mask
+		cv::Mat expectedMask = cv::Mat::zeros(imageBodyBin.rows, imageBodyBin.cols, CV_8UC1);
+		buildBlobsMask(expectedBlobs, expectedMask);
+
+		cv::Mat intersect;
+		cv::bitwise_and(expectedMask, imageBodyBin, intersect);
+
+		// find small blobs and add them to the intersection
+		cv::Mat smallDebris;
+		//cv::subtract(expectedMask, intersect, smallDebris);
+		cv::subtract(imageBodyBin, intersect, smallDebris);
+
+		vector<vector<cv::Point>> smallContours;
+		cv::findContours(smallDebris, smallContours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+		// treat small debris around intersection area as a part of current frame blobs
+		// append small debris to intersection blobs
+		for (size_t i = 0; i < smallContours.size(); ++i)
+		{
+			const vector<cv::Point>& c = smallContours[i];
+			float area = cv::contourArea(c, false);
+			float maxSmallDebrisSize = 256;
+			if (area < maxSmallDebrisSize)
+				cv::drawContours(intersect, smallContours, i, cv::Scalar::all(255), CV_FILLED);
+		}
+
+		// slightly enlarge common regions to avoid diminishing shape in time
+		const int blobsGap = 3;
+		auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(blobsGap, blobsGap));
+		cv::Mat intersectPad;
+		cv::morphologyEx(intersect, intersectPad, cv::MORPH_DILATE, sel);
+
+		cv::subtract(imageBodyBin, intersectPad, imageBodySplit); // current without extended intersection
+		cv::bitwise_or(imageBodySplit, intersect, imageBodySplit); // current as union of expected blobs and the remainder
+	}
+	else
+		imageBodySplit = imageBodyBin;
+}
+
+void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
 {
 	cv::Mat_<uchar> nonWaterMask;
 	cv::subtract(255, waterMask, nonWaterMask);
@@ -23,17 +87,21 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 	cvtColor(imageBody, imageBodyBin, CV_BGR2GRAY);
 	cv::threshold(imageBodyBin, imageBodyBin, 1, 255, cv::THRESH_BINARY);
 	
-	// cut tenuous bridges between connected components
+	CV_Assert(imageBodyBin.channels() == 1);
+
+	cv::Mat imageBodySplit = cv::Mat::zeros(imageBodyBin.rows, imageBodyBin.cols, CV_8UC1);
+	splitBlobsAccordingToPreviousFrameBlobs(imageBodyBin, expectedBlobs, imageBodySplit);
+
 	// =3 may be too small
 	// =5 good
 	const int narrowSize = 5;
 	auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(narrowSize, narrowSize));
+
+	// cut tenuous bridges between connected components
 	cv::Mat noTenuousBridges = cv::Mat_<uchar>::zeros(image.rows, image.cols);
-	cv::morphologyEx(imageBodyBin, noTenuousBridges, cv::MORPH_OPEN, sel);
+	cv::morphologyEx(imageBodySplit, noTenuousBridges, cv::MORPH_OPEN, sel);
 
 	// remove noise on a pixel level(too small / large components)
-
-	CV_Assert(noTenuousBridges.channels() == 1);
 
 	struct ContourInfo
 	{
@@ -114,6 +182,8 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 	}
 
 	//
+	cv::Mat curOutlineMat = cv::Mat::zeros(image.rows, image.cols, CV_8UC1); // minimal image extended to the size of the original image
+	std::vector<std::vector<cv::Point>> contoursListTmp(1);
 	int blobId = 1;
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
@@ -127,7 +197,12 @@ void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, std:
 		cv::Rect bnd = cv::boundingRect(contour.outlinePixels);
 		blob.BoundingBox = cv::Rect2f(bnd.x, bnd.y, bnd.width, bnd.height);
 
-		cv::Mat localImg = noTenuousBridges(Range(bnd.y, bnd.y + bnd.height), Range(bnd.x, bnd.x + bnd.width));
+		// draw shape without any noise that hit the bounding box
+		curOutlineMat.setTo(0);
+		contoursListTmp[0] = contour.outlinePixels;
+		cv::drawContours(curOutlineMat, contoursListTmp, 0, cv::Scalar::all(255), CV_FILLED);
+		//cv::Mat localImgOld = noTenuousBridges(Range(bnd.y, bnd.y + bnd.height), Range(bnd.x, bnd.x + bnd.width));
+		cv::Mat localImg = curOutlineMat(bnd).clone();
 		blob.FilledImage = localImg;
 
 		cv::Moments ms = cv::moments(localImg, true);
