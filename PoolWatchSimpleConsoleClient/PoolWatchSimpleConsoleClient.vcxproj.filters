@@ -46,6 +46,9 @@
     <ClCompile Include="ProgramUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="HumanDetectorTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\log4cxx.properties" />

@@ -349,6 +349,51 @@ void classifyAndGetMask(const cv::Mat& image, std::function<bool(const cv::Vec3d
 	}
 }
 
+void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec3d&)> computeOne, cv::Mat_<double>& mask)
+{
+	assert(image.channels() == 3);
+	assert(image.depth() == CV_8U);
+
+	cv::Mat& mask2 = mask;
+	mask2.create(image.rows, image.cols, CV_64FC1);
+
+	//
+	uchar* pRowBeg = image.data;
+
+	int nrows = image.rows;
+	int ncols = image.cols;
+	if (image.isContinuous())
+	{
+		ncols = ncols * nrows;
+		nrows = 1;
+		mask2 = mask2.reshape(1, 1);
+	}
+
+	for (int r = 0; r < nrows; ++r)
+	{
+		const Vec3b* pRowIt = image.ptr<Vec3b>(r);
+
+		for (int c = 0; c < ncols; ++c)
+		{
+			Vec3b pix = *pRowIt;
+			Vec3d pixDbl = Vec3d(pix(0), pix(1), pix(2));
+
+			double estimate = computeOne(pixDbl);
+			mask(r, c) = estimate;
+
+			pRowIt++;
+		}
+
+		pRowBeg += image.step; // jump to the next line
+	}
+
+	// reshape back
+	if (image.isContinuous())
+	{
+		mask2 = mask2.reshape(1, image.rows);
+	}
+}
+
 Vec2d EMQuick::predict2(InputArray _sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, Mat& cacheL)
 {
 	Mat sample = _sample.getMat();

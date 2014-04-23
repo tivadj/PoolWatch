@@ -9,13 +9,30 @@
 
 #include "SwimmingPoolObserver.h"
 #include "PoolWatchFacade.h"
+#include "algos1.h"
 
 using namespace std;
+
+log4cxx::LoggerPtr SwimmingPoolObserver::log_ = log4cxx::Logger::getLogger("PW.SwimmingPoolObserver");
 
 SwimmingPoolObserver::SwimmingPoolObserver(unique_ptr<MultiHypothesisBlobTracker> blobTracker, shared_ptr<CameraProjectorBase> cameraProjector)
 : cameraProjector_(cameraProjector)
 {
 	blobTracker_.swap(blobTracker);
+}
+
+std::tuple<bool, std::string> SwimmingPoolObserver::init()
+{
+	// init water classifier
+
+	cv::FileStorage fs;
+	if (!fs.open("1.yml", cv::FileStorage::READ))
+	{
+		return make_tuple(false, "Can't find file '1.yml' (change working directory)");
+	}
+	waterClassifier_ = WaterClassifier::read(fs);
+
+	return make_tuple(true, "");
 }
 
 SwimmingPoolObserver::~SwimmingPoolObserver()
@@ -37,6 +54,44 @@ void SwimmingPoolObserver::setBlobs(size_t frameOrd, const vector<DetectedBlob>&
 
 	assert(frameOrd == blobsPerFrame_.size() - 1);
 	blobsPerFrame_[frameOrd] = blobs;
+}
+
+void SwimmingPoolObserver::processCameraImage(size_t frameOrd, const cv::Mat& imageFrame, int* pReadyFrameInd)
+{
+	// find water mask
+
+	cv::Mat_<uchar> waterMask;
+	classifyAndGetMask(imageFrame, [this](const cv::Vec3d& pix) -> bool
+	{
+		//bool b1 = wc.predict(pix);
+		bool b2 = waterClassifier_->predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
+		//assert(b1 == b2);
+		return b2;
+	}, waterMask);
+
+
+	// find pool mask
+
+	cv::Mat_<uchar> poolMask;
+	getPoolMask(imageFrame, waterMask, poolMask);
+
+	cv::Mat imageFamePoolOnly = cv::Mat::zeros(imageFrame.rows, imageFrame.cols, imageFrame.type());
+	imageFrame.copyTo(imageFamePoolOnly, poolMask);
+
+	//
+	std::vector<DetectedBlob> blobs;
+	//getHumanBodies(imageFamePoolOnly, waterMask, expectedBlobs, blobs);
+	swimmerDetector_.getBlobs(imageFamePoolOnly, expectedBlobs_, blobs);
+	fixBlobs(blobs, *cameraProjector_);
+
+	BlobsDetected(blobs, imageFamePoolOnly);
+
+	processBlobs(frameOrd, blobs, pReadyFrameInd);
+
+	// predict position of next blobs
+
+	expectedBlobs_.clear();
+	predictNextFrameBlobs(frameOrd, blobs, expectedBlobs_);
 }
 
 void SwimmingPoolObserver::processBlobs(size_t frameOrd, const vector<DetectedBlob>& blobs, int* pReadyFrameInd)

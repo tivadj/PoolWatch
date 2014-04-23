@@ -45,17 +45,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		LOG4CXX_INFO(log_, "test info");
 		LOG4CXX_ERROR(log_, "test error");
 
-		// init water classifier
-
-		cv::FileStorage fs;
-		if (!fs.open("1.yml", cv::FileStorage::READ))
-		{
-			LOG4CXX_ERROR(log_, "Can't find file '1.yml' (change working directory)");
-			return;
-		}
-		auto pWc = WaterClassifier::read(fs);
-		WaterClassifier& wc = *pWc;
-
 		//
 
 		boost::filesystem::path videoPath = boost::filesystem::absolute("mvi3177_blueWomanLane3.avi", srcDir).normalize();
@@ -66,6 +55,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			return;
 		}
 
+		const int pruneWindow = 6;
 		float fps = (float)videoCapture.get(cv::CAP_PROP_FPS);
 		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -73,15 +63,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		LOG4CXX_INFO(log_, "opened " <<videoPath);
 		LOG4CXX_INFO(log_, "WxH=[" << frameWidth << " " << frameHeight << "] framesCount=" << framesCount <<" fps=" << fps);
-
-		//
-		const int pruneWindow = 6;
-		auto cameraProjector = make_shared<CameraProjector>();
-		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
-#if PW_DEBUG
-		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
-#endif
 
 		// prepare video writing
 
@@ -110,11 +91,43 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 #if PW_DEBUG
 		PaintHelper paintHelper;
 #endif
+		// prepare video observer
+
+		auto cameraProjector = make_shared<CameraProjector>();
+		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
+#if PW_DEBUG
+		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
+#endif
+		poolObserver.BlobsDetected = [&paintHelper, &videoWriterBlobs](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
+		{
+#if PW_DEBUG
+			// show blobs
+			auto blobsImageDbg = imageFamePoolOnly.clone();
+			for (const auto& blob : blobs)
+				paintHelper.paintBlob(blob, blobsImageDbg);
+			videoWriterBlobs.write(blobsImageDbg);
+#endif
+			if (log_->isDebugEnabled())
+			{
+				stringstream bld;
+				bld << "Found " << blobs.size() << " blobs" << endl;
+				for (const auto& blob : blobs)
+					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << " Area=" << blob.AreaPix << endl;
+				LOG4CXX_DEBUG(log_, bld.str());
+			}
+		};
+		
+		tuple<bool,std::string> initOp = poolObserver.init();
+		if (!get<0>(initOp))
+		{
+			LOG4CXX_ERROR(log_, get<1>(initOp));
+			return;
+		}
 
 		// video processing loop
 
 		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
-		vector<DetectedBlob> expectedBlobs;
 
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
@@ -129,49 +142,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			bool readOp = videoCapture.read(imageFrame);
 			CV_Assert(readOp);
 
-			// find water mask
-
-			cv::Mat_<uchar> waterMask;
-			classifyAndGetMask(imageFrame, [&wc](const cv::Vec3d& pix) -> bool
-			{
-				//bool b1 = wc.predict(pix);
-				bool b2 = wc.predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
-				//assert(b1 == b2);
-				return b2;
-			}, waterMask);
-
-
-			// find pool mask
-
-			cv::Mat_<uchar> poolMask;
-			getPoolMask(imageFrame, waterMask, poolMask);
-
-			cv::Mat imageFamePoolOnly = cv::Mat::zeros(imageFrame.rows, imageFrame.cols, imageFrame.type());
-			imageFrame.copyTo(imageFamePoolOnly, poolMask);
-
-			//
-			std::vector<DetectedBlob> blobs;
-			getHumanBodies(imageFamePoolOnly, waterMask, expectedBlobs, blobs);
-			fixBlobs(blobs, *cameraProjector);
-
-#if PW_DEBUG
-			// show blobs
-			auto blobsImageDbg = imageFamePoolOnly.clone();
-			for (const auto& blob : blobs)
-				paintHelper.paintBlob(blob, blobsImageDbg);
-			videoWriterBlobs.write(blobsImageDbg);
-#endif
-			if (log_->isDebugEnabled())
-			{
-				stringstream bld;
-				bld << "Found " << blobs.size() << " blobs" <<endl;
-				for (const auto& blob : blobs)
-					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid <<" Area=" <<blob.AreaPix << endl;
-				LOG4CXX_DEBUG(log_, bld.str());
-			}
-
 			int readyFrameInd;
-			poolObserver.processBlobs(frameOrd, blobs, &readyFrameInd);
+			poolObserver.processCameraImage(frameOrd, imageFrame, &readyFrameInd);
 
 			// visualize tracking
 
@@ -196,10 +168,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				// tracking data is not available yet
 				// do not write 'blank screen' here to keep original and tracks-adorned video streams in sync
 			}
-
-			// predict position of next blobs
-			expectedBlobs.clear();
-			poolObserver.predictNextFrameBlobs(frameOrd, blobs, expectedBlobs);
 
 			if (cv::waitKey(1) == 27)
 				break;

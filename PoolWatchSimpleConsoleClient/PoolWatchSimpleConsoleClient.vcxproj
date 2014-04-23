@@ -107,6 +107,7 @@
     <ClCompile Include="PoolBoundaryDetectorTests.cpp" />
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="ProgramUtils.cpp" />
+    <ClCompile Include="HumanDetectorTests.cpp" />
     <ClCompile Include="SwimmingPoolVideoFileTrackerTests.cpp" />
     <ClCompile Include="WaterClassifierTests.cpp" />
     <ClCompile Include="stdafx.cpp" />

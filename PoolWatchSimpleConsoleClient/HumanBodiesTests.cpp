@@ -1,9 +1,11 @@
 
 #include <opencv2\highgui.hpp>
+#include <boost/filesystem.hpp>
 
 #include "SwimmingPoolObserver.h"
 #include "WaterClassifier.h"
 #include "algos1.h"
+#include "HumanDetector.h"
 
 namespace HumanBodiesTestsNS
 {
@@ -38,8 +40,22 @@ namespace HumanBodiesTestsNS
 		getHumanBodies(imageSimple, i1WaterMask, expectedBlobs, blobs);
 	}
 
+	void testHumanDetectorSimple()
+	{
+		auto p1 = boost::filesystem::current_path();
+		//cv::Mat image = cv::imread("data/MVI_3177_0127_640x476.png");
+		cv::Mat image = cv::imread("../../output/mvi3177_blueWomanLane3_Frame8.png");
+
+		SwimmerDetector sd;
+
+		vector<DetectedBlob> blobs;
+		vector<DetectedBlob> expectedBlobs;
+		sd.getBlobs(image, expectedBlobs, blobs);
+	}
+
 	void run()
 	{
-		testHumanBodiesDetection();
+		//testHumanBodiesDetection();
+		testHumanDetectorSimple();
 	}
 }

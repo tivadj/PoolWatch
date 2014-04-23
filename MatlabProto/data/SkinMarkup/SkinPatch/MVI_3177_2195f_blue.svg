@@ -3,11 +3,8 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
 	 width="612px" height="792px" viewBox="0 0 612 792" enable-background="new 0 0 612 792" xml:space="preserve">
-<g id="Layer_1_1_">
-	
-		<image overflow="visible" enable-background="new    " width="100" height="75" xlink:href="MVI_3177_2195f_blue.png"  transform="matrix(1 0 0 1 -2.439916e-004 2.441406e-004)">
-	</image>
-</g>
+<image overflow="visible" enable-background="new    " width="100" height="75" xlink:href="MVI_3177_2195f_blue.png"  transform="matrix(1 0 0 1 -2.439916e-004 2.441406e-004)">
+</image>
 <polygon opacity="0.7" fill="none" stroke="#00FF00" stroke-width="0.25" stroke-miterlimit="10" points="27,38 30.9,38.1 
 	30.9,40.2 29.1,40.1 29.1,52 27,52 27,54 24,54 24,56 21,56 21,58 15,57.9 15,54.1 16.9,54.1 17,50 19,50 19,44 21,44 21,42 23,42 
 	23,40 27,40 "/>

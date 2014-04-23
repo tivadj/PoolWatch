@@ -103,6 +103,7 @@
     <ClInclude Include="TestingUtils.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="BlobUtilsTests.cpp" />
     <ClCompile Include="ConstantVelocityMovementPredictor.cpp" />
     <ClCompile Include="LinearCameraProjector.cpp" />
     <ClCompile Include="stdafx.cpp">
