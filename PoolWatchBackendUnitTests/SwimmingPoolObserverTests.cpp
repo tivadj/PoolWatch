@@ -18,7 +18,6 @@
 #include "SwimmingPoolObserver.h"
 #include "TestingUtils.h"
 
-
 namespace PoolWatchBackendUnitTests
 {
 	using namespace cv;
@@ -31,6 +30,10 @@ namespace PoolWatchBackendUnitTests
 	TEST_CLASS(SwimmingPoolObserverTests)
 	{
 		const char* ClassName = "SwimmingPoolObserverTests";
+		TEST_METHOD_INITIALIZE(MethodInitialize)
+		{
+			PoolWatchBackendUnitTests_MethodInitilize();
+		}
 	public:
 		// two swimmers swim on parallel lanes in one direction
 		TEST_METHOD(parallelMovementTest)
@@ -199,12 +202,14 @@ namespace PoolWatchBackendUnitTests
 			std::vector<DetectedBlob> blobs;
 			cv::Point2f center1(1, 3);
 			int readyFrameInd = -1;
-			const int framesCount = 4;
+			const int framesCount = 20;
 			for (int frameInd = 0; frameInd < framesCount; frameInd++)
 			{
 				blobs.clear();
 
-				if (frameInd == 2)
+				//if (frameInd == 2)
+				//if (frameInd % 2 == 0)
+				if (frameInd >= 5 && frameInd < 15)
 				{
 					// no observations
 				}

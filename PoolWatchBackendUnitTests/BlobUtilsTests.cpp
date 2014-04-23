@@ -4,6 +4,7 @@
 #include <opencv2/imgproc/types_c.h>
 #include "CppUnitTest.h"
 #include "HumanDetector.h"
+#include "TestingUtils.h"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
@@ -11,13 +12,18 @@ namespace PoolWatchBackendUnitTests
 {
 	TEST_CLASS(BlobUtilsTests)
 	{
+		TEST_METHOD_INITIALIZE(MethodInitialize)
+		{
+			PoolWatchBackendUnitTests_MethodInitilize();
+		}
+
 		void testMergeTwoBlobs(const std::string& blobsFileSvg)
 		{
 			cv::Mat black;
 			cv::Mat_<bool> imageBlobs;
 			loadImageAndMask(blobsFileSvg, "#FFFFFF", black, imageBlobs);
 
-			auto imageBlobsTmp = imageBlobs.clone();
+			cv::Mat imageBlobsTmp = imageBlobs.clone();
 			std::vector<std::vector<cv::Point>> contours;
 			cv::findContours(imageBlobsTmp, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 

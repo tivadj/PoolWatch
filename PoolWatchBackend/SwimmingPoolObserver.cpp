@@ -16,7 +16,8 @@ using namespace std;
 log4cxx::LoggerPtr SwimmingPoolObserver::log_ = log4cxx::Logger::getLogger("PW.SwimmingPoolObserver");
 
 SwimmingPoolObserver::SwimmingPoolObserver(unique_ptr<MultiHypothesisBlobTracker> blobTracker, shared_ptr<CameraProjectorBase> cameraProjector)
-: cameraProjector_(cameraProjector)
+: cameraProjector_(cameraProjector),
+  swimmerDetector_(cameraProjector)
 {
 	blobTracker_.swap(blobTracker);
 }
@@ -82,7 +83,6 @@ void SwimmingPoolObserver::processCameraImage(size_t frameOrd, const cv::Mat& im
 	std::vector<DetectedBlob> blobs;
 	//getHumanBodies(imageFamePoolOnly, waterMask, expectedBlobs, blobs);
 	swimmerDetector_.getBlobs(imageFamePoolOnly, expectedBlobs_, blobs);
-	fixBlobs(blobs, *cameraProjector_);
 
 	BlobsDetected(blobs, imageFamePoolOnly);
 

@@ -15,12 +15,15 @@
 using namespace std;
 using namespace cv;
 
-float twoBlobsClosestDistanceSqr(vector<cv::Point> const& blobPoints1, vector<cv::Point> const& blobPoints2)
+std::tuple<float,int,int> twoBlobsClosestDistanceSqr(vector<cv::Point> const& blobPoints1, vector<cv::Point> const& blobPoints2)
 {
 	CV_Assert(!blobPoints1.empty());
 	CV_Assert(!blobPoints2.empty());
 
 	float minDist = std::numeric_limits<float>::max();
+
+	size_t minInd1 = -1;
+	size_t minInd2 = -1;
 
 	for (size_t i1 = 0; i1 < blobPoints1.size(); ++i1)
 	{
@@ -34,13 +37,17 @@ float twoBlobsClosestDistanceSqr(vector<cv::Point> const& blobPoints1, vector<cv
 			if (dist2 < minDist)
 			{
 				minDist = dist2;
+				minInd1 = i1;
+				minInd2 = i2;
 			}
 		}
 	}
 
 	assert(minDist != std::numeric_limits<float>::max());
+	assert(minInd1 != -1);
+	assert(minInd2 != -1);
 
-	return minDist;
+	return make_tuple(minDist, (int)minInd1, (int)minInd2);
 }
 
 void mergeBlobs(vector<cv::Point> const& blobPoints1, vector<cv::Point> const& blobPoints2, Mat& paintBuffer, vector<cv::Point>& mergedBlob, int drawBridgeCount)
@@ -162,15 +169,7 @@ void splitBlobsAccordingToPreviousFrameBlobs(const cv::Mat& imageBodyBin, const 
 		imageBodySplit = imageBodyBin;
 }
 
-struct ContourInfo
-{
-	std::vector<cv::Point> outlinePixels;
-	float area;
-	bool markDeleted;
-	cv::Point2f contourCentroid;
-};
-
-void fixContourInfo(ContourInfo& c)
+void fixContourInfo(ContourInfo& c, const CameraProjectorBase& cameraProjector)
 {
 	const auto& outlinePixels = c.outlinePixels;
 
@@ -181,272 +180,13 @@ void fixContourInfo(ContourInfo& c)
 
 	float countF = (float)outlinePixels.size();
 	c.contourCentroid = cv::Point2f(sum.x / countF, sum.y / countF);
+
+	c.contourCentroidWorld = cameraProjector.cameraToWorld(c.contourCentroid);
 }
 
-void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
-{
-	int const& rows1 = image.rows;
-	int const& width = image.cols;
 
-	//cv::Mat_<uchar> nonWaterMask;
-	//cv::subtract(255, waterMask, nonWaterMask);
-
-	//// get image with bodies
-
-	//cv::Mat imageBody;
-	//image.copyTo(imageBody, nonWaterMask);
-
-	//cv::Mat imageBodyBin;
-	//cvtColor(imageBody, imageBodyBin, CV_BGR2GRAY);
-	//cv::threshold(imageBodyBin, imageBodyBin, 1, 255, cv::THRESH_BINARY);
-	//
-	//CV_Assert(imageBodyBin.channels() == 1);
-
-	//cv::Mat imageBodySplit = cv::Mat::zeros(imageBodyBin.rows, imageBodyBin.cols, CV_8UC1);
-	//splitBlobsAccordingToPreviousFrameBlobs(imageBodyBin, expectedBlobs, imageBodySplit);
-
-	//// =3 may be too small
-	//// =5 good
-	//const int narrowSize = 5;
-	//auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(narrowSize, narrowSize));
-
-	//// cut tenuous bridges between connected components
-	//cv::Mat noTenuousBridges = cv::Mat_<uchar>::zeros(rows1, width);
-	//cv::morphologyEx(imageBodySplit, noTenuousBridges, cv::MORPH_OPEN, sel);
-
-	cv::Mat noTenuousBridges = image;
-	// remove noise on a pixel level(too small / large components)
-
-	vector<ContourInfo> contourInfos;
-	vector<vector<cv::Point>> contours;
-	{
-		cv::findContours(noTenuousBridges.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
-
-		contourInfos.resize(contours.size());
-
-		std::transform(begin(contours), end(contours), begin(contourInfos), [](vector<cv::Point>& outlinePixels)
-		{
-			ContourInfo c;
-			//c.outlinePixels = std::move(outlinePixels);
-			c.outlinePixels = outlinePixels;
-			c.markDeleted = false;
-			fixContourInfo(c);
-
-			return c;
-		});
-	}
-
-	// remove very small or large blobs
-
-#if PW_DEBUG
-	cv::Mat imageNoExtremeBlobs = cv::Mat_<uchar>::zeros(rows1, width);
-#endif
-
-	for (size_t i = 0; i < contourInfos.size(); ++i)
-	{
-		auto& contour = contourInfos[i];
-
-		// expect swimmer shape island to be in range
-		const int shapeMinAreaPixels = 6; // (in pixels) any patch below is noise
-		const int swimmerShapeAreaMax = 5000; // (in pixels) anything greater can't be a swimmer
-
-		if (contour.area >= shapeMinAreaPixels && contour.area < swimmerShapeAreaMax)
-		{
-#if PW_DEBUG
-			cv::drawContours(imageNoExtremeBlobs, contours, i, cv::Scalar::all(255), CV_FILLED);
-#endif
-		}
-		else
-			contour.markDeleted = true;
-	}
-
-	// merge small blobs around one large blob
-
-	// process from largest blob to smallest
-	std::sort(begin(contourInfos), end(contourInfos), [](const ContourInfo& c1, const ContourInfo& c2) { return std::greater<float>()(c1.area, c2.area); });
-
-	cv::Mat mergeBuffer = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
-	vector<cv::Point> mergedBlobsContour;
-	vector<uchar> processedMerging(contourInfos.size());
-	vector<vector<cv::Point>> contoursList(1);
-	for (size_t i = 0; i < contourInfos.size(); ++i)
-	{
-		auto& contour = contourInfos[i];
-		if (processedMerging[i])
-			continue;
-		if (contour.markDeleted)
-		{
-			processedMerging[i] = true;
-			continue;
-		}
-
-		for (size_t neighInd = 0; neighInd < contourInfos.size(); ++neighInd)
-		{
-			auto& neigh = contourInfos[neighInd];
-			if (neighInd == i) // skip current contour itself
-				continue;
-			if (neigh.markDeleted || processedMerging[i])
-				continue;
-			
-			auto vec = neigh.contourCentroid - contour.contourCentroid;
-			float dist = std::sqrt(vec.dot(vec));
-			
-			const float maxArea = 40;
-			if (dist < maxArea)
-			{
-				auto color = cv::Scalar::all(255);
-
-				mergeBuffer.setTo(0);
-
-				contoursList[0] = contour.outlinePixels;
-				cv::drawContours(mergeBuffer, contoursList, 0, color, CV_FILLED);
-
-				contoursList[0] = neigh.outlinePixels;
-				cv::drawContours(mergeBuffer, contoursList, 0, color, CV_FILLED);
-
-				mergedBlobsContour.clear();
-				mergeBlobs(contour.outlinePixels, neigh.outlinePixels, mergeBuffer, mergedBlobsContour, 5);
-
-				// update two blobs infos
-				contour.outlinePixels = mergedBlobsContour;
-				fixContourInfo(contour);
-				neigh.markDeleted = true;
-				processedMerging[neighInd] = true;
-			}
-		}
-
-		processedMerging[i] = true;
-	}
-
-#if PW_DEBUG
-	cv::Mat mergedBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
-	for (size_t i = 0; i < contourInfos.size();++i)
-	{
-		CV_Assert(processedMerging[i]);
-		auto& contour = contourInfos[i];
-		if (contour.markDeleted)
-			continue;
-		contoursList[0] = contour.outlinePixels;
-		cv::drawContours(mergedBlobs, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
-	}
-#endif
-
-	// remove elongated stripes created by lane markers and water 'blique'
-
-#if PW_DEBUG
-	cv::Mat imageNoSticks = cv::Mat_<uchar>::zeros(rows1, width);
-#endif
-
-	for (size_t i = 0; i < contourInfos.size(); ++i)
-	{
-		auto& contour = contourInfos[i];
-		if (contour.markDeleted)
-			continue;
-
-		// TODO: number of outline pixels must be large
-		if (contour.outlinePixels.size() < 6)
-			continue;
-
-		cv::RotatedRect rotRec = cv::fitEllipse(contour.outlinePixels);
-		
-		auto minorAxis = std::min(rotRec.size.width, rotRec.size.height);
-		auto majorAxis = std::max(rotRec.size.width, rotRec.size.height);
-		float axisRatio = minorAxis / majorAxis;
-
-		const float minBlobAxisRatio = 0.1f; // blobs with lesser ratio are noise
-		if (axisRatio < minBlobAxisRatio)
-			contour.markDeleted = true;
-		else
-		{
-#if PW_DEBUG
-			cv::drawContours(imageNoSticks, contours, i, cv::Scalar::all(255), CV_FILLED);
-#endif
-		}
-	}
-
-	// remove closely positioned blobs
-	// meaning two swimmers can't be too close
-	for (size_t i = 0; i < contourInfos.size(); ++i)
-	{
-		auto& contour = contourInfos[i];
-		if (contour.markDeleted)
-			continue;
-
-		for (size_t neighInd = i+1; neighInd < contourInfos.size(); ++neighInd)
-		{
-			auto& neigh = contourInfos[neighInd];
-			if (neigh.markDeleted)
-				continue;
-			float distSqr = twoBlobsClosestDistanceSqr(contour.outlinePixels, neigh.outlinePixels);
-			const float minTwoSwimmersDistPix = PoolWatch::sqr(10);
-			if (distSqr < minTwoSwimmersDistPix)
-			{
-				neigh.markDeleted = true;
-			}
-		}
-	}
-
-#if PW_DEBUG
-	cv::Mat noCloseBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
-	for (size_t i = 0; i < contourInfos.size(); ++i)
-	{
-		CV_Assert(processedMerging[i]);
-		auto& contour = contourInfos[i];
-		if (contour.markDeleted)
-			continue;
-		contoursList[0] = contour.outlinePixels;
-		cv::drawContours(noCloseBlobs, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
-	}
-#endif
-
-	// pupulate results
-
-	cv::Mat curOutlineMat = cv::Mat::zeros(rows1, width, CV_8UC1); // minimal image extended to the size of the original image
-	std::vector<std::vector<cv::Point>> contoursListTmp(1);
-	int blobId = 1;
-	for (size_t i = 0; i < contourInfos.size(); ++i)
-	{
-		const auto& contour = contourInfos[i];
-		if (contour.markDeleted)
-			continue;
-
-		DetectedBlob blob;
-		blob.Id = blobId++;
-
-		cv::Rect bnd = cv::boundingRect(contour.outlinePixels);
-		blob.BoundingBox = cv::Rect2f(bnd.x, bnd.y, bnd.width, bnd.height);
-
-		// draw shape without any noise that hit the bounding box
-		curOutlineMat.setTo(0);
-		contoursListTmp[0] = contour.outlinePixels;
-		cv::drawContours(curOutlineMat, contoursListTmp, 0, cv::Scalar::all(255), CV_FILLED);
-		//cv::Mat localImgOld = noTenuousBridges(Range(bnd.y, bnd.y + bnd.height), Range(bnd.x, bnd.x + bnd.width));
-		cv::Mat localImg = curOutlineMat(bnd).clone();
-		blob.FilledImage = localImg;
-
-		cv::Moments ms = cv::moments(localImg, true);
-		float cx = ms.m10 / ms.m00;
-		float cy = ms.m01 / ms.m00;
-		blob.Centroid = cv::Point2f(bnd.x + cx, bnd.y + cy);
-
-		// [N,2] of (Y,X) pairs, N=number of points
-		auto outlPix = cv::Mat_<int32_t>(contour.outlinePixels.size(), 2);
-		for (size_t i = 0; i < contour.outlinePixels.size(); ++i)
-		{
-			auto point = contour.outlinePixels[i];
-			outlPix(i, 0) = point.y;
-			outlPix(i, 1) = point.x;
-		}
-		blob.OutlinePixels = outlPix;
-
-		blob.AreaPix = contour.area;
-		
-		//
-		blobs.push_back(blob);
-	}
-}
-
-SwimmerDetector::SwimmerDetector()
+SwimmerDetector::SwimmerDetector(const std::shared_ptr<CameraProjectorBase> cameraProjector)
+: cameraProjector_(cameraProjector)
 {
 	cv::FileStorage fs;
 	//
@@ -520,9 +260,297 @@ void SwimmerDetector::getBlobs(const cv::Mat& image, const std::vector<DetectedB
 	cv::morphologyEx(fleshNoLaneSepsMat, fleshNoTenious, cv::MORPH_OPEN, sel);
 
 	// TODO: no water mask
-	// TODO: fixBlobs
 	cv::Mat waterMask = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
 	getHumanBodies(fleshNoTenious, waterMask, expectedBlobs, blobs);
+}
+
+void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
+{
+	int const& rows1 = image.rows;
+	int const& width = image.cols;
+
+	//cv::Mat_<uchar> nonWaterMask;
+	//cv::subtract(255, waterMask, nonWaterMask);
+
+	//// get image with bodies
+
+	//cv::Mat imageBody;
+	//image.copyTo(imageBody, nonWaterMask);
+
+	//cv::Mat imageBodyBin;
+	//cvtColor(imageBody, imageBodyBin, CV_BGR2GRAY);
+	//cv::threshold(imageBodyBin, imageBodyBin, 1, 255, cv::THRESH_BINARY);
+	//
+	//CV_Assert(imageBodyBin.channels() == 1);
+
+	//cv::Mat imageBodySplit = cv::Mat::zeros(imageBodyBin.rows, imageBodyBin.cols, CV_8UC1);
+	//splitBlobsAccordingToPreviousFrameBlobs(imageBodyBin, expectedBlobs, imageBodySplit);
+
+	//// =3 may be too small
+	//// =5 good
+	//const int narrowSize = 5;
+	//auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(narrowSize, narrowSize));
+
+	//// cut tenuous bridges between connected components
+	//cv::Mat noTenuousBridges = cv::Mat_<uchar>::zeros(rows1, width);
+	//cv::morphologyEx(imageBodySplit, noTenuousBridges, cv::MORPH_OPEN, sel);
+
+	cv::Mat noTenuousBridges = image;
+	// remove noise on a pixel level(too small / large components)
+
+	vector<ContourInfo> contourInfos;
+	vector<vector<cv::Point>> contours;
+	{
+		cv::findContours(noTenuousBridges.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+		contourInfos.resize(contours.size());
+
+		std::transform(begin(contours), end(contours), begin(contourInfos), [this](vector<cv::Point>& outlinePixels)
+		{
+			ContourInfo c;
+			//c.outlinePixels = std::move(outlinePixels);
+			c.outlinePixels = outlinePixels;
+			c.markDeleted = false;
+			fixContourInfo(c, *cameraProjector_);
+
+			return c;
+		});
+	}
+
+	// remove very small or large blobs
+
+#if PW_DEBUG
+	cv::Mat imageNoExtremeBlobs = cv::Mat_<uchar>::zeros(rows1, width);
+#endif
+
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		auto& contour = contourInfos[i];
+
+		// expect swimmer shape island to be in range
+		const int shapeMinAreaPixels = 6; // (in pixels) any patch below is noise
+		const int swimmerShapeAreaMax = 5000; // (in pixels) anything greater can't be a swimmer
+
+		if (contour.area >= shapeMinAreaPixels && contour.area < swimmerShapeAreaMax)
+		{
+#if PW_DEBUG
+			cv::drawContours(imageNoExtremeBlobs, contours, i, cv::Scalar::all(255), CV_FILLED);
+#endif
+		}
+		else
+			contour.markDeleted = true;
+	}
+
+	// merge small blobs around one large blob
+
+	// process from largest blob to smallest
+	std::sort(begin(contourInfos), end(contourInfos), [](const ContourInfo& c1, const ContourInfo& c2) { return std::greater<float>()(c1.area, c2.area); });
+
+	cv::Mat mergeBuffer = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
+	vector<cv::Point> mergedBlobsContour;
+	vector<uchar> processedMerging(contourInfos.size());
+	vector<vector<cv::Point>> contoursList(1);
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		auto& contour = contourInfos[i];
+		if (processedMerging[i])
+			continue;
+		if (contour.markDeleted)
+		{
+			processedMerging[i] = true;
+			continue;
+		}
+
+		// 0.3 is too large - far away head is undetected
+		// eg.head 20 cm x 20 cm = 0.04
+		// man of size 1m x 2m
+		float bodyAreaMin = 0.04;
+		float bodyHalfLenth = 1.5;
+
+		auto bodyHalfLenthPix = cameraProjector_->distanceWorldToCamera(contour.contourCentroidWorld, bodyHalfLenth);
+
+		for (size_t neighInd = 0; neighInd < contourInfos.size(); ++neighInd)
+		{
+			auto& neigh = contourInfos[neighInd];
+			if (neighInd == i) // skip current contour itself
+				continue;
+			if (neigh.markDeleted)
+			{
+				processedMerging[neighInd] = true;
+				continue;
+			}
+			if (processedMerging[neighInd])
+				continue;
+
+			auto vec = neigh.contourCentroid - contour.contourCentroid;
+			float dist = std::sqrt(vec.dot(vec));
+
+			if (dist < bodyHalfLenthPix)
+			{
+				auto color = cv::Scalar::all(255);
+
+				mergeBuffer.setTo(0);
+
+				contoursList[0] = contour.outlinePixels;
+				cv::drawContours(mergeBuffer, contoursList, 0, color, CV_FILLED);
+
+				contoursList[0] = neigh.outlinePixels;
+				cv::drawContours(mergeBuffer, contoursList, 0, color, CV_FILLED);
+
+				mergedBlobsContour.clear();
+				mergeBlobs(contour.outlinePixels, neigh.outlinePixels, mergeBuffer, mergedBlobsContour, 5);
+
+				// update two blobs infos
+				contour.outlinePixels = mergedBlobsContour;
+				fixContourInfo(contour, *cameraProjector_);
+				neigh.markDeleted = true;
+				processedMerging[neighInd] = true;
+			}
+		}
+
+		processedMerging[i] = true;
+	}
+
+#if PW_DEBUG
+	cv::Mat mergedBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		CV_Assert(processedMerging[i]);
+		auto& contour = contourInfos[i];
+		if (contour.markDeleted)
+			continue;
+		contoursList[0] = contour.outlinePixels;
+		cv::drawContours(mergedBlobs, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
+	}
+#endif
+
+	// remove elongated stripes created by lane markers and water 'blique'
+
+#if PW_DEBUG
+	cv::Mat imageNoSticks = cv::Mat_<uchar>::zeros(rows1, width);
+#endif
+
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		auto& contour = contourInfos[i];
+		if (contour.markDeleted)
+			continue;
+
+		// TODO: number of outline pixels must be large
+		if (contour.outlinePixels.size() < 6)
+			continue;
+
+		cv::RotatedRect rotRec = cv::fitEllipse(contour.outlinePixels);
+
+		auto minorAxis = std::min(rotRec.size.width, rotRec.size.height);
+		auto majorAxis = std::max(rotRec.size.width, rotRec.size.height);
+		float axisRatio = minorAxis / majorAxis;
+
+		const float minBlobAxisRatio = 0.1f; // blobs with lesser ratio are noise
+		if (axisRatio < minBlobAxisRatio)
+			contour.markDeleted = true;
+		else
+		{
+#if PW_DEBUG
+			cv::drawContours(imageNoSticks, contours, i, cv::Scalar::all(255), CV_FILLED);
+#endif
+		}
+	}
+
+	// remove closely positioned blobs
+	// meaning two swimmers can't be too close
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		auto& contour = contourInfos[i];
+		if (contour.markDeleted)
+			continue;
+
+		for (size_t neighInd = i + 1; neighInd < contourInfos.size(); ++neighInd)
+		{
+			auto& neigh = contourInfos[neighInd];
+			if (neigh.markDeleted)
+				continue;
+			tuple<float, int, int> minDist = twoBlobsClosestDistanceSqr(contour.outlinePixels, neigh.outlinePixels);
+			float distSqr = get<0>(minDist);
+			int minInd1 = get<1>(minDist);
+			int minInd2 = get<2>(minDist);
+
+			cv::Point posPix1 = contour.outlinePixels[minInd1];
+			cv::Point posPix2 =   neigh.outlinePixels[minInd2];
+
+			cv::Point3f posWorld1 = cameraProjector_->cameraToWorld(posPix1);
+			cv::Point3f posWorld2 = cameraProjector_->cameraToWorld(posPix2);
+
+			auto vec = posWorld1 - posWorld2;
+			auto distWorld = std::sqrt(vec.dot(vec));
+
+			const float minTwoSwimmersDist = 0.5; // min distance between two swimmers in meters
+			if (distWorld < minTwoSwimmersDist)
+			{
+				neigh.markDeleted = true;
+			}
+		}
+	}
+
+#if PW_DEBUG
+	cv::Mat noCloseBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		CV_Assert(processedMerging[i]);
+		auto& contour = contourInfos[i];
+		if (contour.markDeleted)
+			continue;
+		contoursList[0] = contour.outlinePixels;
+		cv::drawContours(noCloseBlobs, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
+	}
+#endif
+
+	// pupulate results
+
+	cv::Mat curOutlineMat = cv::Mat::zeros(rows1, width, CV_8UC1); // minimal image extended to the size of the original image
+	std::vector<std::vector<cv::Point>> contoursListTmp(1);
+	int blobId = 1;
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		const auto& contour = contourInfos[i];
+		if (contour.markDeleted)
+			continue;
+
+		DetectedBlob blob;
+		blob.Id = blobId++;
+
+		cv::Rect bnd = cv::boundingRect(contour.outlinePixels);
+		blob.BoundingBox = cv::Rect2f(bnd.x, bnd.y, bnd.width, bnd.height);
+
+		// draw shape without any noise that hit the bounding box
+		curOutlineMat.setTo(0);
+		contoursListTmp[0] = contour.outlinePixels;
+		cv::drawContours(curOutlineMat, contoursListTmp, 0, cv::Scalar::all(255), CV_FILLED);
+		//cv::Mat localImgOld = noTenuousBridges(Range(bnd.y, bnd.y + bnd.height), Range(bnd.x, bnd.x + bnd.width));
+		cv::Mat localImg = curOutlineMat(bnd).clone();
+		blob.FilledImage = localImg;
+
+		cv::Moments ms = cv::moments(localImg, true);
+		float cx = ms.m10 / ms.m00;
+		float cy = ms.m01 / ms.m00;
+		blob.Centroid = cv::Point2f(bnd.x + cx, bnd.y + cy);
+		blob.CentroidWorld = cameraProjector_->cameraToWorld(blob.Centroid);
+
+		// [N,2] of (Y,X) pairs, N=number of points
+		auto outlPix = cv::Mat_<int32_t>(contour.outlinePixels.size(), 2);
+		for (size_t i = 0; i < contour.outlinePixels.size(); ++i)
+		{
+			auto point = contour.outlinePixels[i];
+			outlPix(i, 0) = point.y;
+			outlPix(i, 1) = point.x;
+		}
+		blob.OutlinePixels = outlPix;
+
+		blob.AreaPix = contour.area;
+
+		//
+		blobs.push_back(blob);
+	}
 }
 
 void SwimmerDetector::trainLaneSeparatorClassifier(WaterClassifier& wc)
@@ -593,4 +621,3 @@ void SwimmerDetector::trainSkinClassifier(WaterClassifier& wc)
 	wc.trainWater(skinColorsMat, nonSkinColorsMat);
 	wc.initCache();
 }
-

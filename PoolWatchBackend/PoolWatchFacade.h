@@ -19,6 +19,12 @@ class CameraProjectorBase
 public:
 	virtual cv::Point2f worldToCamera(const cv::Point3f& world) const = 0;
 	virtual cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const = 0;
+
+	// Finds the area of shape in image(in pixels ^ 2) of an object with world position __worldPos__(in m)
+	float worldAreaToCamera(const cv::Point3f& worldPos, float worldArea) const;
+
+	// Calculates distance which has a segment of length worldDist at position worldPos when translating to camera coordinates.
+	float distanceWorldToCamera(const cv::Point3f& worldPos, float worldDist) const;
 };
 
 /// Class to map camera's image coordinates (X,Y in pixels) and swimming 

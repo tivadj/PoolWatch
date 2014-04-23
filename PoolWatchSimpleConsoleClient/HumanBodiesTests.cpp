@@ -37,7 +37,7 @@ namespace HumanBodiesTestsNS
 
 		vector<DetectedBlob> blobs;
 		vector<DetectedBlob> expectedBlobs;
-		getHumanBodies(imageSimple, i1WaterMask, expectedBlobs, blobs);
+		//getHumanBodies(imageSimple, i1WaterMask, expectedBlobs, blobs);
 	}
 
 	void testHumanDetectorSimple()
@@ -46,7 +46,7 @@ namespace HumanBodiesTestsNS
 		//cv::Mat image = cv::imread("data/MVI_3177_0127_640x476.png");
 		cv::Mat image = cv::imread("../../output/mvi3177_blueWomanLane3_Frame8.png");
 
-		SwimmerDetector sd;
+		SwimmerDetector sd(nullptr);
 
 		vector<DetectedBlob> blobs;
 		vector<DetectedBlob> expectedBlobs;

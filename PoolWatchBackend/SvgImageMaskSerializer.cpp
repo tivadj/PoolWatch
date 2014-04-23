@@ -15,7 +15,7 @@
 
 using namespace std;
 
-void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
+void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
 {
 	QFile file(svgFilePath.c_str());
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -101,7 +101,13 @@ void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeC
 			qDebug() << e.tagName();
 		}
 	}
+}
 
+void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
+{
+	loadImageAndMaskCore(svgFilePath, strokeColor, outImage, outMask);
+	CV_Assert(!outImage.empty());
+	CV_Assert(!outMask.empty());
 }
 
 void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)

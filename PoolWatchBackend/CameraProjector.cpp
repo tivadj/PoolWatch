@@ -1,11 +1,45 @@
 #include <vector>
 #include <iostream>
+#include <array>
+#include <cmath>
 
-#include "opencv2/core.hpp"
-#include "opencv2/calib3d.hpp"
+#include <opencv2/core.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
 
+#include "algos1.h"
 #include "PoolWatchFacade.h"
 using namespace std;
+
+float CameraProjectorBase::worldAreaToCamera(cv::Point3f const& worldPos, float worldArea) const
+{
+	float widthHf = std::sqrt(worldArea) / 2;
+
+	std::array<cv::Point3f, 4> ps;
+	ps[0] = worldPos + cv::Point3f(-widthHf, -widthHf, 0);
+	ps[1] = worldPos + cv::Point3f(-widthHf,  widthHf, 0);
+	ps[2] = worldPos + cv::Point3f( widthHf,  widthHf, 0);
+	ps[3] = worldPos + cv::Point3f( widthHf, -widthHf, 0);
+
+	// project body bounding box into camera
+	std::vector<cv::Point2f> cs(4);
+	cs[0] = worldToCamera(ps[0]);
+	cs[1] = worldToCamera(ps[1]);
+	cs[2] = worldToCamera(ps[2]);
+	cs[3] = worldToCamera(ps[3]);
+	float area = (float)cv::contourArea(cs, false);
+	return area;
+}
+
+float CameraProjectorBase::distanceWorldToCamera(const cv::Point3f& worldPos, float worldDist) const
+{
+	float worldArea = PoolWatch::sqr(worldDist / 2)*M_PI;
+
+	float camArea = worldAreaToCamera(worldPos, worldArea);
+
+	float camDist = std::sqrt(camArea / M_PI);
+	return camDist;
+}
 
 CameraProjector::CameraProjector()
 {
