@@ -31,6 +31,46 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 	log4cxx::LoggerPtr log_(log4cxx::Logger::getLogger("PW.App"));
 
+	bool guessCameraMat(const QString& videoFile, cv::Matx33f& cameraMat)
+	{
+		if (videoFile.startsWith("mvi", Qt::CaseInsensitive))
+		{
+			// Cannon D20 640x480
+			float cx = 323.07199373780122f;
+			float cy = 241.16033688735058f;
+			float fx = 526.96329424435044f;
+			float fy = 527.46802103114874f;
+
+			fillCameraMatrix(cx, cy, fx, fy, cameraMat);
+			return true;
+		}
+		return false;
+	}
+
+	bool getImageCalibrationPoints(const QString& videoFile, int frameOrd, std::vector<cv::Point3f>& worldPoints, std::vector<cv::Point2f>& imagePoints)
+	{
+		if (videoFile.startsWith("mvi", Qt::CaseInsensitive))
+		{
+			// top, origin(0, 0)
+			imagePoints.push_back(cv::Point2f(242, 166));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			//top, 4 marker
+			imagePoints.push_back(cv::Point2f(516, 156));
+			worldPoints.push_back(cv::Point3f(0, 10, CameraProjector::zeroHeight()));
+
+			//bottom, 2 marker
+			imagePoints.push_back(cv::Point2f(-71, 304));
+			worldPoints.push_back(cv::Point3f(25, 6, CameraProjector::zeroHeight()));
+
+			// bottom, 4 marker
+			imagePoints.push_back(cv::Point2f(730, 365));
+			worldPoints.push_back(cv::Point3f(25, 10, CameraProjector::zeroHeight()));
+			return true;
+		}
+		return false;
+	}
+
 	void trackVideoFileTest()
 	{
 		boost::filesystem::path srcDir("../../output");
@@ -125,6 +165,34 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			return;
 		}
 
+		// query camera matrix
+
+		cv::Matx33f cameraMat;
+		auto videoFileName = videoPath.filename().string(); 
+		if (guessCameraMat(videoFileName.c_str(), cameraMat))
+		{
+			LOG4CXX_ERROR(log_, "Camera matrix: from configuration");
+		}
+		else
+		{
+			// init as an "average" camera
+			float fovX = deg2rad(62);
+			float fovY = deg2rad(49);
+			float fx = -1;
+			float fy = -1;
+			float cx = -1;
+			float cy = -1;
+
+			approxCameraMatrix(frameWidth, frameHeight, fovX, fovY, cx, cy, fx, fy);
+			fillCameraMatrix(cx, cy, fx, fy, cameraMat);
+			LOG4CXX_ERROR(log_, "Camera matrix: average");
+		}
+		
+		LOG4CXX_ERROR(log_, "cx,cy=" <<cameraMat(0,2) <<"," <<cameraMat(1,2) << " fx,fy=" <<cameraMat(0,0) <<"," <<cameraMat(1,1));
+
+		std::vector<cv::Point3f> worldPoints;
+		std::vector<cv::Point2f> imagePoints;
+
 		// video processing loop
 
 		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
@@ -141,6 +209,17 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			cv::Mat& imageFrame = videoBuffer.requestNew();
 			bool readOp = videoCapture.read(imageFrame);
 			CV_Assert(readOp);
+
+			//
+			{
+				worldPoints.clear();
+				imagePoints.clear();
+				bool pointsFound = getImageCalibrationPoints(videoFileName.c_str(), frameOrd, worldPoints, imagePoints);
+				CV_Assert(pointsFound);
+
+				bool cameraOriented = cameraProjector->orientCamera(cameraMat, worldPoints, imagePoints);
+				CV_Assert(cameraOriented);
+			}
 
 			int readyFrameInd;
 			poolObserver.processCameraImage(frameOrd, imageFrame, &readyFrameInd);

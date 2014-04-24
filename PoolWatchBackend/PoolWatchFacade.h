@@ -14,6 +14,9 @@
 
 //#define PW_EXPORTS __declspec(dllexport)
 
+__declspec(dllexport) void approxCameraMatrix(int imageWidth, int imageHeight, float fovX, float fovY, float& cx, float& cy, float& fx, float& fy);
+__declspec(dllexport) void fillCameraMatrix(float cx, float cy, float fx, float fy, cv::Matx33f& cameraMatrix);
+
 class CameraProjectorBase
 {
 public:
@@ -42,9 +45,8 @@ private:
 public:
 	CameraProjector();
 	virtual ~CameraProjector();
-private:
-	void init();
 public:
+	bool orientCamera(const cv::Matx33f& cameraMat, const std::vector<cv::Point3f>& worldPoints, const std::vector<cv::Point2f>& imagePoints);
 	cv::Point2f worldToCamera(const cv::Point3f& world) const override;
 	cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const override;
 

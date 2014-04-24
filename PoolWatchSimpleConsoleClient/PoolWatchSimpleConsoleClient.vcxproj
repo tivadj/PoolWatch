@@ -103,6 +103,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CameraProjectorTests.cpp" />
     <ClCompile Include="PoolBoundaryDetectorTests.cpp" />
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="ProgramUtils.cpp" />
