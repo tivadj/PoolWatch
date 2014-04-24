@@ -51,7 +51,7 @@ public:
 	float getFps() { return fps_;  }
 
 private:
-	void growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float swimmerMaxShiftPerFrameM);
+	void growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs);
 
 	int compoundObservationId(const TrackHypothesisTreeNode& node);
 

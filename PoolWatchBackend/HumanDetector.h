@@ -26,7 +26,11 @@ class __declspec(dllexport) SwimmerDetector
 	std::unique_ptr<WaterClassifier> laneSeparatorClassifier_;
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
 public:
+	float bodyHalfLenth_;
+	float bodyHalfLenthPix_; // used for testing
+public:
 	SwimmerDetector(const std::shared_ptr<CameraProjectorBase> cameraProjector);
+	SwimmerDetector(int bodyHalfLenthPix); // used for testing
 	void getBlobs(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
 private:
 	void getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);

@@ -169,7 +169,7 @@ void splitBlobsAccordingToPreviousFrameBlobs(const cv::Mat& imageBodyBin, const 
 		imageBodySplit = imageBodyBin;
 }
 
-void fixContourInfo(ContourInfo& c, const CameraProjectorBase& cameraProjector)
+void fixContourInfo(ContourInfo& c, CameraProjectorBase* pCameraProjector)
 {
 	const auto& outlinePixels = c.outlinePixels;
 
@@ -181,13 +181,23 @@ void fixContourInfo(ContourInfo& c, const CameraProjectorBase& cameraProjector)
 	float countF = (float)outlinePixels.size();
 	c.contourCentroid = cv::Point2f(sum.x / countF, sum.y / countF);
 
-	c.contourCentroidWorld = cameraProjector.cameraToWorld(c.contourCentroid);
+	if (pCameraProjector != nullptr)
+		c.contourCentroidWorld = pCameraProjector->cameraToWorld(c.contourCentroid);
+	else
+		c.contourCentroidWorld = cv::Point3f(-1, -1, -1);
 }
 
 
 SwimmerDetector::SwimmerDetector(const std::shared_ptr<CameraProjectorBase> cameraProjector)
 : cameraProjector_(cameraProjector)
 {
+	// 0.3 is too large - far away head is undetected
+	// eg.head 20 cm x 20 cm = 0.04
+	// man of size 1m x 2m
+	//float bodyAreaMin = 0.04;
+	// 1.5 = blobs close to camera are merged with information sign
+	bodyHalfLenth_ = 0.5; // parameter to specify how much close blobs should be merged
+
 	cv::FileStorage fs;
 	//
 	auto FleshClassifierFileName = "skin_clasifier.yml";
@@ -226,6 +236,11 @@ SwimmerDetector::SwimmerDetector(const std::shared_ptr<CameraProjectorBase> came
 	{
 		laneSeparatorClassifier_ = WaterClassifier::read(fs);
 	}
+}
+
+SwimmerDetector::SwimmerDetector(int bodyHalfLenthPix) : SwimmerDetector(nullptr)
+{
+	bodyHalfLenthPix_ = bodyHalfLenthPix;
 }
 
 void SwimmerDetector::getBlobs(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
@@ -311,7 +326,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 			//c.outlinePixels = std::move(outlinePixels);
 			c.outlinePixels = outlinePixels;
 			c.markDeleted = false;
-			fixContourInfo(c, *cameraProjector_);
+			fixContourInfo(c, cameraProjector_.get());
 
 			return c;
 		});
@@ -361,13 +376,9 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 			continue;
 		}
 
-		// 0.3 is too large - far away head is undetected
-		// eg.head 20 cm x 20 cm = 0.04
-		// man of size 1m x 2m
-		float bodyAreaMin = 0.04;
-		float bodyHalfLenth = 1.5;
-
-		auto bodyHalfLenthPix = cameraProjector_->distanceWorldToCamera(contour.contourCentroidWorld, bodyHalfLenth);
+		auto bodyHalfLenthPix = bodyHalfLenthPix_; // default, used in testing scenarios
+		if (cameraProjector_ != nullptr)
+			cameraProjector_->distanceWorldToCamera(contour.contourCentroidWorld, bodyHalfLenth_);
 
 		for (size_t neighInd = 0; neighInd < contourInfos.size(); ++neighInd)
 		{
@@ -383,7 +394,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 				continue;
 
 			auto vec = neigh.contourCentroid - contour.contourCentroid;
-			float dist = std::sqrt(vec.dot(vec));
+			float dist = cv::norm(vec);
 
 			if (dist < bodyHalfLenthPix)
 			{
@@ -402,7 +413,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 				// update two blobs infos
 				contour.outlinePixels = mergedBlobsContour;
-				fixContourInfo(contour, *cameraProjector_);
+				fixContourInfo(contour, cameraProjector_.get());
 				neigh.markDeleted = true;
 				processedMerging[neighInd] = true;
 			}
@@ -459,35 +470,38 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 	// remove closely positioned blobs
 	// meaning two swimmers can't be too close
-	for (size_t i = 0; i < contourInfos.size(); ++i)
+	if (cameraProjector_ != nullptr)
 	{
-		auto& contour = contourInfos[i];
-		if (contour.markDeleted)
-			continue;
-
-		for (size_t neighInd = i + 1; neighInd < contourInfos.size(); ++neighInd)
+		for (size_t i = 0; i < contourInfos.size(); ++i)
 		{
-			auto& neigh = contourInfos[neighInd];
-			if (neigh.markDeleted)
+			auto& contour = contourInfos[i];
+			if (contour.markDeleted)
 				continue;
-			tuple<float, int, int> minDist = twoBlobsClosestDistanceSqr(contour.outlinePixels, neigh.outlinePixels);
-			float distSqr = get<0>(minDist);
-			int minInd1 = get<1>(minDist);
-			int minInd2 = get<2>(minDist);
 
-			cv::Point posPix1 = contour.outlinePixels[minInd1];
-			cv::Point posPix2 =   neigh.outlinePixels[minInd2];
-
-			cv::Point3f posWorld1 = cameraProjector_->cameraToWorld(posPix1);
-			cv::Point3f posWorld2 = cameraProjector_->cameraToWorld(posPix2);
-
-			auto vec = posWorld1 - posWorld2;
-			auto distWorld = std::sqrt(vec.dot(vec));
-
-			const float minTwoSwimmersDist = 0.5; // min distance between two swimmers in meters
-			if (distWorld < minTwoSwimmersDist)
+			for (size_t neighInd = i + 1; neighInd < contourInfos.size(); ++neighInd)
 			{
-				neigh.markDeleted = true;
+				auto& neigh = contourInfos[neighInd];
+				if (neigh.markDeleted)
+					continue;
+				tuple<float, int, int> minDist = twoBlobsClosestDistanceSqr(contour.outlinePixels, neigh.outlinePixels);
+				float distSqr = get<0>(minDist);
+				int minInd1 = get<1>(minDist);
+				int minInd2 = get<2>(minDist);
+
+				cv::Point posPix1 = contour.outlinePixels[minInd1];
+				cv::Point posPix2 = neigh.outlinePixels[minInd2];
+
+				cv::Point3f posWorld1 = cameraProjector_->cameraToWorld(posPix1);
+				cv::Point3f posWorld2 = cameraProjector_->cameraToWorld(posPix2);
+
+				auto vec = posWorld1 - posWorld2;
+				auto distWorld = cv::norm(vec);
+
+				const float minTwoSwimmersDist = 0.5; // min distance between two swimmers in meters
+				if (distWorld < minTwoSwimmersDist)
+				{
+					neigh.markDeleted = true;
+				}
 			}
 		}
 	}
@@ -534,7 +548,10 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		float cx = ms.m10 / ms.m00;
 		float cy = ms.m01 / ms.m00;
 		blob.Centroid = cv::Point2f(bnd.x + cx, bnd.y + cy);
-		blob.CentroidWorld = cameraProjector_->cameraToWorld(blob.Centroid);
+		if (cameraProjector_ != nullptr)
+			blob.CentroidWorld = cameraProjector_->cameraToWorld(blob.Centroid);
+		else
+			blob.CentroidWorld = cv::Point3f(-1, -1, -1);
 
 		// [N,2] of (Y,X) pairs, N=number of points
 		auto outlPix = cv::Mat_<int32_t>(contour.outlinePixels.size(), 2);

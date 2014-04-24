@@ -73,9 +73,7 @@ MultiHypothesisBlobTracker::~MultiHypothesisBlobTracker()
 void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& readyFrameInd,
 	std::vector<TrackChangePerFrame>& trackChanges)
 {
-	//swimmerMaxShiftM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
-	float swimmerMaxShiftM = (elapsedTimeMs * 0.001f) * swimmerMaxSpeed_ + shapeCentroidNoise_;
-	growTrackHyposhesisTree(frameInd, blobs, fps, swimmerMaxShiftM);
+	growTrackHyposhesisTree(frameInd, blobs, fps, elapsedTimeMs);
 
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
@@ -135,7 +133,7 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	std::copy(begin(blobs), end(blobs), begin(prevFrameBlobs));
 }
 
-void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float swimmerMaxShiftM)
+void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs)
 {
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
@@ -162,16 +160,23 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 		for (int blobInd = 0; blobInd<blobs.size(); ++blobInd)
 		{
 			const auto& blob = blobs[blobInd];
-
-			// constraint: blob can shift too much (can't leave the blob's gate)
-
 			cv::Point3f blobCentrWorld = blob.CentroidWorld;
-			auto dist = cv::norm(pLeaf->EstimatedPosWorld - blobCentrWorld);
-			if (dist > swimmerMaxShiftM)
-				continue;
+
+			// constraint: blob can't shift too much (can't leave the blob's gate)
+			{
+				//swimmerMaxShiftM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
+				float swimmerMaxShiftM = (elapsedTimeMs * 0.001f) * swimmerMaxSpeed_ + shapeCentroidNoise_;
+
+				auto dist = cv::norm(pLeaf->EstimatedPosWorld - blobCentrWorld);
+				if (dist > swimmerMaxShiftM)
+					continue;
+			}
 
 			// constraint: area can't change too much
-			if (pLeaf->ObservationInd != -1)
+			// TODO: area should be converted (and compared) to world coordinates
+			// works bad for swimmer detection based on skin color compared to one based on water color
+			// because skin based blobs tend to be smaller and the shape vary more dynamically
+			if (false && pLeaf->ObservationInd != -1)
 			{
 				assert(pLeaf->ObservationInd < prevFrameBlobs.size() && "Cache of blobs for the previous frame was not updated");
 				const auto& prevBlob = prevFrameBlobs[pLeaf->ObservationInd];
