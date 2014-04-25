@@ -19,7 +19,7 @@ boost::filesystem::path getSrcDir();
 boost::filesystem::path getTestResultsDir();
 
 boost::filesystem::path initTestMethodLogFolder(const std::string& className, const std::string& methodName);
-
+void PoolWatchBackendUnitTests_MethodInitilize();
 
 struct LogFileAppenderUnsubscriber
 {

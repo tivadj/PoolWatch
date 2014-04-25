@@ -35,7 +35,7 @@ boost::filesystem::path getTestResultsDir()
 	return g_testResultsDir;
 }
 
-TEST_MODULE_INITIALIZE(PoolWatchBackendUnitTests_Initialize)
+TEST_MODULE_INITIALIZE(PoolWatchBackendUnitTests_ModuleInitialize)
 {
 	Logger::WriteMessage("PoolWatchBackendUnitTests_Initialize");
 
@@ -50,8 +50,10 @@ TEST_MODULE_INITIALIZE(PoolWatchBackendUnitTests_Initialize)
 	outDir = boost::filesystem::absolute(outDir).normalize();
 	g_testResultsDir = outDir;
 	boost::filesystem::create_directory(outDir);
+}
 
-	//
+void PoolWatchBackendUnitTests_MethodInitilize()
+{
 	boost::filesystem::current_path("../../../MatlabProto");
 }
 

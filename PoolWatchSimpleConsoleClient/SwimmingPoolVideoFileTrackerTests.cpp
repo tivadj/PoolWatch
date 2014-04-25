@@ -31,6 +31,46 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 	log4cxx::LoggerPtr log_(log4cxx::Logger::getLogger("PW.App"));
 
+	bool guessCameraMat(const QString& videoFile, cv::Matx33f& cameraMat)
+	{
+		if (videoFile.startsWith("mvi", Qt::CaseInsensitive))
+		{
+			// Cannon D20 640x480
+			float cx = 323.07199373780122f;
+			float cy = 241.16033688735058f;
+			float fx = 526.96329424435044f;
+			float fy = 527.46802103114874f;
+
+			fillCameraMatrix(cx, cy, fx, fy, cameraMat);
+			return true;
+		}
+		return false;
+	}
+
+	bool getImageCalibrationPoints(const QString& videoFile, int frameOrd, std::vector<cv::Point3f>& worldPoints, std::vector<cv::Point2f>& imagePoints)
+	{
+		if (videoFile.startsWith("mvi", Qt::CaseInsensitive))
+		{
+			// top, origin(0, 0)
+			imagePoints.push_back(cv::Point2f(242, 166));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			//top, 4 marker
+			imagePoints.push_back(cv::Point2f(516, 156));
+			worldPoints.push_back(cv::Point3f(0, 10, CameraProjector::zeroHeight()));
+
+			//bottom, 2 marker
+			imagePoints.push_back(cv::Point2f(-71, 304));
+			worldPoints.push_back(cv::Point3f(25, 6, CameraProjector::zeroHeight()));
+
+			// bottom, 4 marker
+			imagePoints.push_back(cv::Point2f(730, 365));
+			worldPoints.push_back(cv::Point3f(25, 10, CameraProjector::zeroHeight()));
+			return true;
+		}
+		return false;
+	}
+
 	void trackVideoFileTest()
 	{
 		boost::filesystem::path srcDir("../../output");
@@ -45,17 +85,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		LOG4CXX_INFO(log_, "test info");
 		LOG4CXX_ERROR(log_, "test error");
 
-		// init water classifier
-
-		cv::FileStorage fs;
-		if (!fs.open("1.yml", cv::FileStorage::READ))
-		{
-			LOG4CXX_ERROR(log_, "Can't find file '1.yml' (change working directory)");
-			return;
-		}
-		auto pWc = WaterClassifier::read(fs);
-		WaterClassifier& wc = *pWc;
-
 		//
 
 		boost::filesystem::path videoPath = boost::filesystem::absolute("mvi3177_blueWomanLane3.avi", srcDir).normalize();
@@ -66,6 +95,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			return;
 		}
 
+		const int pruneWindow = 6;
 		float fps = (float)videoCapture.get(cv::CAP_PROP_FPS);
 		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -73,15 +103,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		LOG4CXX_INFO(log_, "opened " <<videoPath);
 		LOG4CXX_INFO(log_, "WxH=[" << frameWidth << " " << frameHeight << "] framesCount=" << framesCount <<" fps=" << fps);
-
-		//
-		const int pruneWindow = 6;
-		auto cameraProjector = make_shared<CameraProjector>();
-		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
-#if PW_DEBUG
-		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
-#endif
 
 		// prepare video writing
 
@@ -110,6 +131,67 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 #if PW_DEBUG
 		PaintHelper paintHelper;
 #endif
+		// prepare video observer
+
+		auto cameraProjector = make_shared<CameraProjector>();
+		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
+#if PW_DEBUG
+		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
+#endif
+		poolObserver.BlobsDetected = [&paintHelper, &videoWriterBlobs](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
+		{
+#if PW_DEBUG
+			// show blobs
+			auto blobsImageDbg = imageFamePoolOnly.clone();
+			for (const auto& blob : blobs)
+				paintHelper.paintBlob(blob, blobsImageDbg);
+			videoWriterBlobs.write(blobsImageDbg);
+#endif
+			if (log_->isDebugEnabled())
+			{
+				stringstream bld;
+				bld << "Found " << blobs.size() << " blobs" << endl;
+				for (const auto& blob : blobs)
+					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << " Area=" << blob.AreaPix << endl;
+				LOG4CXX_DEBUG(log_, bld.str());
+			}
+		};
+		
+		tuple<bool,std::string> initOp = poolObserver.init();
+		if (!get<0>(initOp))
+		{
+			LOG4CXX_ERROR(log_, get<1>(initOp));
+			return;
+		}
+
+		// query camera matrix
+
+		cv::Matx33f cameraMat;
+		auto videoFileName = videoPath.filename().string(); 
+		if (guessCameraMat(videoFileName.c_str(), cameraMat))
+		{
+			LOG4CXX_ERROR(log_, "Camera matrix: from configuration");
+		}
+		else
+		{
+			// init as an "average" camera
+			float fovX = deg2rad(62);
+			float fovY = deg2rad(49);
+			float fx = -1;
+			float fy = -1;
+			float cx = -1;
+			float cy = -1;
+
+			approxCameraMatrix(frameWidth, frameHeight, fovX, fovY, cx, cy, fx, fy);
+			fillCameraMatrix(cx, cy, fx, fy, cameraMat);
+			LOG4CXX_ERROR(log_, "Camera matrix: average");
+		}
+		
+		LOG4CXX_ERROR(log_, "cx,cy=" <<cameraMat(0,2) <<"," <<cameraMat(1,2) << " fx,fy=" <<cameraMat(0,0) <<"," <<cameraMat(1,1));
+
+		std::vector<cv::Point3f> worldPoints;
+		std::vector<cv::Point2f> imagePoints;
 
 		// video processing loop
 
@@ -128,49 +210,19 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			bool readOp = videoCapture.read(imageFrame);
 			CV_Assert(readOp);
 
-			// find water mask
-
-			cv::Mat_<uchar> waterMask;
-			classifyAndGetMask(imageFrame, [&wc](const cv::Vec3d& pix) -> bool
-			{
-				//bool b1 = wc.predict(pix);
-				bool b2 = wc.predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
-				//assert(b1 == b2);
-				return b2;
-			}, waterMask);
-
-
-			// find pool mask
-
-			cv::Mat_<uchar> poolMask;
-			getPoolMask(imageFrame, waterMask, poolMask);
-
-			cv::Mat imageFamePoolOnly = cv::Mat::zeros(imageFrame.rows, imageFrame.cols, imageFrame.type());
-			imageFrame.copyTo(imageFamePoolOnly, poolMask);
-
 			//
-			std::vector<DetectedBlob> blobs;
-			getHumanBodies(imageFamePoolOnly, waterMask, blobs);
-			fixBlobs(blobs, *cameraProjector);
-
-#if PW_DEBUG
-			// show blobs
-			auto blobsImageDbg = imageFamePoolOnly.clone();
-			for (const auto& blob : blobs)
-				paintHelper.paintBlob(blob, blobsImageDbg);
-			videoWriterBlobs.write(blobsImageDbg);
-#endif
-			if (log_->isDebugEnabled())
 			{
-				stringstream bld;
-				bld << "Found " << blobs.size() << " blobs" <<endl;
-				for (const auto& blob : blobs)
-					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << endl;
-				LOG4CXX_DEBUG(log_, bld.str());
+				worldPoints.clear();
+				imagePoints.clear();
+				bool pointsFound = getImageCalibrationPoints(videoFileName.c_str(), frameOrd, worldPoints, imagePoints);
+				CV_Assert(pointsFound);
+
+				bool cameraOriented = cameraProjector->orientCamera(cameraMat, worldPoints, imagePoints);
+				CV_Assert(cameraOriented);
 			}
 
 			int readyFrameInd;
-			poolObserver.processBlobs(frameOrd, blobs, &readyFrameInd);
+			poolObserver.processCameraImage(frameOrd, imageFrame, &readyFrameInd);
 
 			// visualize tracking
 

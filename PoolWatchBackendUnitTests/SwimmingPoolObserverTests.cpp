@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include <iostream>
+#include <numeric>
+#include <random>
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp> // imread
@@ -18,7 +20,6 @@
 #include "SwimmingPoolObserver.h"
 #include "TestingUtils.h"
 
-
 namespace PoolWatchBackendUnitTests
 {
 	using namespace cv;
@@ -31,6 +32,10 @@ namespace PoolWatchBackendUnitTests
 	TEST_CLASS(SwimmingPoolObserverTests)
 	{
 		const char* ClassName = "SwimmingPoolObserverTests";
+		TEST_METHOD_INITIALIZE(MethodInitialize)
+		{
+			PoolWatchBackendUnitTests_MethodInitilize();
+		}
 	public:
 		// two swimmers swim on parallel lanes in one direction
 		TEST_METHOD(parallelMovementTest)
@@ -174,11 +179,8 @@ namespace PoolWatchBackendUnitTests
 			Assert::IsTrue(std::get<0>(res2), std::get<1>(res2).c_str());
 		}
 		
-		TEST_METHOD(temporalDisappear1)
+		void temporalDisappear1Core(boost::filesystem::path outDir)
 		{
-			auto outDir = initTestMethodLogFolder(ClassName, "temporalDisappear1");
-			auto logFileScope = scopeLogFileAppenderNew(outDir);
-
 			const int pruneWindow = 2;
 			const float fps = 1;
 			auto cameraProjector = make_shared<LinearCameraProjector>();
@@ -199,12 +201,27 @@ namespace PoolWatchBackendUnitTests
 			std::vector<DetectedBlob> blobs;
 			cv::Point2f center1(1, 3);
 			int readyFrameInd = -1;
-			const int framesCount = 4;
+			const int framesCount = 5;
+
+			//std::vector<uchar> hasObservation(framesCount, 1);
+			//std::random_device rd;
+			//std::mt19937 g(rd());
+			//int noObsCount = g();
+			//if (noObsCount >= hasObservation.size()) noObsCount = noObsCount % hasObservation.size();
+			//for (int i = 0; i < noObsCount; ++i)
+			//	hasObservation[i] = 0;
+			//std::shuffle(begin(hasObservation), end(hasObservation), g);
+			//hasObservation[0] = 1;
+
 			for (int frameInd = 0; frameInd < framesCount; frameInd++)
 			{
 				blobs.clear();
 
-				if (frameInd == 2)
+				if (frameInd == 1 || frameInd == 3)
+				//if (frameInd == 2)
+				//if (frameInd % 2 == 0)
+				//if (frameInd >= 5 && frameInd < 15)
+				//if (!hasObservation[frameInd])
 				{
 					// no observations
 				}
@@ -234,6 +251,14 @@ namespace PoolWatchBackendUnitTests
 			Assert::AreEqual(framesCount, (int)pTrackHist1->Assignments.size());
 			auto& res1 = checkAll(pTrackHist1->Assignments, 3, [](const TrackChangePerFrame& c) { return c.ObservationPosPixExactOrApprox.y; });
 			Assert::IsTrue(std::get<0>(res1), std::get<1>(res1).c_str());
+		}
+
+		TEST_METHOD(temporalDisappear1)
+		{
+			boost::filesystem::path outDir = initTestMethodLogFolder(ClassName, "temporalDisappear1");
+			auto logFileScope = scopeLogFileAppenderNew(outDir);
+
+			temporalDisappear1Core(outDir);
 		}
 
 		TEST_METHOD(noMovementTest)

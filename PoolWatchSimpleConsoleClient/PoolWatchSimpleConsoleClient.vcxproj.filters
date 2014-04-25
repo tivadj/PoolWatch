@@ -37,13 +37,16 @@
     <ClCompile Include="PoolBoundaryDetectorTests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="HumanBodiesTests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="SwimmingPoolVideoFileTrackerTests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ProgramUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HumanDetectorTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraProjectorTests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

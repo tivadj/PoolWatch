@@ -98,6 +98,7 @@
     <ClInclude Include="algos1.h" />
     <ClInclude Include="algos_amp.cpp" />
     <ClInclude Include="CameraProjector.h" />
+    <ClInclude Include="HumanDetector.h" />
     <ClInclude Include="MatrixUndirectedGraph.h" />
     <ClInclude Include="MultiHypothesisBlobTracker.h" />
     <ClInclude Include="PoolWatchFacade.h" />

@@ -15,7 +15,7 @@
 
 using namespace std;
 
-void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
+void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
 {
 	QFile file(svgFilePath.c_str());
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -101,14 +101,32 @@ void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeC
 			qDebug() << e.tagName();
 		}
 	}
-
 }
 
-void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask)
+void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
+{
+	loadImageAndMaskCore(svgFilePath, strokeColor, outImage, outMask);
+	CV_Assert(!outImage.empty());
+	CV_Assert(!outMask.empty());
+}
+
+void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
 {
 	cv::Mat image;
-	cv::Mat_<bool> mask;
-	loadImageAndMask(svgFilePath.toStdString(), strokeStr, image, mask);
+	cv::Mat_<bool> maskOrig;
+	loadImageAndMask(svgFilePath.toStdString(), strokeStr, image, maskOrig);
+
+	cv::Mat_<bool> mask;;
+	if (inflateContourDelta != 0)
+	{
+		int op = inflateContourDelta > 0 ? cv::MORPH_DILATE : cv::MORPH_ERODE;
+
+		int r = inflateContourDelta;
+		auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(r, r));
+		cv::morphologyEx(maskOrig, mask, op, sel);
+	}
+	else
+		mask = maskOrig;
 
 	cv::Mat maskContinous = mask.reshape(1, 1);
 	cv::Mat imageContinous = image.reshape(1, 1);
@@ -138,7 +156,7 @@ void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr
 	}
 }
 
-void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask)
+void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
 {
 	QFileInfo fileInfo = QFileInfo(QString(folderPath.c_str()));
 	if (fileInfo.isDir())
@@ -152,12 +170,12 @@ void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter
 		for (int i = 0; i < files.count(); ++i)
 		{
 			QString svgAbsPath = dir.absoluteFilePath(files[i]);
-			loadWaterPixelsOne(svgAbsPath, strokeStr, pixels, invertMask);
+			loadWaterPixelsOne(svgAbsPath, strokeStr, pixels, invertMask, inflateContourDelta);
 		}
 	}
 	else if (fileInfo.isFile())
 	{
-		loadWaterPixelsOne(fileInfo.absoluteFilePath(), strokeStr, pixels, invertMask);
+		loadWaterPixelsOne(fileInfo.absoluteFilePath(), strokeStr, pixels, invertMask, inflateContourDelta);
 	}
 	else
 		return;

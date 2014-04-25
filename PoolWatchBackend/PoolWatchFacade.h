@@ -14,11 +14,20 @@
 
 //#define PW_EXPORTS __declspec(dllexport)
 
+__declspec(dllexport) void approxCameraMatrix(int imageWidth, int imageHeight, float fovX, float fovY, float& cx, float& cy, float& fx, float& fy);
+__declspec(dllexport) void fillCameraMatrix(float cx, float cy, float fx, float fy, cv::Matx33f& cameraMatrix);
+
 class CameraProjectorBase
 {
 public:
 	virtual cv::Point2f worldToCamera(const cv::Point3f& world) const = 0;
 	virtual cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const = 0;
+
+	// Finds the area of shape in image(in pixels ^ 2) of an object with world position __worldPos__(in m)
+	float worldAreaToCamera(const cv::Point3f& worldPos, float worldArea) const;
+
+	// Calculates distance which has a segment of length worldDist at position worldPos when translating to camera coordinates.
+	float distanceWorldToCamera(const cv::Point3f& worldPos, float worldDist) const;
 };
 
 /// Class to map camera's image coordinates (X,Y in pixels) and swimming 
@@ -36,9 +45,8 @@ private:
 public:
 	CameraProjector();
 	virtual ~CameraProjector();
-private:
-	void init();
 public:
+	bool orientCamera(const cv::Matx33f& cameraMat, const std::vector<cv::Point3f>& worldPoints, const std::vector<cv::Point2f>& imagePoints);
 	cv::Point2f worldToCamera(const cv::Point3f& world) const override;
 	cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const override;
 
@@ -101,7 +109,7 @@ struct TrackInfoHistory
 };
 
 __declspec(dllexport) void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask);
-__declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask = false);
+__declspec(dllexport) void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask = false, int inflateContourDelta = 0);
 
 __declspec(dllexport) void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
 

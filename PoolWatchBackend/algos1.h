@@ -11,6 +11,7 @@
 void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, std::vector<bool>& vertexSet);
 
 __declspec(dllexport) void classifyAndGetMask(const cv::Mat& image, std::function<bool(const cv::Vec3d&)>  pred, cv::Mat_<uchar>& mask);
+__declspec(dllexport) void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec3d&)> computeOne, cv::Mat_<double>& mask);
 
 struct IndependentSetValidationResult
 {
@@ -25,6 +26,15 @@ IndependentSetValidationResult validateMaximumWeightIndependentSet(const MatrixU
 double calculateVertexSetWeight(const MatrixUndirectedGraph& graph, const std::vector<bool>& vertexSet);
 
 std::tuple<MatrixUndirectedGraph, std::vector<int>> createFromEdgeList(const std::vector<int>& vertices, const std::vector<int>& edgeListByRow);
+
+namespace PoolWatch
+{
+	template <typename T>
+	auto sqr(const T& x) -> T
+	{
+		return x*x;
+	}
+}
 
 class EMQuick : public cv::EM
 {
@@ -50,3 +60,5 @@ public:
 		return this->logWeightDivDet;
 	}
 };
+
+

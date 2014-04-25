@@ -13,7 +13,17 @@ public:
 	int nClusters_;
 	int covMatType_;
 	cv::Mat cacheL;
+	cv::Mat cacheLFloat;
 	//cv::Mat_<double>& oneColor;
+	//
+	std::vector<float> invCovs1;
+	std::vector<float> invCovs2;
+	std::vector<double> invCovsDbl1;
+	std::vector<double> invCovsDbl2;
+	std::vector<float> meanFloats1;
+	std::vector<float> meanFloats2;
+	std::vector<float> logWeights1;
+	std::vector<float> logWeights2;
 public:
 	WaterClassifier(int nClusters, int covMatType);
 private:
@@ -23,11 +33,13 @@ public:
 	virtual ~WaterClassifier();
 	void trainWater(const cv::Mat_<double>& waterColors, const cv::Mat_<double>& nonWaterColors);
 	bool predict(const cv::Vec3d& pix);
+	bool predictFloat(const cv::Vec3f& pix);
+	double computeOne(const cv::Vec3d& pix, bool isFirst);
 
 	void write(cv::FileStorage& fs);
 	static std::unique_ptr<WaterClassifier> read(cv::FileStorage& fs);
 
-private:
+public:
 	void initCache();
 };
 
