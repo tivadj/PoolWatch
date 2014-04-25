@@ -6,3 +6,5 @@ build/
 *.sdf
 *.opensdf
 *.suo
+*.psess
+*.ipch

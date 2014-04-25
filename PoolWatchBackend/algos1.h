@@ -34,6 +34,8 @@ namespace PoolWatch
 	{
 		return x*x;
 	}
+
+	__declspec(dllexport) auto deg2rad(const float& degree) -> float;
 }
 
 class EMQuick : public cv::EM

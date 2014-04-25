@@ -125,7 +125,7 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <Target Name="PWSimpleConsoleClientDeploy" AfterTargets="Build">
-    <Copy SourceFiles="$(PoolWatchDir)build\x64\PWMatlabProxy\src\PWMatlabProxy.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />
+    <!--<Copy SourceFiles="$(PoolWatchDir)build\x64\PWMatlabProxy\src\PWMatlabProxy.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
     <!--Required to run Matlab's compiled dll-->
     <!--<Copy SourceFiles="$(MatlabDir)runtime\win64\mclmcrrt8_1.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
     <!--<Copy SourceFiles="$(MatlabDir)bin\win64\mclbase.dll " DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->

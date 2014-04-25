@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <functional> // std::reference_wrapper
 #include <hash_map>
 #include <set>
@@ -17,6 +18,14 @@
 using namespace std;
 using namespace Concurrency; // task_group
 using namespace cv;
+
+namespace PoolWatch
+{
+	auto deg2rad(const float& degree) -> float
+	{
+		return degree * M_PI / 180.0f;
+	}
+}
 
 void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, vector<bool>& vertexSet)
 {
