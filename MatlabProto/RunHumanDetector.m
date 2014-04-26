@@ -17,10 +17,10 @@ function run(obj)
     %RunHumanDetector.testCombiningSkinAndWaterClassifiers(obj,debug);
     %RunHumanDetector.testGluingBodyParts(obj, debug);
     %RunHumanDetector.visualizeHeadPixelsAsVolume(obj, debug);
-    %RunHumanDetector.testSegmentPoolBoundary(obj,debug);
-    RunHumanDetector.loadWaterNonWaterPixels(obj, debug);
-    RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
-    RunHumanDetector.testHowExpectMaxAlgDependsOnNumberOfMixtureComponents(obj, debug);
+    RunHumanDetector.testSegmentPoolBoundary(obj,debug);
+    %RunHumanDetector.loadWaterNonWaterPixels(obj, debug);
+    %RunHumanDetector.testWaterClassifierAsMixtureOfGaussians(obj, debug);
+    %RunHumanDetector.testHowExpectMaxAlgDependsOnNumberOfMixtureComponents(obj, debug);
 end
 
 % build human detector
@@ -300,16 +300,16 @@ function tryFindLaneDividers(imgNoHoles, lines2, vanishPoint, bndPolyline)
 end
 
 function testSegmentPoolBoundary(obj, debug)
-    i1=utils.VideoHelper.readFrameSingle(fullfile('../output/mvi3177_blueWomanLane3.avi'),741);
+    i1=utils.VideoHelper.readFrameSingle(fullfile('../../output/mvi3177_blueWomanLane3.avi'),741);
     %i1=imread(fullfile('../dinosaur/poolBoundary/MVI_3177_frame1.png'));
     imshow(i1);
 
-    imageCalibPnts = PoolBoundaryDetector.getCalibrationPoints(i1, obj.v.watClassifFun);
+    imageCalibPnts = PoolBoundaryDetector.getCalibrationPoints(i1, obj.v.watClassifFun, true);
     
     %RunHumanDetector.tryFindLaneDividers(imgNoHoles, lines2, vanishPoint, bndPolyline);
 end
 
-% Find cost of gluing segment(p1,p2) and segment(p3,p4).
+% Find cost of gluing segment(p1,p2) 1and segment(p3,p4).
 function cost = getTwoSegmentsGroupingCost(p1,p2, p3,p4)
     % find shortest distance
     allPoints = [p1; p2; p3; p4];
