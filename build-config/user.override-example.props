@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+This file specifies machine-specific pathes to dependent libraries
+Modify and copy this file as build-config\user.overide.props.
+-->
+
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+
+  <PropertyGroup Label="UserMacros">
+    <!--OpenCV folder which contains (bin, doc, include) subfolders-->
+    <OpenCVDir>c:\opencv\build\install\</OpenCVDir>
+    
+    <BoostDir>c:\boost_1_53_0\</BoostDir>
+    
+    <Log4cxxDir>c:\apache-log4cxx-0.10.0\</Log4cxxDir>
+
+    <!--QT folder which contains (lib, include) subfolders-->
+    <QtDir>c:\qt-everywhere-opensource-src-5.2.1\qtbase\</QtDir>
+
+    <GraphVizDir>c:\graphviz-2.36.0\</GraphVizDir>
+  </PropertyGroup>
+
+</Project>

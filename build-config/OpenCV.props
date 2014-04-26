@@ -3,7 +3,7 @@
   <ImportGroup Label="PropertySheets" />
 
   <PropertyGroup Label="UserMacros">
-    <OpenCVDir>C:\devb\cplex\opencv\build-msvc120-x64\install\</OpenCVDir>
+    <OpenCVDir Condition="'$(OpenCVDir)' == ''">C:\devb\cplex\opencv\build-msvc120-x64\install\</OpenCVDir>
     <OpenCVBinDir>$(OpenCVDir)x64\vc12\bin\</OpenCVBinDir>
     <OpenCVDllSuffix Condition="'$(Configuration)' == 'Debug'">d</OpenCVDllSuffix>
     <OpenCVDllSuffix Condition="'$(Configuration)' != 'Debug'"></OpenCVDllSuffix>

@@ -4,8 +4,7 @@
 
   
   <PropertyGroup Label="UserMacros">
-    <!--<QtDir>C:\progs\Qt\Qt5.2.1-msvc2012_64_opengl\5.2.1\msvc2012_64_opengl\</QtDir>-->
-    <QtDir>C:\progs\Qt\Qt5.2.1-msvc2013_64_opengl\qt-everywhere-opensource-src-5.2.1\qtbase\</QtDir>
+    <QtDir Condition="'$(QtDir)' == ''">C:\progs\Qt\Qt5.2.1-msvc2013_64_opengl\qt-everywhere-opensource-src-5.2.1\qtbase\</QtDir>
   </PropertyGroup>
 
   <PropertyGroup>

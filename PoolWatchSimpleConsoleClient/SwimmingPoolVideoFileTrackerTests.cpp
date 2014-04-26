@@ -49,7 +49,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 	bool getImageCalibrationPoints(const QString& videoFile, int frameOrd, std::vector<cv::Point3f>& worldPoints, std::vector<cv::Point2f>& imagePoints)
 	{
-		if (videoFile.startsWith("mvi", Qt::CaseInsensitive))
+		if (videoFile.startsWith("mvi_3177", Qt::CaseInsensitive))
 		{
 			// top, origin(0, 0)
 			imagePoints.push_back(cv::Point2f(242, 166));
@@ -68,15 +68,34 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			worldPoints.push_back(cv::Point3f(25, 10, CameraProjector::zeroHeight()));
 			return true;
 		}
+		else if (videoFile.startsWith("mvi_4635", Qt::CaseInsensitive))
+		{
+			// 640x480
+
+			// top-right
+			imagePoints.push_back(cv::Point2f(528, 111));
+			worldPoints.push_back(cv::Point3f(25, 0, CameraProjector::zeroHeight()));
+
+			// bottom-right is origin
+			imagePoints.push_back(cv::Point2f(654, 523));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			// top of flags string
+			imagePoints.push_back(cv::Point2f(414, 108));
+			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
+
+			// bottom of flags string
+			imagePoints.push_back(cv::Point2f(122, 88));
+			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
+			return true;
+		}
 		return false;
 	}
 
 	void trackVideoFileTest()
 	{
-		boost::filesystem::path srcDir("../../output");
-		
 		std::string timeStamp = PoolWatch::timeStampNow();
-		boost::filesystem::path outDir = srcDir / "debug" / timeStamp;
+		boost::filesystem::path outDir = boost::filesystem::path("../../output/debug") / timeStamp;
 		QDir outDirQ = QDir(outDir.string().c_str());
 
 		// 
@@ -86,8 +105,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		LOG4CXX_ERROR(log_, "test error");
 
 		//
-
-		boost::filesystem::path videoPath = boost::filesystem::absolute("mvi3177_blueWomanLane3.avi", srcDir).normalize();
+		//auto videoPathRel = "../../output/mvi3177_blueWomanLane3.avi";
+		auto videoPathRel = "../../dinosaur/mvi_4635_640x480.mp4";
+		boost::filesystem::path videoPath = boost::filesystem::absolute(videoPathRel).normalize();
 		cv::VideoCapture videoCapture(videoPath.string());
 		if (!videoCapture.isOpened())
 		{
@@ -171,7 +191,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		auto videoFileName = videoPath.filename().string(); 
 		if (guessCameraMat(videoFileName.c_str(), cameraMat))
 		{
-			LOG4CXX_ERROR(log_, "Camera matrix: from configuration");
+			LOG4CXX_INFO(log_, "Camera matrix: from configuration");
 		}
 		else
 		{
@@ -185,10 +205,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			approxCameraMatrix(frameWidth, frameHeight, fovX, fovY, cx, cy, fx, fy);
 			fillCameraMatrix(cx, cy, fx, fy, cameraMat);
-			LOG4CXX_ERROR(log_, "Camera matrix: average");
+			LOG4CXX_INFO(log_, "Camera matrix: average");
 		}
 		
-		LOG4CXX_ERROR(log_, "cx,cy=" <<cameraMat(0,2) <<"," <<cameraMat(1,2) << " fx,fy=" <<cameraMat(0,0) <<"," <<cameraMat(1,1));
+		LOG4CXX_INFO(log_, "cx,cy=" << cameraMat(0, 2) << "," << cameraMat(1, 2) << " fx,fy=" << cameraMat(0, 0) << "," << cameraMat(1, 1));
 
 		std::vector<cv::Point3f> worldPoints;
 		std::vector<cv::Point2f> imagePoints;
@@ -208,7 +228,11 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			cv::Mat& imageFrame = videoBuffer.requestNew();
 			bool readOp = videoCapture.read(imageFrame);
-			CV_Assert(readOp);
+			if (!readOp)
+			{
+				LOG4CXX_ERROR(log_, "Can't read video frame, frameOrd= " << frameOrd);
+				break;
+			}
 
 			//
 			{
@@ -219,6 +243,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 				bool cameraOriented = cameraProjector->orientCamera(cameraMat, worldPoints, imagePoints);
 				CV_Assert(cameraOriented);
+				
+				cv::Point3f cameraPos = cameraProjector->cameraPosition();
+				LOG4CXX_DEBUG(log_, "camera Pos" << cameraPos);
 			}
 
 			int readyFrameInd;

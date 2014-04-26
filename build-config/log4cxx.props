@@ -4,7 +4,7 @@
 
   
   <PropertyGroup Label="UserMacros">
-    <Log4cxxDir>C:\devb\cplex\log4cxx\apache-log4cxx-0.10.0\</Log4cxxDir>
+    <Log4cxxDir Condition="'$(Log4cxxDir)' == ''">C:\devb\cplex\log4cxx\apache-log4cxx-0.10.0\</Log4cxxDir>
     <Log4cxxBin Condition="'$(Configuration)' == 'Debug'">$(Log4cxxDir)projects\Debug\</Log4cxxBin>
     <Log4cxxBin Condition="'$(Configuration)' != 'Debug'">$(Log4cxxDir)projects\Release\</Log4cxxBin>
   </PropertyGroup>

@@ -2,7 +2,7 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
-    <BoostDir>C:\progs\boost_1_53_0\</BoostDir>
+    <BoostDir Condition="'$(BoostDir)' == ''">C:\progs\boost_1_53_0\</BoostDir>
     <BoostBinDir>$(BoostDir)lib\msvc120-x64-hh\lib\</BoostBinDir>
   </PropertyGroup>
   <PropertyGroup>

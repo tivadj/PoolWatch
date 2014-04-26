@@ -23,4 +23,6 @@
     </ClCompile>
   </ItemDefinitionGroup>
 
+  <!-- Allow a developer to override local pathes --> 
+  <Import Project="$(SolutionDir)user.override.props" />
 </Project>

@@ -49,6 +49,7 @@ public:
 	bool orientCamera(const cv::Matx33f& cameraMat, const std::vector<cv::Point3f>& worldPoints, const std::vector<cv::Point2f>& imagePoints);
 	cv::Point2f worldToCamera(const cv::Point3f& world) const override;
 	cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const override;
+	cv::Point3f cameraPosition() const;
 
 	static float zeroHeight() { return 0; }
 };

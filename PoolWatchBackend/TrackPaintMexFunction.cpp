@@ -1,3 +1,4 @@
+#if SAMPLE_MATLABPROX
 #include <vector>
 #include <tuple>
 #include <map>
@@ -378,3 +379,4 @@ void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, mxArray const* p
 		mexPrintf("%s", msg.c_str());
 	}
 }
+#endif

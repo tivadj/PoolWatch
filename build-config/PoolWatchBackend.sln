@@ -26,14 +26,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PoolWatchSimpleConsoleClien
 		{C6CFA10F-549C-44E5-AF6D-412E004003FA} = {C6CFA10F-549C-44E5-AF6D-412E004003FA}
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{ABE67612-C7D5-4820-B801-BA396706EC6D}"
-	ProjectSection(SolutionItems) = preProject
-		Performance1.psess = Performance1.psess
-		Performance2.psess = Performance2.psess
-		Performance3.psess = Performance3.psess
-		Performance4.psess = Performance4.psess
-	EndProjectSection
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PoolWatchBackendUnitTests", "..\PoolWatchBackendUnitTests\PoolWatchBackendUnitTests.vcxproj", "{E3EE3031-BCD8-4A60-936C-E71368D29990}"
 	ProjectSection(ProjectDependencies) = postProject
 		{C6CFA10F-549C-44E5-AF6D-412E004003FA} = {C6CFA10F-549C-44E5-AF6D-412E004003FA}

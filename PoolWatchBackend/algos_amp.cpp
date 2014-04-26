@@ -174,7 +174,7 @@ inline T computeGaussMixtureModelGen(int nclusters, const T* pMeans, const T* pI
 	for (int i = 0; i < nclusters; i++)
 	{
 		//T expL = std::exp(pCacheL[i] - maxLVal);
-		T expL = concurrency::precise_math::exp(pCacheL[i] - maxLVal);
+		T expL = concurrency::fast_math::exp(pCacheL[i] - maxLVal);
 		pCacheL[i] = expL;
 		expDiffSum += expL;
 	}
@@ -184,7 +184,7 @@ inline T computeGaussMixtureModelGen(int nclusters, const T* pMeans, const T* pI
 	//res[1] = label;
 
 	//T logProb = std::log(expDiffSum) + maxLVal - 0.5 * dim * CV_LOG2PI;
-	T logProb = concurrency::precise_math::log(expDiffSum) + maxLVal - 0.5 * dim * CV_LOG2PI;
+	T logProb = concurrency::fast_math::log(expDiffSum) + maxLVal - 0.5 * dim * CV_LOG2PI;
 
 	return logProb;
 }
