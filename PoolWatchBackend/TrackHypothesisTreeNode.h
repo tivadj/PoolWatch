@@ -37,6 +37,9 @@ struct TrackHypothesisTreeNode
 	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild);
 };
 
+// Enumerates nodes from leaf to root but no more than pruneWindow nodes.
+void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result);
+
 // Estimates the position of the blob given the state of the blob (position etc).
 class SwimmerMovementPredictor
 {

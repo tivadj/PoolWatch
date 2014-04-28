@@ -5,9 +5,7 @@
 
 #include <boost/filesystem/path.hpp>
 
-#include "PoolWatchFacade.h"
 #include "TrackHypothesisTreeNode.h"
-#include "KalmanFilterMovementPredictor.h"
 
 /** Represents a tracker which keeps a history of hypothesis to determine moving objects and their positions. */
 class __declspec(dllexport) MultiHypothesisBlobTracker
@@ -71,8 +69,7 @@ private:
 	// Finds the old and new root pair for given track path starting at leaf.
 	TrackHypothesisTreeNode* findNewFamilyRoot(TrackHypothesisTreeNode* leaf, int pruneWindow);
 
-	// Enumerates nodes from leaf to root but no more than pruneWindow nodes.
-	void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result) const;
+	//void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result) const;
 
 public:
 	// TODO: this method should return "hypothesis tree finalizer" object and client will query it to get the next layer of oldest track nodes

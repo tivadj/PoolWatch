@@ -60,3 +60,32 @@ std::unique_ptr<TrackHypothesisTreeNode> TrackHypothesisTreeNode::pullChild(Trac
 	}
 	return std::move(result);
 }
+
+void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result)
+{
+	assert(leaf != nullptr);
+	//assert(!isPseudoRoot(*leaf) && "Assume starting from terminal, not pseudo node");
+
+	// find new root
+	auto current = leaf;
+	int stepBack = 1;
+	while (true)
+	{
+		result.push_back(current);
+
+		if (stepBack == pruneWindow)
+			return;
+
+		//assert(current->Parent != nullptr && "Current node always have the parent node or pseudo root");
+
+		// stop if parent is the pseudo root
+		//if (isPseudoRoot(*current->Parent))
+		//	return;
+
+		current = current->Parent;
+		if (current == nullptr)
+			return;
+
+		stepBack++;
+	}
+}
