@@ -12,7 +12,7 @@
 
 #include "PoolWatchFacade.h"
 #include "MultiHypothesisBlobTracker.h"
-#include "HumanDetector.h"
+#include "SwimmerDetector.h"
 
 /** Decorates frame images with tracks pathes and swimmer shapes. */
 class __declspec(dllexport) SwimmingPoolObserver
