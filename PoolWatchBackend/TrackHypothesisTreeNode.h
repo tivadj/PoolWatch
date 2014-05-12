@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <memory>
+#include <tuple>
 #include <opencv2/core.hpp>
 #include <boost/optional.hpp>
 
@@ -15,6 +16,24 @@ enum class TrackHypothesisCreationReason
 
 std::string toString(TrackHypothesisCreationReason reason);
 
+#if DO_CACHE_ICL
+// Contains information about the conflicting observation for two hypothesis.
+struct ObservationConflict
+{
+	int FirstNodeId; // the id of this node (first node in the collision nodes pair)
+	int OtherFamilyRootId = -1; // the node and all its descendants with which first (this) node conflicts
+
+	int FrameInd; // frame with conflicting observation
+
+	// the observation index for which two hypothesis conflict; in case of multiple frames with conflicting observations, 
+	// this observation is for the lowest frameInd.
+	// The ObservationInd=-1 means that two hypothesis are children of the same parent which is a 'no observation' hypothesis
+	int ObservationInd;
+
+	ObservationConflict(int frameInd, int observationInd, int firstNodeId, int otherFamilyRootId) : FrameInd(frameInd), ObservationInd(observationInd), OtherFamilyRootId(otherFamilyRootId), FirstNodeId(firstNodeId) {}
+};
+#endif
+
 /** Represents node in the tree of hypothesis. */
 struct TrackHypothesisTreeNode
 {
@@ -24,11 +43,15 @@ struct TrackHypothesisTreeNode
 	std::vector<std::unique_ptr<TrackHypothesisTreeNode>> Children;
 	TrackHypothesisTreeNode* Parent;
 	int ObservationInd;
+	int ObservationOrNoObsId = -1;
 	int FrameInd;
 	cv::Point2f ObservationPos;      // in pixels
 	cv::Point3f ObservationPosWorld; // in meters
 	cv::Point3f EstimatedPosWorld;
 	TrackHypothesisCreationReason CreationReason;
+#if DO_CACHE_ICL
+	std::vector<ObservationConflict> IncompatibleNodes; // the list of nodes, this node is incompatible with
+#endif
 	cv::Mat_<float> KalmanFilterState; // [X, Y, vx, vy] in meters and m/sec
 	cv::Mat_<float> KalmanFilterStateCovariance;  // [4x4]
 

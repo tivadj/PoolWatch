@@ -97,7 +97,6 @@
   <ItemGroup>
     <ClInclude Include="algos1.h" />
     <ClInclude Include="algos_amp.cpp" />
-    <ClInclude Include="CameraProjector.h" />
     <ClInclude Include="GraphVizHypothesisTreeVisualizer.h" />
     <ClInclude Include="MatrixUndirectedGraph.h" />
     <ClInclude Include="MultiHypothesisBlobTracker.h" />

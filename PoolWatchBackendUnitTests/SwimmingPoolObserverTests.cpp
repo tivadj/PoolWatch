@@ -61,8 +61,7 @@ namespace PoolWatchBackendUnitTests
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
-			auto outDirPtr = make_shared<boost::filesystem::path>(outDir);
-			poolObserver.setLogDir(outDirPtr);
+			poolObserver.setLogDir(outDir);
 
 			std::vector<DetectedBlob> blobs;
 			cv::Point2f center1(1, 1);
@@ -134,8 +133,7 @@ namespace PoolWatchBackendUnitTests
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
-			auto outDirPtr = make_shared<boost::filesystem::path>(outDir);
-			poolObserver.setLogDir(outDirPtr);
+			poolObserver.setLogDir(outDir);
 
 			std::vector<DetectedBlob> blobs;
 			cv::Point2f center1(1, 3);
@@ -195,8 +193,7 @@ namespace PoolWatchBackendUnitTests
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
-			auto outDirPtr = make_shared<boost::filesystem::path>(outDir);
-			poolObserver.setLogDir(outDirPtr);
+			poolObserver.setLogDir(outDir);
 
 			std::vector<DetectedBlob> blobs;
 			cv::Point2f center1(1, 3);
@@ -280,8 +277,7 @@ namespace PoolWatchBackendUnitTests
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
-			auto outDirPtr = make_shared<boost::filesystem::path>(outDir);
-			poolObserver.setLogDir(outDirPtr);
+			poolObserver.setLogDir(outDir);
 
 			std::vector<DetectedBlob> blobs;
 			int readyFrameInd = -1;

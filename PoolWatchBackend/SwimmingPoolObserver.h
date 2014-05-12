@@ -31,9 +31,7 @@ public:
 	int trackMinDurationFrames_ = 2; // value>=1; each track must be longer (in frames) than this threshold
 	std::function<void(const std::vector<DetectedBlob>& blobs , const cv::Mat& imageFamePoolOnly)> BlobsDetected;
 private:
-#if PW_DEBUG
-	std::shared_ptr<boost::filesystem::path> logDir_;
-#endif
+	boost::filesystem::path logDir_;
 public:
 	SwimmingPoolObserver(std::unique_ptr<MultiHypothesisBlobTracker> blobTracker, std::shared_ptr<CameraProjectorBase> cameraProjector);
 	SwimmingPoolObserver(const SwimmingPoolObserver& tp) = delete;
@@ -62,12 +60,10 @@ private:
 	static cv::Scalar getTrackColor(const TrackInfoHistory& trackHist);
 	void adornImageInternal(int fromFrameOrd, int toFrameOrd, int trailLength, cv::Mat& resultImage);
 public:
-#if PW_DEBUG
-	void setLogDir(std::shared_ptr<boost::filesystem::path> dir)
+	void setLogDir(const boost::filesystem::path& dir)
 	{
 		logDir_ = dir;
 		blobTracker_->setLogDir(dir);
 	}
-#endif
 };
 

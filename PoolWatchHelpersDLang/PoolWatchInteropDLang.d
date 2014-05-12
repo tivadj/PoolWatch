@@ -198,10 +198,10 @@ extern (C) int computeConnectedComponentsCount(int* pEdgeListColumnwise, int edg
 	return result;
 }
 
-// encodedTree = for example, [1, 86, -1 , 2, 87, -1, 21, 91, 22, 92, -2, 3, 88, -2, -2]
+// encodedTree = for example, [1, 86, -2 , 2, 87, -2, 21, 91, 22, 92, -3, 3, 88, -3]
 // $(D collisionIgnoreNodeId) is not taken into account, when calculating incompatibility graph (this id represent eg. rootId)
 extern (C) 
-Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, Int32Allocator allocator)
+Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, int noObservationId, Int32Allocator allocator)
 {
 	int32_t* p1;
 	debug(PRINTF) printf("size=%d\n", p1.sizeof);
@@ -217,7 +217,8 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 	struct HypothesisNode
 	{
 		int NodeId;
-		int ObservationId;
+		int FrameInd;
+		int ObservationInd;
 		//NcaNodeDataT NcaData;
 	}
 	alias RootedUndirectedTree!HypothesisNode RootedTreeT;
@@ -230,13 +231,14 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 		return &tree.nodePayload(node);
 	};
 
-	int[2] nodeDataEntriesBuff;
+	int[3] nodeDataEntriesBuff;
 	auto nullNode = tree.root;
 	auto initNodeDataFun = delegate void(RootedTreeT.NodeId node)
 	{
 		HypothesisNode* data = &tree.nodePayload(node);
 		data.NodeId = nodeDataEntriesBuff[0];
-		data.ObservationId = nodeDataEntriesBuff[1];
+		data.FrameInd = nodeDataEntriesBuff[1];
+		data.ObservationInd = nodeDataEntriesBuff[2];
 	};
 	parseTree(tree, nullNode, encodedTree, openBracketLex, closeBracketLex, nodeDataEntriesBuff, initNodeDataFun);
 	debug(PRINTF) mxArrayFuns.logDebug("parsed tree:\n".toStringz);
@@ -298,7 +300,13 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 	// check compatibility of each pair of tracks
 	scope SList!(Tuple!(int,int)) edgeList;
 	int edgesCount = 0;
-	bool[int] observIdSet; // 
+
+	struct FrameAndObsInd
+	{
+		int FrameInd;
+		int ObservationInd;
+	}
+	bool[FrameAndObsInd] observIdSet; // 
 
 	for (int n1=0; n1 < leaves.length-1; n1++)
 	{
@@ -307,6 +315,7 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 		//writeln("leaf1ObservId=", leaf1Data.ObservationId);
 
 		// populate set of observationIds for the first leaf
+		// NOTE: two hypothesis can't conflict on 'no observation'
 
 		observIdSet.clear;
 
@@ -319,8 +328,14 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 				if (nodeId == collisionIgnoreNodeId)
 					break;
 
-				auto obsId = data.ObservationId;
-				observIdSet[obsId] = true;
+				auto frameInd = data.FrameInd;
+				auto obsInd = data.ObservationInd;
+				//if (obsId == noObservationId)
+				//    continue;
+				FrameAndObsInd conflictObs;
+				conflictObs.FrameInd = frameInd;
+				conflictObs.ObservationInd = obsInd;
+				observIdSet[conflictObs] = true;
 			}
 		};
 		populateBranchObservationIds(tree, leaf1);
@@ -347,10 +362,18 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 				if (internalNode2Data.NodeId == collisionIgnoreNodeId)
 					break;
 
-				auto obsId2 = internalNode2Data.ObservationId;
+				auto frameInd2 = internalNode2Data.FrameInd;
+				auto obsInd2 = internalNode2Data.ObservationInd;
 				//writeln("node2 ObservId=", obsId2);
 
-				auto collide = observIdSet.get(obsId2, false);
+				//if (obsId2 == noObservationId)
+				//    continue;
+
+				FrameAndObsInd conflictObs2;
+				conflictObs2.FrameInd = frameInd2;
+				conflictObs2.ObservationInd = obsInd2;
+
+				auto collide = observIdSet.get(conflictObs2, false);
 				if (collide)
 				{
 					isCollision = true;

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono> // std::chrono::system_clock
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp> // imread
@@ -115,7 +116,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			return;
 		}
 
-		const int pruneWindow = 6;
 		float fps = (float)videoCapture.get(cv::CAP_PROP_FPS);
 		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -132,42 +132,41 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int sourceFourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
 		videoWriter.open(outVideoPath.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
 
-#if PW_DEBUG
+		cv::VideoWriter* videoWriterBlobsOrNull = nullptr;
+#if LOG_DEBUG_EX
 		boost::filesystem::path videoPathBlobs = outDir / "blobs.avi";
 
 		cv::VideoWriter videoWriterBlobs;
 		videoWriterBlobs.open(videoPathBlobs.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
+		videoWriterBlobsOrNull = &videoWriterBlobs;
 #endif
 
-		// store recent video frames to adorn the correct one with track info
-
-		PoolWatch::CyclicHistoryBuffer<cv::Mat> videoBuffer(pruneWindow + 1);
-		videoBuffer.init([=](size_t index, cv::Mat& frame)
-		{
-			frame = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
-		});
-
 		//
-#if PW_DEBUG
+		PaintHelper* paintHelperOrNull = nullptr;
+#if LOG_DEBUG_EX
 		PaintHelper paintHelper;
+		paintHelperOrNull = &paintHelper;
 #endif
 		// prepare video observer
 
+		const int pruneWindow = 8;
+		const int NewTrackDelay = 7;
 		auto cameraProjector = make_shared<CameraProjector>();
 		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+		blobTracker->initNewTrackDelay_ = NewTrackDelay;
 		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
-#if PW_DEBUG
-		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
-#endif
-		poolObserver.BlobsDetected = [&paintHelper, &videoWriterBlobs](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
+		poolObserver.setLogDir(outDir);
+		poolObserver.BlobsDetected = [paintHelperOrNull, videoWriterBlobsOrNull](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
 		{
-#if PW_DEBUG
-			// show blobs
-			auto blobsImageDbg = imageFamePoolOnly.clone();
-			for (const auto& blob : blobs)
-				paintHelper.paintBlob(blob, blobsImageDbg);
-			videoWriterBlobs.write(blobsImageDbg);
-#endif
+			if (videoWriterBlobsOrNull != nullptr && paintHelperOrNull != nullptr)
+			{
+				// show blobs
+				auto blobsImageDbg = imageFamePoolOnly.clone();
+				for (const auto& blob : blobs)
+					paintHelperOrNull->paintBlob(blob, blobsImageDbg);
+				videoWriterBlobsOrNull->write(blobsImageDbg);
+			}
+
 			if (log_->isDebugEnabled())
 			{
 				stringstream bld;
@@ -184,6 +183,15 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			LOG4CXX_ERROR(log_, get<1>(initOp));
 			return;
 		}
+		LOG4CXX_INFO(log_, "PoolObserver pruneWindow=" << pruneWindow << " NewTrackDelay=" << NewTrackDelay);
+
+		// store recent video frames to adorn the correct one with track info
+
+		PoolWatch::CyclicHistoryBuffer<cv::Mat> videoBuffer(pruneWindow + 1);
+		videoBuffer.init([=](size_t index, cv::Mat& frame)
+		{
+			frame = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
+		});
 
 		// query camera matrix
 
@@ -220,7 +228,12 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
 		{
+			//if (frameOrd == 5)
+			//	break;
 			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " of " << framesCount);
+
+			typedef std::chrono::system_clock Clock;
+			std::chrono::time_point<Clock> now1 = Clock::now();
 
 			// TODO: tracking doesn't work when processing the same image repeatedly
 
@@ -275,6 +288,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				// do not write 'blank screen' here to keep original and tracks-adorned video streams in sync
 			}
 
+			std::chrono::time_point<Clock> now2 = Clock::now();
+			auto elapsedMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now2 - now1).count();
+			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " time=" << elapsedMilliseconds);
+
 			if (cv::waitKey(1) == 27)
 				break;
 		}
@@ -288,5 +305,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 	void run()
 	{
 		trackVideoFileTest();
+
+		//LOG4CXX_INFO(log_, "WAITING BEFORE EXIST");
+		//cv::waitKey(10000);
 	}
 }

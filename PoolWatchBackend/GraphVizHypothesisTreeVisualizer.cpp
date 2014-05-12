@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#ifdef HAVE_GRAPHVIZ
+#ifdef LOG_VISUAL_HYPOTHESIS_TREE
 extern "C"
 {
 #include <gvc.h>
@@ -86,7 +86,7 @@ void generateHypothesisLayoutTree(Agraph_t *g, Agnode_t* parentOrNull, const Tra
 
 void writeVisualHypothesisTree(const boost::filesystem::path& logDir, int frameInd, const std::string& fileNameTag, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, const TrackHypothesisTreeNode& root, int pruneWindow)
 {
-#ifdef HAVE_GRAPHVIZ
+#ifdef LOG_VISUAL_HYPOTHESIS_TREE
 	CV_Assert(!logDir.empty() && "Log directory must be set");
 
 	// prepare the set of new hypothesis
