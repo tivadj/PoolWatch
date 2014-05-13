@@ -57,7 +57,7 @@ struct TrackHypothesisTreeNode
 
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
-	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild);
+	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild, bool updateChildrenCollection = false);
 };
 
 // Enumerates nodes from leaf to root but no more than pruneWindow nodes.

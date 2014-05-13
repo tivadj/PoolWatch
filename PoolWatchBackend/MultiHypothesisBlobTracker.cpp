@@ -35,9 +35,7 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 	fps_(fps),
 	pruneWindow_(pruneWindow),
 	nextTrackCandidateId_(1),
-	swimmerMaxSpeed_(2.3f),         // max speed for swimmers 2.3m/s
-	//shapeCentroidNoise_(0.5f)
-	shapeCentroidNoise_(0.0f)
+	swimmerMaxSpeed_(2.3f)         // max speed for swimmers 2.3m/s
 {
 	CV_DbgAssert(fps > 0);
 	CV_DbgAssert(pruneWindow_ >= 0);
@@ -63,6 +61,8 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	std::vector<TrackChangePerFrame>& trackChanges)
 {
 	growTrackHyposhesisTree(frameInd, blobs, fps, elapsedTimeMs);
+
+	pruneLowScoreTracks(trackChanges);
 
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
@@ -248,6 +248,10 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 	for (int blobInd = 0; blobInd < (int)blobs.size(); ++blobInd)
 	{
 		const auto& blob = blobs[blobInd];
+
+		// NOTE: here we can't avoid allocating new track hypotheses for close blobs,
+		// because there is no way to choose the right blob.
+		// Multiple close track hypotheses should be handled in blob detector or by hypothesis tree pruning mechanism.
 
 		cv::Point3f blobCentrWorld = blob.CentroidWorld;
 
@@ -1203,6 +1207,49 @@ void MultiHypothesisBlobTracker::pruneHypothesisTree(int frameInd, const std::ve
 	for (auto& familtyRoot : newFamilyRoots)
 	{
 		trackHypothesisForestPseudoNode_.addChildNode(std::move(familtyRoot));
+	}
+}
+
+void MultiHypothesisBlobTracker::pruneLowScoreTracks(std::vector<TrackChangePerFrame>& trackChanges)
+{
+	vector<TrackHypothesisTreeNode*> leafSet;
+	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
+
+	for (TrackHypothesisTreeNode* pNode : leafSet)
+	{
+		const float TrackMinScore = 0;
+		if (pNode->Score < TrackMinScore)
+		{
+			// find the root of the subtree to remove
+			TrackHypothesisTreeNode* pNodeToRemove = pNode;
+			while(true)
+			{
+				auto parent = pNodeToRemove->Parent;
+				if (parent->Children.size() > 1)
+				{
+					// parent remains in the tree
+					// current node should be pruned
+					break;
+				}
+
+				if (isPseudoRoot(*parent))
+					break;
+				
+				pNodeToRemove = parent;
+			}
+
+			// remove child
+			auto parent = pNodeToRemove->Parent;
+			std::unique_ptr<TrackHypothesisTreeNode> pChild = std::move(parent->pullChild(pNodeToRemove, true));
+
+			// family was pruned?
+			if (isPseudoRoot(*parent))
+			{
+				TrackChangePerFrame change = createTrackChange(pChild.get());
+				change.UpdateType = TrackChangeUpdateType::Pruned;
+				trackChanges.push_back(change);
+			}
+		}
 	}
 }
 

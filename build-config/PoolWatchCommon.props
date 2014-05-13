@@ -31,8 +31,12 @@
       -->
       <PreprocessorDefinitions>DO_CACHE_ICLq;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <!-- The switch has a heavy impact on runtime performance. Code is not critical for runtime. -->
-      <PreprocessorDefinitions>LOG_DEBUG_EXq;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- 
+      Logs on a level greater then DEBUG.
+      Writes blobs in a separate video file.
+      The switch has a heavy impact on runtime performance. Code is not critical for runtime.
+      -->
+      <PreprocessorDefinitions>LOG_DEBUG_EX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
       <!--Dumping of hypothesis tree in visual format. LOG_DEBUG_EX must be turned on. Code is not critical for runtime.-->
       <PreprocessorDefinitions>LOG_VISUAL_HYPOTHESIS_TREEq;%(PreprocessorDefinitions)</PreprocessorDefinitions>

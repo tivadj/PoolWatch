@@ -35,7 +35,7 @@ private:
 	int nextTrackCandidateId_;
 public: // visible to a test module
 	float swimmerMaxSpeed_; // max swimmer speed in m/s (default=2.3)
-	float shapeCentroidNoise_; // constant to add to the max swimmer speed to get max possible swimmer shift
+	float shapeCentroidNoise_ = 0.5f; // constant to add to the max swimmer speed to get max possible swimmer shift
 	int initNewTrackDelay_ = 1; // value >= 1; generate new track each N frames
 private:
 	boost::filesystem::path logDir_;
@@ -93,6 +93,8 @@ private:
 	// Note, the changes from different tracks may be created for different previous frames.
 	// The earliest frame index from all track changes is 'readyFrameInd'.
 	void pruneHypothesisTree(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges, int pruneWindow);
+
+	void pruneLowScoreTracks(std::vector<TrackChangePerFrame>& trackChanges);
 
 	// Finds the old and new root pair for given track path starting at leaf.
 	TrackHypothesisTreeNode* findNewFamilyRoot(TrackHypothesisTreeNode* leaf, int pruneWindow);
