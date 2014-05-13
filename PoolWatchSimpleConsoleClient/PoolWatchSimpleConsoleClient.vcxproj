@@ -74,7 +74,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;PWMatlabProxy.lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -93,7 +93,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;PWMatlabProxy.lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>PoolWatchBackend$(LibSuffix).lib;mclmcrrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <Profile>true</Profile>
     </Link>
   </ItemDefinitionGroup>
@@ -125,7 +125,7 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <Target Name="PWSimpleConsoleClientDeploy" AfterTargets="Build">
-    <Copy SourceFiles="$(PoolWatchDir)build\x64\PWMatlabProxy\src\PWMatlabProxy.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />
+    <!--<Copy SourceFiles="$(PoolWatchDir)build\x64\PWMatlabProxy\src\PWMatlabProxy.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
     <!--Required to run Matlab's compiled dll-->
     <!--<Copy SourceFiles="$(MatlabDir)runtime\win64\mclmcrrt8_1.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->
     <!--<Copy SourceFiles="$(MatlabDir)bin\win64\mclbase.dll " DestinationFolder="$(OutDir)" SkipUnchangedFiles="True" />-->

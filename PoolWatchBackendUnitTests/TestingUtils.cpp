@@ -17,17 +17,11 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
-boost::filesystem::path g_srcDir;
 boost::filesystem::path g_testResultsDir;
 
 namespace PoolWatchBackendUnitTests
 {
 	log4cxx::LoggerPtr log_(log4cxx::Logger::getLogger("PW.Tests"));
-}
-
-boost::filesystem::path getSrcDir()
-{
-	return g_srcDir;
 }
 
 boost::filesystem::path getTestResultsDir()
@@ -37,19 +31,23 @@ boost::filesystem::path getTestResultsDir()
 
 TEST_MODULE_INITIALIZE(PoolWatchBackendUnitTests_ModuleInitialize)
 {
-	Logger::WriteMessage("PoolWatchBackendUnitTests_Initialize");
+	std::stringstream ss;
+	ss << "Unit tests started CD=" << boost::filesystem::current_path() <<std::endl;
+	Logger::WriteMessage(ss.str().c_str());
 
 	//
-	boost::filesystem::path srcDir("../../../../output");
-	srcDir = boost::filesystem::absolute(srcDir).normalize();
-	g_srcDir = srcDir;
-
-	//
+	boost::filesystem::path outDir("../../../../output/debugTests");
+	
 	std::string timeStamp = PoolWatch::timeStampNow();
-	boost::filesystem::path outDir = srcDir / "debugTests" / timeStamp;
+	outDir = outDir / timeStamp;
 	outDir = boost::filesystem::absolute(outDir).normalize();
 	g_testResultsDir = outDir;
-	boost::filesystem::create_directory(outDir);
+
+	boost::filesystem::create_directories(outDir);
+
+	ss.str("");
+	ss <<"Test results directory=" << outDir << std::endl;
+	Logger::WriteMessage(ss.str().c_str());
 }
 
 void PoolWatchBackendUnitTests_MethodInitilize()

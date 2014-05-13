@@ -134,7 +134,7 @@ void SwimmingPoolObserver::flushTrackHypothesis(int frameInd)
 		if (pruneWindow == 0)
 			bestTrackLeaves.clear(); // all leaves become invalid pointers
 
-#if PW_DEBUG_DETAIL
+#if LOG_VISUAL_HYPOTHESIS_TREE
 		std::stringstream bld;
 		bld <<"flush";
 		bld.fill('0');

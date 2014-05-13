@@ -1,3 +1,4 @@
+#if SAMPLE_MATLABPROX
 #include "mex.h"
 #include <vector>
 #include <array>
@@ -126,3 +127,5 @@ void MaxWeightInependentSetMaxFirstMexFunction(int nlhs, mxArray* plhs[], int nr
 		plhs[0] = outMask;
 	}
 }
+
+#endif

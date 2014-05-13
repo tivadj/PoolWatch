@@ -8,7 +8,7 @@
 
 #include <boost/filesystem.hpp>
 
-#include "HumanDetector.h"
+#include "SwimmerDetector.h"
 #include "SwimmingPoolObserver.h"
 #include "algos1.h"
 
@@ -314,8 +314,8 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 	// remove noise on a pixel level(too small / large components)
 
 	vector<ContourInfo> contourInfos;
-	vector<vector<cv::Point>> contours;
 	{
+		vector<vector<cv::Point>> contours;
 		cv::findContours(noTenuousBridges.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 
 		contourInfos.resize(contours.size());
@@ -324,13 +324,15 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		{
 			ContourInfo c;
 			//c.outlinePixels = std::move(outlinePixels);
-			c.outlinePixels = outlinePixels;
+			c.outlinePixels = std::move(outlinePixels);
 			c.markDeleted = false;
 			fixContourInfo(c, cameraProjector_.get());
 
 			return c;
 		});
 	}
+
+	vector<vector<cv::Point>> singleContourTmp(1);
 
 	// remove very small or large blobs
 
@@ -349,7 +351,8 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		if (contour.area >= shapeMinAreaPixels && contour.area < swimmerShapeAreaMax)
 		{
 #if PW_DEBUG
-			cv::drawContours(imageNoExtremeBlobs, contours, i, cv::Scalar::all(255), CV_FILLED);
+			singleContourTmp[0] = contour.outlinePixels;
+			cv::drawContours(imageNoExtremeBlobs, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 #endif
 		}
 		else
@@ -364,7 +367,6 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 	cv::Mat mergeBuffer = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
 	vector<cv::Point> mergedBlobsContour;
 	vector<uchar> processedMerging(contourInfos.size());
-	vector<vector<cv::Point>> contoursList(1);
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
 		auto& contour = contourInfos[i];
@@ -402,11 +404,11 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 				mergeBuffer.setTo(0);
 
-				contoursList[0] = contour.outlinePixels;
-				cv::drawContours(mergeBuffer, contoursList, 0, color, CV_FILLED);
+				singleContourTmp[0] = contour.outlinePixels;
+				cv::drawContours(mergeBuffer, singleContourTmp, 0, color, CV_FILLED);
 
-				contoursList[0] = neigh.outlinePixels;
-				cv::drawContours(mergeBuffer, contoursList, 0, color, CV_FILLED);
+				singleContourTmp[0] = neigh.outlinePixels;
+				cv::drawContours(mergeBuffer, singleContourTmp, 0, color, CV_FILLED);
 
 				mergedBlobsContour.clear();
 				mergeBlobs(contour.outlinePixels, neigh.outlinePixels, mergeBuffer, mergedBlobsContour, 5);
@@ -430,8 +432,8 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		auto& contour = contourInfos[i];
 		if (contour.markDeleted)
 			continue;
-		contoursList[0] = contour.outlinePixels;
-		cv::drawContours(mergedBlobs, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
+		singleContourTmp[0] = contour.outlinePixels;
+		cv::drawContours(mergedBlobs, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 	}
 #endif
 
@@ -463,14 +465,16 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		else
 		{
 #if PW_DEBUG
-			cv::drawContours(imageNoSticks, contours, i, cv::Scalar::all(255), CV_FILLED);
+			singleContourTmp[0] = contour.outlinePixels;
+			cv::drawContours(imageNoSticks, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 #endif
 		}
 	}
 
 	// remove closely positioned blobs
 	// meaning two swimmers can't be too close
-	if (cameraProjector_ != nullptr)
+	// false=number of 'false negatives' is increased (the case, when two swimmers swim on parallel close lines)
+	if (false && cameraProjector_ != nullptr)
 	{
 		for (size_t i = 0; i < contourInfos.size(); ++i)
 		{
@@ -514,15 +518,14 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		auto& contour = contourInfos[i];
 		if (contour.markDeleted)
 			continue;
-		contoursList[0] = contour.outlinePixels;
-		cv::drawContours(noCloseBlobs, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
+		singleContourTmp[0] = contour.outlinePixels;
+		cv::drawContours(noCloseBlobs, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 	}
 #endif
 
 	// pupulate results
 
 	cv::Mat curOutlineMat = cv::Mat::zeros(rows1, width, CV_8UC1); // minimal image extended to the size of the original image
-	std::vector<std::vector<cv::Point>> contoursListTmp(1);
 	int blobId = 1;
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
@@ -538,8 +541,8 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 		// draw shape without any noise that hit the bounding box
 		curOutlineMat.setTo(0);
-		contoursListTmp[0] = contour.outlinePixels;
-		cv::drawContours(curOutlineMat, contoursListTmp, 0, cv::Scalar::all(255), CV_FILLED);
+		singleContourTmp[0] = contour.outlinePixels;
+		cv::drawContours(curOutlineMat, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 		//cv::Mat localImgOld = noTenuousBridges(Range(bnd.y, bnd.y + bnd.height), Range(bnd.x, bnd.x + bnd.width));
 		cv::Mat localImg = curOutlineMat(bnd).clone();
 		blob.FilledImage = localImg;

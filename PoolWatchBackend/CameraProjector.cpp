@@ -154,3 +154,11 @@ cv::Point3f CameraProjector::cameraToWorld(const cv::Point2f& imagePos) const
 	float z = reW1(2) / reW1(3);
 	return cv::Point3f(x, y, z);
 }
+
+cv::Point3f CameraProjector::cameraPosition() const
+{
+	float x = cameraToWorld44_(0, 3);
+	float y = cameraToWorld44_(1, 3);
+	float z = cameraToWorld44_(2, 3);
+	return cv::Point3f(x, y, z);
+}

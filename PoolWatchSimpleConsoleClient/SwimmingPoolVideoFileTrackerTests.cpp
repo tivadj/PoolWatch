@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono> // std::chrono::system_clock
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp> // imread
@@ -49,7 +50,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 	bool getImageCalibrationPoints(const QString& videoFile, int frameOrd, std::vector<cv::Point3f>& worldPoints, std::vector<cv::Point2f>& imagePoints)
 	{
-		if (videoFile.startsWith("mvi", Qt::CaseInsensitive))
+		if (videoFile.startsWith("mvi_3177", Qt::CaseInsensitive))
 		{
 			// top, origin(0, 0)
 			imagePoints.push_back(cv::Point2f(242, 166));
@@ -68,15 +69,34 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			worldPoints.push_back(cv::Point3f(25, 10, CameraProjector::zeroHeight()));
 			return true;
 		}
+		else if (videoFile.startsWith("mvi_4635", Qt::CaseInsensitive))
+		{
+			// 640x480
+
+			// top-right
+			imagePoints.push_back(cv::Point2f(528, 111));
+			worldPoints.push_back(cv::Point3f(25, 0, CameraProjector::zeroHeight()));
+
+			// bottom-right is origin
+			imagePoints.push_back(cv::Point2f(654, 523));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			// top of flags string
+			imagePoints.push_back(cv::Point2f(414, 108));
+			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
+
+			// bottom of flags string
+			imagePoints.push_back(cv::Point2f(122, 88));
+			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
+			return true;
+		}
 		return false;
 	}
 
 	void trackVideoFileTest()
 	{
-		boost::filesystem::path srcDir("../../output");
-		
 		std::string timeStamp = PoolWatch::timeStampNow();
-		boost::filesystem::path outDir = srcDir / "debug" / timeStamp;
+		boost::filesystem::path outDir = boost::filesystem::path("../../output/debug") / timeStamp;
 		QDir outDirQ = QDir(outDir.string().c_str());
 
 		// 
@@ -86,8 +106,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		LOG4CXX_ERROR(log_, "test error");
 
 		//
-
-		boost::filesystem::path videoPath = boost::filesystem::absolute("mvi3177_blueWomanLane3.avi", srcDir).normalize();
+		//auto videoPathRel = "../../output/mvi3177_blueWomanLane3.avi";
+		auto videoPathRel = "../../dinosaur/mvi_4635_640x480.mp4";
+		boost::filesystem::path videoPath = boost::filesystem::absolute(videoPathRel).normalize();
 		cv::VideoCapture videoCapture(videoPath.string());
 		if (!videoCapture.isOpened())
 		{
@@ -95,7 +116,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			return;
 		}
 
-		const int pruneWindow = 6;
 		float fps = (float)videoCapture.get(cv::CAP_PROP_FPS);
 		int frameWidth = (int)videoCapture.get(cv::CAP_PROP_FRAME_WIDTH);
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -112,42 +132,41 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int sourceFourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
 		videoWriter.open(outVideoPath.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
 
-#if PW_DEBUG
+		cv::VideoWriter* videoWriterBlobsOrNull = nullptr;
+#if LOG_DEBUG_EX
 		boost::filesystem::path videoPathBlobs = outDir / "blobs.avi";
 
 		cv::VideoWriter videoWriterBlobs;
 		videoWriterBlobs.open(videoPathBlobs.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
+		videoWriterBlobsOrNull = &videoWriterBlobs;
 #endif
 
-		// store recent video frames to adorn the correct one with track info
-
-		PoolWatch::CyclicHistoryBuffer<cv::Mat> videoBuffer(pruneWindow + 1);
-		videoBuffer.init([=](size_t index, cv::Mat& frame)
-		{
-			frame = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
-		});
-
 		//
-#if PW_DEBUG
+		PaintHelper* paintHelperOrNull = nullptr;
+#if LOG_DEBUG_EX
 		PaintHelper paintHelper;
+		paintHelperOrNull = &paintHelper;
 #endif
 		// prepare video observer
 
+		const int pruneWindow = 8;
+		const int NewTrackDelay = 7;
 		auto cameraProjector = make_shared<CameraProjector>();
 		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+		blobTracker->initNewTrackDelay_ = NewTrackDelay;
 		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
-#if PW_DEBUG
-		poolObserver.setLogDir(std::make_shared<boost::filesystem::path>(outDir));
-#endif
-		poolObserver.BlobsDetected = [&paintHelper, &videoWriterBlobs](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
+		poolObserver.setLogDir(outDir);
+		poolObserver.BlobsDetected = [paintHelperOrNull, videoWriterBlobsOrNull](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
 		{
-#if PW_DEBUG
-			// show blobs
-			auto blobsImageDbg = imageFamePoolOnly.clone();
-			for (const auto& blob : blobs)
-				paintHelper.paintBlob(blob, blobsImageDbg);
-			videoWriterBlobs.write(blobsImageDbg);
-#endif
+			if (videoWriterBlobsOrNull != nullptr && paintHelperOrNull != nullptr)
+			{
+				// show blobs
+				auto blobsImageDbg = imageFamePoolOnly.clone();
+				for (const auto& blob : blobs)
+					paintHelperOrNull->paintBlob(blob, blobsImageDbg);
+				videoWriterBlobsOrNull->write(blobsImageDbg);
+			}
+
 			if (log_->isDebugEnabled())
 			{
 				stringstream bld;
@@ -164,6 +183,15 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			LOG4CXX_ERROR(log_, get<1>(initOp));
 			return;
 		}
+		LOG4CXX_INFO(log_, "PoolObserver pruneWindow=" << pruneWindow << " NewTrackDelay=" << NewTrackDelay);
+
+		// store recent video frames to adorn the correct one with track info
+
+		PoolWatch::CyclicHistoryBuffer<cv::Mat> videoBuffer(pruneWindow + 1);
+		videoBuffer.init([=](size_t index, cv::Mat& frame)
+		{
+			frame = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
+		});
 
 		// query camera matrix
 
@@ -171,7 +199,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		auto videoFileName = videoPath.filename().string(); 
 		if (guessCameraMat(videoFileName.c_str(), cameraMat))
 		{
-			LOG4CXX_ERROR(log_, "Camera matrix: from configuration");
+			LOG4CXX_INFO(log_, "Camera matrix: from configuration");
 		}
 		else
 		{
@@ -185,10 +213,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			approxCameraMatrix(frameWidth, frameHeight, fovX, fovY, cx, cy, fx, fy);
 			fillCameraMatrix(cx, cy, fx, fy, cameraMat);
-			LOG4CXX_ERROR(log_, "Camera matrix: average");
+			LOG4CXX_INFO(log_, "Camera matrix: average");
 		}
 		
-		LOG4CXX_ERROR(log_, "cx,cy=" <<cameraMat(0,2) <<"," <<cameraMat(1,2) << " fx,fy=" <<cameraMat(0,0) <<"," <<cameraMat(1,1));
+		LOG4CXX_INFO(log_, "cx,cy=" << cameraMat(0, 2) << "," << cameraMat(1, 2) << " fx,fy=" << cameraMat(0, 0) << "," << cameraMat(1, 1));
 
 		std::vector<cv::Point3f> worldPoints;
 		std::vector<cv::Point2f> imagePoints;
@@ -200,7 +228,12 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
 		{
+			//if (frameOrd == 5)
+			//	break;
 			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " of " << framesCount);
+
+			typedef std::chrono::system_clock Clock;
+			std::chrono::time_point<Clock> now1 = Clock::now();
 
 			// TODO: tracking doesn't work when processing the same image repeatedly
 
@@ -208,7 +241,11 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 			cv::Mat& imageFrame = videoBuffer.requestNew();
 			bool readOp = videoCapture.read(imageFrame);
-			CV_Assert(readOp);
+			if (!readOp)
+			{
+				LOG4CXX_ERROR(log_, "Can't read video frame, frameOrd= " << frameOrd);
+				break;
+			}
 
 			//
 			{
@@ -219,6 +256,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 				bool cameraOriented = cameraProjector->orientCamera(cameraMat, worldPoints, imagePoints);
 				CV_Assert(cameraOriented);
+				
+				cv::Point3f cameraPos = cameraProjector->cameraPosition();
+				LOG4CXX_DEBUG(log_, "camera Pos" << cameraPos);
 			}
 
 			int readyFrameInd;
@@ -248,6 +288,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				// do not write 'blank screen' here to keep original and tracks-adorned video streams in sync
 			}
 
+			std::chrono::time_point<Clock> now2 = Clock::now();
+			auto elapsedMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now2 - now1).count();
+			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " time=" << elapsedMilliseconds);
+
 			if (cv::waitKey(1) == 27)
 				break;
 		}
@@ -261,5 +305,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 	void run()
 	{
 		trackVideoFileTest();
+
+		//LOG4CXX_INFO(log_, "WAITING BEFORE EXIST");
+		//cv::waitKey(10000);
 	}
 }

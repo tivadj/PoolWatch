@@ -97,13 +97,14 @@
   <ItemGroup>
     <ClInclude Include="algos1.h" />
     <ClInclude Include="algos_amp.cpp" />
-    <ClInclude Include="CameraProjector.h" />
-    <ClInclude Include="HumanDetector.h" />
+    <ClInclude Include="GraphVizHypothesisTreeVisualizer.h" />
     <ClInclude Include="MatrixUndirectedGraph.h" />
     <ClInclude Include="MultiHypothesisBlobTracker.h" />
+    <ClInclude Include="PoolWatchDLangInterop.h" />
     <ClInclude Include="PoolWatchFacade.h" />
     <ClInclude Include="MatlabInterop.h" />
     <ClInclude Include="KalmanFilterMovementPredictor.h" />
+    <ClInclude Include="SwimmerDetector.h" />
     <ClInclude Include="TrackHypothesisTreeNode.h" />
     <ClInclude Include="SwimmingPoolObserver.h" />
     <ClInclude Include="WaterClassifier.h" />
@@ -111,7 +112,7 @@
   <ItemGroup>
     <ClCompile Include="algos1.cpp" />
     <ClCompile Include="CameraProjector.cpp" />
-    <ClCompile Include="HumanDetector.cpp" />
+    <ClCompile Include="GraphVizHypothesisTreeVisualizer.cpp" />
     <ClCompile Include="KalmanFilterMovementPredictor.cpp" />
     <ClCompile Include="MatrixUndirectedGraph.cpp" />
     <ClCompile Include="MaxWeightInependentSetMaxFirstMexFunction.cpp" />
@@ -121,6 +122,7 @@
     <ClCompile Include="PoolWatchFacade.cpp" />
     <ClCompile Include="MatlabInterop.cpp" />
     <ClCompile Include="SvgImageMaskSerializer.cpp" />
+    <ClCompile Include="SwimmerDetector.cpp" />
     <ClCompile Include="TrackHypothesisTreeNode.cpp" />
     <ClCompile Include="TrackPaintMexFunction.cpp" />
     <ClCompile Include="SwimmingPoolObserver.cpp" />

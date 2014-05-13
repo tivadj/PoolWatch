@@ -3,7 +3,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc/types_c.h>
 #include "CppUnitTest.h"
-#include "HumanDetector.h"
+#include "SwimmerDetector.h"
 #include "TestingUtils.h"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;

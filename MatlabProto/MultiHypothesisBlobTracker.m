@@ -379,19 +379,19 @@ end
 function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allTrackIdToObj, debug)
     allTrackIds = cellfun(@(c) c.Id, leafSetNew);
 
-%     tic;
-%     g1 = this.createTrackIncopatibilityGraph(leafSetNew, debug);
-%     t1 =  toc;
-%     if debug
-%         fprintf('createTrackIncopatibilityGraph MatLab time=%d\n', t1);
-%     end
-    
     tic;
-    g2 = this.createTrackIncopatibilityGraphDLang(debug);
-    t2 =  toc;
+    g1 = this.createTrackIncopatibilityGraph(leafSetNew, debug);
+    t1 =  toc;
     if debug
-        fprintf('createTrackIncopatibilityGraph DLang time=%d\n', t2);
+        fprintf('createTrackIncopatibilityGraph MatLab time=%d\n', t1);
     end
+    
+%     tic;
+%     g2 = this.createTrackIncopatibilityGraphDLang(debug);
+%     t2 =  toc;
+%     if debug
+%         fprintf('createTrackIncopatibilityGraph DLang time=%d\n', t2);
+%     end
 
 %     g11=[min(g1,[],2) max(g1,[],2)];
 %     g22=[min(g2,[],2) max(g2,[],2)];
@@ -401,7 +401,7 @@ function bestTrackLeaves = findBestTracks(this, leafSetNew, trackIdToScore, allT
 %     
 %     assert(all(normIncompatMat1(:) == normIncompatMat2(:)));
     
-    incompatibTrackEdgesMat = g2;
+    incompatibTrackEdgesMat = g1;
     
     % the graph may have isolated and connected vertices
     

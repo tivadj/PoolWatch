@@ -19,8 +19,33 @@
 
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>PW_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_USE_MATH_DEFINES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
+      <!--Assigns extra intermediate variables in algorithms for debugging; validation logic. Code is not critical for runtime.-->
+      <PreprocessorDefinitions>PW_DEBUGq;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
+      <!--
+      If true, the incompatibility lists are maintained for each leaf track hypothesis node. Incompatibility graph is  reconstructed
+      from these ICLs. Otherwise incompatibility graph is reconstructud from scratch on each iteration (using D implementation).
+      NOTE: At the moment this flag requires a lot of memory and there is no obvious performance speed up.
+      -->
+      <PreprocessorDefinitions>DO_CACHE_ICLq;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
+      <!-- 
+      Logs on a level greater then DEBUG.
+      Writes blobs in a separate video file.
+      The switch has a heavy impact on runtime performance. Code is not critical for runtime.
+      -->
+      <PreprocessorDefinitions>LOG_DEBUG_EX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
+      <!--Dumping of hypothesis tree in visual format. LOG_DEBUG_EX must be turned on. Code is not critical for runtime.-->
+      <PreprocessorDefinitions>LOG_VISUAL_HYPOTHESIS_TREEq;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+
+      <!--Use Matlab dependent code-->
+      <PreprocessorDefinitions>SAMPLE_MATLABPROXq;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
 
+  <!-- Allow a developer to override local pathes --> 
+  <Import Project="$(SolutionDir)user.override.props" />
 </Project>

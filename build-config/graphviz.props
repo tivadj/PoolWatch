@@ -4,7 +4,7 @@
 
 
   <PropertyGroup Label="UserMacros">
-    <GraphVizDir>C:\devb\cplex\graphviz-2.36.0\</GraphVizDir>
+    <GraphVizDir Condition="'$(GraphVizDir)' == ''">C:\devb\cplex\graphviz-2.36.0\</GraphVizDir>
     <GraphVizBinDir>$(GraphVizDir)x64\$(Configuration)\</GraphVizBinDir>
     <!--<GraphVizBinDir>$(GraphVizDir)x64\Release\</GraphVizBinDir>-->
   </PropertyGroup>

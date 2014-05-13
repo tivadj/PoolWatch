@@ -47,16 +47,49 @@ TrackHypothesisTreeNode* TrackHypothesisTreeNode::getAncestor(int ancestorIndex)
 }
 
 // Ask this node to find unique_ptr corresponding to the child.
-std::unique_ptr<TrackHypothesisTreeNode> TrackHypothesisTreeNode::pullChild(TrackHypothesisTreeNode* pChild)
+std::unique_ptr<TrackHypothesisTreeNode> TrackHypothesisTreeNode::pullChild(TrackHypothesisTreeNode* pChild, bool updateChildrenCollection)
 {
 	std::unique_ptr<TrackHypothesisTreeNode> result;
+	int i = 0;
 	for (auto& childPtr : Children)
 	{
 		if (childPtr.get() == pChild)
 		{
 			result.swap(childPtr);
+			if (updateChildrenCollection)
+				Children.erase(std::begin(Children) + i);
 			break;
 		}
+		++i;
 	}
 	return std::move(result);
+}
+
+void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result)
+{
+	assert(leaf != nullptr);
+	//assert(!isPseudoRoot(*leaf) && "Assume starting from terminal, not pseudo node");
+
+	// find new root
+	auto current = leaf;
+	int stepBack = 1;
+	while (true)
+	{
+		result.push_back(current);
+
+		if (stepBack == pruneWindow)
+			return;
+
+		//assert(current->Parent != nullptr && "Current node always have the parent node or pseudo root");
+
+		// stop if parent is the pseudo root
+		//if (isPseudoRoot(*current->Parent))
+		//	return;
+
+		current = current->Parent;
+		if (current == nullptr)
+			return;
+
+		stepBack++;
+	}
 }

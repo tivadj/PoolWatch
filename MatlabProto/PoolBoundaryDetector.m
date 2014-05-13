@@ -35,12 +35,13 @@ function dividersMask = getLaneDividersMask(image, imagePoolBnd, waterMask, fles
 end
 
 function imageCalibPnts = getCalibrationPoints(poolImage, watClassifFun, debug)
-    [imgNoHoles,waterMask] = PoolBoundaryDetector.getPoolMask(poolImage, watClassifFun, [], false, debug);
+    waterMask = utils.PixelClassifier.applyToImage(poolImage, watClassifFun, debug);
+    [imgNoHoles] = PoolBoundaryDetector.getPoolMask(poolImage, waterMask, true, debug);
     if debug
         imshow(imgNoHoles)
-        imshow(waterMask)
     end
     
+    laneMarkerMask = waterMask;
     % try to clean the mask
     connComp = bwconncomp(laneMarkerMask);
     connCompProps = regionprops(connComp, 'Area');
@@ -55,7 +56,8 @@ function imageCalibPnts = getCalibrationPoints(poolImage, watClassifFun, debug)
         hold off
     end
     
-    bndPolyline = PoolBoundaryDetector.getPoolBoundaryPolyline(imgNoHoles, vanishPoint);
+    imgNoHolesU8 = im2uint8(imgNoHoles);
+    bndPolyline = PoolBoundaryDetector.getPoolBoundaryPolyline(imgNoHolesU8, vanishPoint);
 
     
     imageCalibPnts = PoolBoundaryDetector.getCalibrationPointsHelper(imgNoHoles, lines2, vanishPoint, bndPolyline);
