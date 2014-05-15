@@ -107,6 +107,7 @@
     <ClInclude Include="SwimmerDetector.h" />
     <ClInclude Include="TrackHypothesisTreeNode.h" />
     <ClInclude Include="SwimmingPoolObserver.h" />
+    <ClInclude Include="VideoLogger.h" />
     <ClInclude Include="WaterClassifier.h" />
   </ItemGroup>
   <ItemGroup>
@@ -126,6 +127,7 @@
     <ClCompile Include="TrackHypothesisTreeNode.cpp" />
     <ClCompile Include="TrackPaintMexFunction.cpp" />
     <ClCompile Include="SwimmingPoolObserver.cpp" />
+    <ClCompile Include="VideoLogger.cpp" />
     <ClCompile Include="WaterClassifier.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

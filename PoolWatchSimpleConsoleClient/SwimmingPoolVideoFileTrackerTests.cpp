@@ -20,6 +20,7 @@
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
 #include "ProgramUtils.h"
+#include "VideoLogger.h"
 
 namespace SwimmingPoolVideoFileTrackerTestsNS
 {
@@ -86,7 +87,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
 
 			// bottom of flags string
-			imagePoints.push_back(cv::Point2f(122, 88));
+			imagePoints.push_back(cv::Point2f(149, 481));
 			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
 			return true;
 		}
@@ -97,6 +98,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 	{
 		std::string timeStamp = PoolWatch::timeStampNow();
 		boost::filesystem::path outDir = boost::filesystem::path("../../output/debug") / timeStamp;
+		outDir = boost::filesystem::absolute(outDir, ".").normalize();
 		QDir outDirQ = QDir(outDir.string().c_str());
 
 		// 
@@ -132,14 +134,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int sourceFourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
 		videoWriter.open(outVideoPath.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
 
-		cv::VideoWriter* videoWriterBlobsOrNull = nullptr;
-#if LOG_DEBUG_EX
-		boost::filesystem::path videoPathBlobs = outDir / "blobs.avi";
-
-		cv::VideoWriter videoWriterBlobs;
-		videoWriterBlobs.open(videoPathBlobs.string(), sourceFourcc, fps, cv::Size(frameWidth, frameHeight), true);
-		videoWriterBlobsOrNull = &videoWriterBlobs;
-#endif
+		VideoLogger::init(outDir, fps);
 
 		//
 		PaintHelper* paintHelperOrNull = nullptr;
@@ -151,20 +146,22 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		const int pruneWindow = 8;
 		const int NewTrackDelay = 7;
+		const float ShapeCentroidNoise = 0.4f;
 		auto cameraProjector = make_shared<CameraProjector>();
 		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
 		blobTracker->initNewTrackDelay_ = NewTrackDelay;
+		blobTracker->shapeCentroidNoise_ = ShapeCentroidNoise;
 		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 		poolObserver.setLogDir(outDir);
-		poolObserver.BlobsDetected = [paintHelperOrNull, videoWriterBlobsOrNull](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
+		poolObserver.BlobsDetected = [paintHelperOrNull](const std::vector<DetectedBlob>& blobs, const cv::Mat& imageFamePoolOnly)
 		{
-			if (videoWriterBlobsOrNull != nullptr && paintHelperOrNull != nullptr)
+			if (paintHelperOrNull != nullptr)
 			{
 				// show blobs
 				auto blobsImageDbg = imageFamePoolOnly.clone();
 				for (const auto& blob : blobs)
 					paintHelperOrNull->paintBlob(blob, blobsImageDbg);
-				videoWriterBlobsOrNull->write(blobsImageDbg);
+				VideoLogger::logDebug("blobsOutline", blobsImageDbg);
 			}
 
 			if (log_->isDebugEnabled())
@@ -183,7 +180,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			LOG4CXX_ERROR(log_, get<1>(initOp));
 			return;
 		}
-		LOG4CXX_INFO(log_, "PoolObserver pruneWindow=" << pruneWindow << " NewTrackDelay=" << NewTrackDelay);
+		LOG4CXX_INFO(log_, "PoolObserver pruneWindow=" << pruneWindow 
+			<< " NewTrackDelay=" << NewTrackDelay
+			<< " ShapeCentroidNoise=" << ShapeCentroidNoise);
 
 		// store recent video frames to adorn the correct one with track info
 
@@ -228,8 +227,6 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameOrd = 0;
 		for (; frameOrd < framesCount; ++frameOrd)
 		{
-			//if (frameOrd == 5)
-			//	break;
 			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " of " << framesCount);
 
 			typedef std::chrono::system_clock Clock;
@@ -305,8 +302,5 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 	void run()
 	{
 		trackVideoFileTest();
-
-		//LOG4CXX_INFO(log_, "WAITING BEFORE EXIST");
-		//cv::waitKey(10000);
 	}
 }

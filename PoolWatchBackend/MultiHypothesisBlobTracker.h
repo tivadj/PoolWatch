@@ -35,6 +35,9 @@ private:
 	int nextTrackCandidateId_;
 public: // visible to a test module
 	float swimmerMaxSpeed_; // max swimmer speed in m/s (default=2.3)
+	// 0 = blobs from two consequent frames can't be assiciated with a single track and new track is created
+	// 0.4 = ok, track doesn't jump to the swimmer moving in opposite direction
+	// 0.5 = too much, track may jump to a swimmer which moves in oppositite direction
 	float shapeCentroidNoise_ = 0.5f; // constant to add to the max swimmer speed to get max possible swimmer shift
 	int initNewTrackDelay_ = 1; // value >= 1; generate new track each N frames
 private:
