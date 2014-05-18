@@ -11,6 +11,7 @@
 #include "SwimmerDetector.h"
 #include "SwimmingPoolObserver.h"
 #include "algos1.h"
+#include "VideoLogger.h"
 
 using namespace std;
 using namespace cv;
@@ -187,6 +188,7 @@ void fixContourInfo(ContourInfo& c, CameraProjectorBase* pCameraProjector)
 		c.contourCentroidWorld = cv::Point3f(-1, -1, -1);
 }
 
+log4cxx::LoggerPtr SwimmerDetector::log_ = log4cxx::Logger::getLogger("PW.SwimmerDetector");
 
 SwimmerDetector::SwimmerDetector(const std::shared_ptr<CameraProjectorBase> cameraProjector)
 : cameraProjector_(cameraProjector)
@@ -195,8 +197,12 @@ SwimmerDetector::SwimmerDetector(const std::shared_ptr<CameraProjectorBase> came
 	// eg.head 20 cm x 20 cm = 0.04
 	// man of size 1m x 2m
 	//float bodyAreaMin = 0.04;
+	// 0.3 = too little, parts of body are not merged
+	// 0.8 = too little, parts of body are not merged
+	// 0.92 = distance between two parts - swimming slat and swimmer back
+	// 1 = should be ok
 	// 1.5 = blobs close to camera are merged with information sign
-	bodyHalfLenth_ = 0.5; // parameter to specify how much close blobs should be merged
+	bodyHalfLenth_ = 1; // parameter to specify how much close blobs should be merged
 
 	cv::FileStorage fs;
 	//
@@ -276,13 +282,13 @@ void SwimmerDetector::getBlobs(const cv::Mat& image, const std::vector<DetectedB
 
 	// TODO: no water mask
 	cv::Mat waterMask = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
-	getHumanBodies(fleshNoTenious, waterMask, expectedBlobs, blobs);
+	getHumanBodies(image, fleshNoTenious, waterMask, expectedBlobs, blobs);
 }
 
-void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
+void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
 {
-	int const& rows1 = image.rows;
-	int const& width = image.cols;
+	int const& rows1 = imageMask.rows;
+	int const& width = imageMask.cols;
 
 	//cv::Mat_<uchar> nonWaterMask;
 	//cv::subtract(255, waterMask, nonWaterMask);
@@ -310,7 +316,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 	//cv::Mat noTenuousBridges = cv::Mat_<uchar>::zeros(rows1, width);
 	//cv::morphologyEx(imageBodySplit, noTenuousBridges, cv::MORPH_OPEN, sel);
 
-	cv::Mat noTenuousBridges = image;
+	cv::Mat noTenuousBridges = imageMask;
 	// remove noise on a pixel level(too small / large components)
 
 	vector<ContourInfo> contourInfos;
@@ -336,7 +342,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 	// remove very small or large blobs
 
-#if PW_DEBUG
+#if _DEBUG
 	cv::Mat imageNoExtremeBlobs = cv::Mat_<uchar>::zeros(rows1, width);
 #endif
 
@@ -350,7 +356,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 		if (contour.area >= shapeMinAreaPixels && contour.area < swimmerShapeAreaMax)
 		{
-#if PW_DEBUG
+#if _DEBUG
 			singleContourTmp[0] = contour.outlinePixels;
 			cv::drawContours(imageNoExtremeBlobs, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 #endif
@@ -360,27 +366,33 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 	}
 
 	// merge small blobs around one large blob
+#if _DEBUG
+	cv::Mat imageMergeBlobsDebug = cv::Mat_<uchar>::zeros(rows1, width);
+#endif
 
 	// process from largest blob to smallest
 	std::sort(begin(contourInfos), end(contourInfos), [](const ContourInfo& c1, const ContourInfo& c2) { return std::greater<float>()(c1.area, c2.area); });
 
-	cv::Mat mergeBuffer = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
+	cv::Mat mergeBuffer = cv::Mat::zeros(imageMask.rows, imageMask.cols, CV_8UC1);
 	vector<cv::Point> mergedBlobsContour;
-	vector<uchar> processedMerging(contourInfos.size());
+	vector<cv::Point> mergedBlobsContourConvex;
+#if PW_DEBUG
+	vector<uchar> processedMerging(contourInfos.size()); // whether contour is checked on merging
+#endif
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
 		auto& contour = contourInfos[i];
+#if PW_DEBUG
 		if (processedMerging[i])
 			continue;
+#endif
 		if (contour.markDeleted)
 		{
+#if PW_DEBUG
 			processedMerging[i] = true;
+#endif
 			continue;
 		}
-
-		auto bodyHalfLenthPix = bodyHalfLenthPix_; // default, used in testing scenarios
-		if (cameraProjector_ != nullptr)
-			cameraProjector_->distanceWorldToCamera(contour.contourCentroidWorld, bodyHalfLenth_);
 
 		for (size_t neighInd = 0; neighInd < contourInfos.size(); ++neighInd)
 		{
@@ -389,16 +401,31 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 				continue;
 			if (neigh.markDeleted)
 			{
+#if PW_DEBUG
 				processedMerging[neighInd] = true;
+#endif
 				continue;
 			}
+#if PW_DEBUG
 			if (processedMerging[neighInd])
 				continue;
+#endif
+			bool areCloseBlobs;
+			if (cameraProjector_ != nullptr)
+			{
+				auto vec = neigh.contourCentroidWorld - contour.contourCentroidWorld;
+				float dist = cv::norm(vec);
+				areCloseBlobs = dist < bodyHalfLenth_;
+			}
+			else
+			{
+				// use only pixel coordinates when testing
+				auto vec = neigh.contourCentroid - contour.contourCentroid;
+				float dist = cv::norm(vec);
+				areCloseBlobs = dist < bodyHalfLenthPix_;
+			}
 
-			auto vec = neigh.contourCentroid - contour.contourCentroid;
-			float dist = cv::norm(vec);
-
-			if (dist < bodyHalfLenthPix)
+			if (areCloseBlobs)
 			{
 				auto color = cv::Scalar::all(255);
 
@@ -412,23 +439,55 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 				mergedBlobsContour.clear();
 				mergeBlobs(contour.outlinePixels, neigh.outlinePixels, mergeBuffer, mergedBlobsContour, 5);
+#if _DEBUG
+				singleContourTmp[0] = mergedBlobsContour;
+				cv::drawContours(imageMergeBlobsDebug, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
+#endif
+				// Perform blob's area constraint
+				// TODO: how to prohibit merging blobs from different swimmers or markers
+				// seems area constraint doesn't work well - merged blob looks like star
+				// (satellite blobs connect to primary blob with thin bridges)
+				if (false && cameraProjector_ != nullptr)
+				{
+					mergedBlobsContourConvex.clear();
+					cv::convexHull(mergedBlobsContour, mergedBlobsContourConvex);
+#if _DEBUG
+					singleContourTmp[0] = mergedBlobsContourConvex;
+					cv::drawContours(imageMergeBlobsDebug, singleContourTmp, 0, cv::Scalar::all(255));
+#endif
+					auto swimmerAreaPix = cv::contourArea(mergedBlobsContourConvex);
+					const float maxSwimmerBodyArea = 1; // square meters
+					auto maxSwimmerBodyAreaPix = cameraProjector_->worldAreaToCamera(contour.contourCentroidWorld, maxSwimmerBodyArea);
+					if (swimmerAreaPix > maxSwimmerBodyAreaPix)
+					{
+						// stop merging current blob
+						break;
+					}
+				}
 
 				// update two blobs infos
 				contour.outlinePixels = mergedBlobsContour;
 				fixContourInfo(contour, cameraProjector_.get());
 				neigh.markDeleted = true;
+#if PW_DEBUG
 				processedMerging[neighInd] = true;
+#endif
 			}
 		}
-
-		processedMerging[i] = true;
-	}
-
 #if PW_DEBUG
+		processedMerging[i] = true;
+#endif
+	}
+#if PW_DEBUG
+	// all contours must be checked for merge possibility
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+		CV_Assert(processedMerging[i]);
+#endif
+
+#if _DEBUG
 	cv::Mat mergedBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
-		CV_Assert(processedMerging[i]);
 		auto& contour = contourInfos[i];
 		if (contour.markDeleted)
 			continue;
@@ -439,10 +498,9 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 
 	// remove elongated stripes created by lane markers and water 'blique'
 
-#if PW_DEBUG
+#if _DEBUG
 	cv::Mat imageNoSticks = cv::Mat_<uchar>::zeros(rows1, width);
 #endif
-
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
 		auto& contour = contourInfos[i];
@@ -464,7 +522,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 			contour.markDeleted = true;
 		else
 		{
-#if PW_DEBUG
+#if _DEBUG
 			singleContourTmp[0] = contour.outlinePixels;
 			cv::drawContours(imageNoSticks, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 #endif
@@ -510,7 +568,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		}
 	}
 
-#if PW_DEBUG
+#if _DEBUG || LOG_DEBUG_EX
 	cv::Mat noCloseBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
@@ -521,7 +579,16 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat_<uchar>
 		singleContourTmp[0] = contour.outlinePixels;
 		cv::drawContours(noCloseBlobs, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
 	}
+#if LOG_DEBUG_EX
+	cv::Mat noCloseBlobsRgb;
+	image.copyTo(noCloseBlobsRgb, noCloseBlobs);
+	if (log_->isDebugEnabled())
+	{
+		VideoLogger::logDebug("blobsOnly", noCloseBlobsRgb);
+	}
 #endif
+#endif
+
 
 	// pupulate results
 
