@@ -25,9 +25,17 @@ namespace PoolWatch
 	{
 		return degree * M_PI / 180.0f;
 	}
+
+	auto normalProb(float x, float mu, float sigma) -> float
+	{
+		float s2 = sigma * sigma;
+		float coef = 1 / std::sqrtf(2 * M_PI*s2);
+		float ex = std::expf(-0.5 * (x - mu)*(x - mu) / s2);
+		return coef * ex;
+	}
 }
 
-void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, vector<bool>& vertexSet)
+void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, vector<uchar>& vertexSet)
 {
 	auto vertexCount = graph.nodesCount();
 
@@ -93,7 +101,134 @@ void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph
 	assert(validation.isValid);
 }
 
-IndependentSetValidationResult validateMaximumWeightIndependentSet(const MatrixUndirectedGraph& graph, const vector<bool>& vertexSet)
+namespace Details
+{
+	struct VertexData
+	{
+		int vertexId;
+		double weight;
+		bool processed;
+		bool inMaxWeightVertexSet;
+	};
+
+	float maximumWeightIndependentSetNaiveMaxFirst1(const MatrixUndirectedGraph& graph, const vector<std::unique_ptr<VertexData>>& vertexIdAndWeight, hash_map<int, VertexData*>& vertexIdToData)
+	{
+		// sequentially include vertices from largest weight to smallest
+		auto vertexCount = static_cast<int>(vertexIdAndWeight.size());
+
+		// set all vertices as unvisited
+		for (auto& pVertex : vertexIdAndWeight)
+			pVertex->processed = false;
+
+		// scan vertices in order of increasing weight
+		float totalWeight = 0;
+		vector<int> neighbourVertices;
+		for (int i = 0; i < vertexCount; i++)
+		{
+			VertexData* pVertexData = vertexIdAndWeight[i].get();
+			if (pVertexData->processed)
+				continue;
+
+			pVertexData->processed = true;
+			pVertexData->inMaxWeightVertexSet = true;
+			totalWeight += pVertexData->weight;
+
+			// reject all neighbour vertices
+			graph.adjacentNodes(pVertexData->vertexId, neighbourVertices);
+
+			for (auto adjVertId : neighbourVertices)
+			{
+				auto vertexDataIt = vertexIdToData.find(adjVertId);
+				if (vertexDataIt != end(vertexIdToData))
+				{
+					vertexDataIt->second->processed = true;
+					vertexDataIt->second->inMaxWeightVertexSet = false;
+				}
+			}
+		}
+		return totalWeight;
+	}
+
+	void maximumWeightIndependentSetNaiveTryMultipleMaxFirstHelper(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet)
+	{
+		auto vertexCount = graph.nodesCount();
+
+		vertexSet.resize(vertexCount);
+		vertexSet.assign(vertexCount, false);
+
+		if (vertexCount == 0)
+			return;
+
+		// initialize bookkeeping data
+		hash_map<int, VertexData*> vertexIdToData;
+		vector<std::unique_ptr<VertexData>> vertexData(vertexCount);
+
+		for (int vertexId = 0; vertexId < vertexCount; vertexId++)
+		{
+			auto pData = std::make_unique<VertexData>();
+			pData->vertexId = vertexId;
+			pData->weight = graph.nodePayload(vertexId);
+			pData->processed = false;
+
+			vertexIdToData.insert(make_pair(vertexId, pData.get()));
+			vertexData[vertexId] = std::move(pData);
+			assert(pData == nullptr);
+		}
+
+		// arrange vertices from high to low weight
+		sort(begin(vertexData), end(vertexData),
+			[](std::unique_ptr<VertexData>& x, std::unique_ptr<VertexData>& y)
+		{
+			return x->weight > y->weight;
+		});
+
+		//
+
+		// sequentially process vertices from high to low weight
+		// start by including the vertex with max weight in the max-weigth vertex set
+		// try different vertex as the initial seed vertex
+
+		int attemptCount = static_cast<int>(std::logf(vertexCount));
+		
+		// this parameter should be > 1, otherwise algo choses non-optimal solution even for simplest scenarios
+		const int minAttempts = 5;
+		if (attemptCount < minAttempts)
+			attemptCount = minAttempts;
+
+		if (attemptCount > vertexCount)
+			attemptCount = vertexCount;
+
+		float maxWeight = std::numeric_limits<float>::lowest();
+		for (int startVertexInd = 0; startVertexInd < attemptCount; ++startVertexInd)
+		{
+			// put start vertex as the primary vertex for max-weight vertex set
+			std::swap(vertexData[0], vertexData[startVertexInd]);
+
+			float vertexSetWeight = maximumWeightIndependentSetNaiveMaxFirst1(graph, vertexData, vertexIdToData);
+			if (vertexSetWeight > maxWeight)
+			{
+				maxWeight = vertexSetWeight;
+
+				// save vertex set
+				for (auto& pVertex : vertexData)
+					vertexSet[pVertex->vertexId] = pVertex->inMaxWeightVertexSet;
+			}
+
+			// restore vertices in the order of max to min weight
+			std::swap(vertexData[0], vertexData[startVertexInd]);
+		}
+
+		auto validation = validateMaximumWeightIndependentSet(graph, vertexSet);
+		assert(validation.isValid);
+	}
+}
+
+void maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet)
+{
+	Details::maximumWeightIndependentSetNaiveTryMultipleMaxFirstHelper(graph, vertexSet);
+}
+
+IndependentSetValidationResult validateMaximumWeightIndependentSet(const MatrixUndirectedGraph& graph, const vector<uchar>& vertexSet)
 {
 	IndependentSetValidationResult result;
 	result.isValid = false;

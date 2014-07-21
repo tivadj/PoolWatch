@@ -13,6 +13,7 @@
 #endif
 
 //#define PW_EXPORTS __declspec(dllexport)
+//#define PW_EXPORTS POOLWATCH_EXPORTS
 
 __declspec(dllexport) void approxCameraMatrix(int imageWidth, int imageHeight, float fovX, float fovY, float& cx, float& cy, float& fx, float& fy);
 __declspec(dllexport) void fillCameraMatrix(float cx, float cy, float fx, float fy, cv::Matx33f& cameraMatrix);
@@ -20,6 +21,7 @@ __declspec(dllexport) void fillCameraMatrix(float cx, float cy, float fx, float 
 class CameraProjectorBase
 {
 public:
+	virtual ~CameraProjectorBase() {}
 	virtual cv::Point2f worldToCamera(const cv::Point3f& world) const = 0;
 	virtual cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const = 0;
 

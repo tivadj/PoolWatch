@@ -123,3 +123,58 @@ std::tuple<bool, std::wstring> checkAll(const Cont& cont, ExpectT expectedValue,
 	}
 	return std::make_tuple(true, L"");
 }
+
+namespace Details
+{
+	template <typename ContT>
+	auto dumpCont(std::wstringstream& buf, const ContT& cont) -> void
+	{
+		for (auto el : cont)
+			buf << el << " ";
+	};
+}
+
+template <typename ContT, typename ContT2, typename ExpectT>
+std::tuple<bool, std::wstring> sequenceEqual(const ContT& actualCont, ContT2 expectCont, ExpectT tolerance)
+{
+	size_t index = 0;
+	typename ContT::const_iterator& it1 = std::cbegin(actualCont);
+	typename ContT2::const_iterator& it2 = std::cbegin(expectCont);
+
+	auto printFooterFun = [&actualCont, &expectCont](std::wstringstream& buf)
+	{
+		buf << "Actual ";
+		Details::dumpCont(buf, actualCont);
+
+		buf << std::endl;
+		buf << "Expect ";
+		Details::dumpCont(buf, expectCont);
+	};
+
+	for (; it1 != std::cend(actualCont) && it2 != std::cend(expectCont); ++it1, ++it2, ++index)
+	{
+		const auto& actual = *it1;
+		const auto& expectValue = *it2;
+
+		// equality to correctly compare ints with zero tolerance
+		if (!(std::abs(actual - expectValue) <= tolerance))
+		{
+			std::wstringstream buf;
+			buf << L"Failed on index=" << index << L" expected=" << expectValue << L" actual=" << actual <<L" tolerance=" <<tolerance;
+			
+			buf << std::endl;
+			printFooterFun(buf);
+
+			return std::make_tuple(false, buf.str());
+		}
+
+		if (it1 != std::cend(actualCont) ^ it2 != std::cend(expectCont))
+		{
+			std::wstringstream buf;
+			buf << "Containers' size mismatch" <<std::endl;
+			printFooterFun(buf);
+			return std::make_tuple(false, buf.str());
+		}
+	}
+	return std::make_tuple(true, L"");
+}

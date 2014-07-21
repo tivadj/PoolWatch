@@ -572,7 +572,9 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 	cv::Mat noCloseBlobs = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
 	for (size_t i = 0; i < contourInfos.size(); ++i)
 	{
+#if PW_DEBUG
 		CV_Assert(processedMerging[i]);
+#endif
 		auto& contour = contourInfos[i];
 		if (contour.markDeleted)
 			continue;

@@ -8,10 +8,11 @@
 #include "MatrixUndirectedGraph.h"
 #include "WaterClassifier.h"
 
-void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, std::vector<bool>& vertexSet);
-
 __declspec(dllexport) void classifyAndGetMask(const cv::Mat& image, std::function<bool(const cv::Vec3d&)>  pred, cv::Mat_<uchar>& mask);
 __declspec(dllexport) void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec3d&)> computeOne, cv::Mat_<double>& mask);
+
+__declspec(dllexport) void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
+__declspec(dllexport) void maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
 
 struct IndependentSetValidationResult
 {
@@ -21,7 +22,7 @@ struct IndependentSetValidationResult
 	int vertex2;
 };
 
-IndependentSetValidationResult validateMaximumWeightIndependentSet(const MatrixUndirectedGraph& graph, const std::vector<bool>& vertexSet);
+IndependentSetValidationResult validateMaximumWeightIndependentSet(const MatrixUndirectedGraph& graph, const std::vector<uchar>& vertexSet);
 
 double calculateVertexSetWeight(const MatrixUndirectedGraph& graph, const std::vector<bool>& vertexSet);
 
@@ -36,6 +37,7 @@ namespace PoolWatch
 	}
 
 	__declspec(dllexport) auto deg2rad(const float& degree) -> float;
+	__declspec(dllexport) auto normalProb(float x, float mu, float sigma) -> float;
 }
 
 class EMQuick : public cv::EM

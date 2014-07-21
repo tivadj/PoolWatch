@@ -47,9 +47,10 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 	trackHypothesisForestPseudoNode_.FamilyId = 0;
 	trackHypothesisForestPseudoNode_.FrameInd = 0;
 	trackHypothesisForestPseudoNode_.ObservationInd = 0;
+	trackHypothesisForestPseudoNode_.Parent = nullptr;
 
 	// default to Kalman Filter
-	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps);
+	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps, swimmerMaxSpeed_);
 }
 
 
@@ -62,7 +63,7 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 {
 	growTrackHyposhesisTree(frameInd, blobs, fps, elapsedTimeMs);
 
-	pruneLowScoreTracks(trackChanges);
+	//pruneLowScoreTracks(trackChanges);
 
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
@@ -72,19 +73,20 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	vector<TrackHypothesisTreeNode*> bestTrackLeafs; // 
 	findBestTracks(leafSet, bestTrackLeafs);
 
-	LOG4CXX_DEBUG(log_, "bestTrackLeafs.count=" << bestTrackLeafs.size());
 	if (log_->isDebugEnabled())
 		logVisualHypothesisTree(frameInd, "1beforePruning", bestTrackLeafs);
 	
-	if (log_->isDebugEnabled() && !bestTrackLeafs.empty())
+	// list the best nodes
+	if (log_->isDebugEnabled())
 	{
-		// list the best nodes
-
 		stringstream bld;
-		for (const TrackHypothesisTreeNode* pLeaf : bestTrackLeafs)
-		{
-			bld <<endl << "  FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ObsInd=" << pLeaf->ObservationInd << " " << pLeaf->ObservationPos << " Score=" << pLeaf->Score;
-		}
+		bld << "bestTrackLeafs.count=" << bestTrackLeafs.size();
+
+		if (!bestTrackLeafs.empty())
+			for (const TrackHypothesisTreeNode* pLeaf : bestTrackLeafs)
+			{
+				bld << endl << "  FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ObsInd=" << pLeaf->ObservationInd << " " << pLeaf->ObservationPos << " Score=" << pLeaf->Score << " Age=" << pLeaf->Age << " Obs=" << latestObservationStatus(*pLeaf, 5);
+			}
 		log_->debug(bld.str());
 	}
 
@@ -182,9 +184,10 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		movementPredictor_->estimateAndSave(*leafHyp, blobCentrWorld, estPos, score, childHyp);
 		childHyp.Score = score;
 		childHyp.EstimatedPosWorld = estPos;
+		childHyp.Age = leafHyp->Age + 1;
 
 #if LOG_DEBUG_EX
-		LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score);
+		LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score << " Age=" << pChildHyp->Age << " Obs=" << latestObservationStatus(*pChildHyp, 5, leafHyp));
 #endif
 		//
 
@@ -231,9 +234,10 @@ void MultiHypothesisBlobTracker::makeNoObservationHypothesis(int frameInd, Track
 	movementPredictor_->estimateAndSave(*leafHyp, nullptr, estPos, score, childHyp);
 	childHyp.Score = score;
 	childHyp.EstimatedPosWorld = estPos;
+	childHyp.Age = leafHyp->Age;
 
 #if LOG_DEBUG_EX
-	LOG4CXX_DEBUG(log_, "grow NoObs FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " Score=" << pChildHyp->Score);
+	LOG4CXX_DEBUG(log_, "grow NoObs FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " Score=" << pChildHyp->Score << " Age=" << pChildHyp->Age << " Obs=" << latestObservationStatus(*pChildHyp, 5, leafHyp));
 #endif
 
 	leafHyp->addChildNode(std::move(pChildHyp));
@@ -275,6 +279,7 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 		float score;
 		movementPredictor_->initScoreAndState(frameInd, blobInd, blobCentrWorld, score, childHyp);
 		childHyp.Score = score;
+		childHyp.Age = 0;
 
 #if LOG_DEBUG_EX
 		LOG4CXX_DEBUG(log_, "grow New ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score);
@@ -296,6 +301,11 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 		if (log_->isDebugEnabled())
 			addedNew++;
 	}
+}
+
+void MultiHypothesisBlobTracker::setSwimmerMaxSpeed(float swimmerMaxSpeed)
+{
+	swimmerMaxSpeed_ = swimmerMaxSpeed;
 }
 
 void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs)
@@ -837,7 +847,7 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 
 	//
 
-	vector<bool> indepVertexSet;
+	vector<uchar> indepVertexSet;
 #if DO_CACHE_ICL
 	maximumWeightIndependentSetNaiveMaxFirstCpp(connectedVertices, nodeIdToNode, indepVertexSet);
 #else
@@ -857,7 +867,8 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 	for (int i = 0; i < vertexWeights.size(); ++i)
 		g.setVertexPayload(i, vertexWeights[i]);
 
-	maximumWeightIndependentSetNaiveMaxFirst(g, indepVertexSet);
+	//maximumWeightIndependentSetNaiveMaxFirst(g, indepVertexSet);
+	maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(g, indepVertexSet);
 	assert(indepVertexSet.size() == connectedVertices.size());
 #endif
 
@@ -999,6 +1010,27 @@ TrackHypothesisTreeNode* MultiHypothesisBlobTracker::findNewFamilyRoot(TrackHypo
 		current = current->Parent;
 		stepBack++;
 	}
+}
+
+std::string MultiHypothesisBlobTracker::latestObservationStatus(TrackHypothesisTreeNode const& leafNode, int lastFramesCount, TrackHypothesisTreeNode* leafParentOrNull)
+{
+	std::vector<TrackHypothesisTreeNode*> nodes;
+	enumerateBranchNodesReversed(const_cast<TrackHypothesisTreeNode*>(&leafNode), lastFramesCount, nodes, leafParentOrNull);
+
+	std::reverse(std::begin(nodes), std::end(nodes));
+
+	std::stringstream buf;
+	for (TrackHypothesisTreeNode* pNode : nodes)
+	{
+		if (isPseudoRoot(*pNode))
+			continue; // root is the first node in the sequence
+
+		if (pNode->ObservationInd == TrackHypothesisTreeNode::DetectionIndNoObservation)
+			buf << "o"; // noObs
+		else
+			buf << "+"; // gotObs
+	}
+	return buf.str();
 }
 
 //void MultiHypothesisBlobTracker::enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result) const
