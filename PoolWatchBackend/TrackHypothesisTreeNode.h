@@ -37,11 +37,13 @@ struct ObservationConflict
 /** Represents node in the tree of hypothesis. */
 struct TrackHypothesisTreeNode
 {
+	static const int DetectionIndNoObservation = -1;
+
 	int Id;
 	int FamilyId;
 	float Score; // determines validity of the hypothesis(from root to this node); the more is better
 	std::vector<std::unique_ptr<TrackHypothesisTreeNode>> Children;
-	TrackHypothesisTreeNode* Parent;
+	TrackHypothesisTreeNode* Parent = nullptr;
 	int ObservationInd;
 	int ObservationOrNoObsId = -1;
 	int FrameInd;
@@ -54,6 +56,10 @@ struct TrackHypothesisTreeNode
 #endif
 	cv::Mat_<float> KalmanFilterState; // [X, Y, vx, vy] in meters and m/sec
 	cv::Mat_<float> KalmanFilterStateCovariance;  // [4x4]
+	
+//#if PW_DEBUGXXX
+	int Age = 0;  // frames
+//#endif
 
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
@@ -61,7 +67,8 @@ struct TrackHypothesisTreeNode
 };
 
 // Enumerates nodes from leaf to root but no more than pruneWindow nodes.
-void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result);
+// For takeCount==1 returns the sequence of one element - the leaf node itself.
+void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result, TrackHypothesisTreeNode* leafParentOrNull = nullptr);
 
 // Estimates the position of the blob given the state of the blob (position etc).
 class SwimmerMovementPredictor

@@ -21,8 +21,8 @@ class __declspec(dllexport) MultiHypothesisBlobTracker
 	// hypothesis graph as string encoding
 	const int32_t OpenBracket = -2;
 	const int32_t CloseBracket = -3;
-	
-	const int DetectionIndNoObservation = -1;
+
+	static const int DetectionIndNoObservation = TrackHypothesisTreeNode::DetectionIndNoObservation;
 
 	TrackHypothesisTreeNode trackHypothesisForestPseudoNode_;
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
@@ -33,13 +33,14 @@ private:
 	float fps_;
 	int pruneWindow_; // the depth of track history (valid value>=1; value=0 purges all hypothesis nodes so that hypothesis tree has the single pseudo node)
 	int nextTrackCandidateId_;
-public: // visible to a test module
 	float swimmerMaxSpeed_; // max swimmer speed in m/s (default=2.3)
+public: // visible to a test module
 	// 0 = blobs from two consequent frames can't be assiciated with a single track and new track is created
 	// 0.4 = ok, track doesn't jump to the swimmer moving in opposite direction
 	// 0.5 = too much, track may jump to a swimmer which moves in oppositite direction
 	float shapeCentroidNoise_ = 0.5f; // constant to add to the max swimmer speed to get max possible swimmer shift
 	int initNewTrackDelay_ = 1; // value >= 1; generate new track each N frames
+	float trackMinScore_ = -15;
 private:
 	boost::filesystem::path logDir_;
 public:
@@ -48,7 +49,28 @@ public:
 	virtual ~MultiHypothesisBlobTracker();
 	void trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackStatusList);
 
-	float getFps() { return fps_;  }
+	// TODO: this method should return "hypothesis tree finalizer" object and client will query it to get the next layer of oldest track nodes
+	// Such finalizer object will reuse the set of bestTrackLeafs.
+	bool flushTrackHypothesis(int frameInd, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackChangeList,
+		std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, bool isBestTrackLeafsInitied, int& pruneWindow);
+
+	/// Propogates track with given Id on the given frameInd in the future.
+	/// Returns true if track was found.
+	bool getLatestHypothesis(int frameInd, int trackFamilyId, TrackChangePerFrame& outTrackChange);
+	void getMostPossibleHypothesis(int frameInd, std::vector<TrackHypothesisTreeNode*>& hypList);
+
+	/// Gets the index of the ready frame for given frameInd if pruning is performed with pruneWindow.
+	static int getReadyFrameInd(int frameInd, int pruneWindow);
+
+	void logVisualHypothesisTree(int frameInd, const std::string& fileNameTag, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs) const;
+
+	void setLogDir(const boost::filesystem::path& dir);
+
+	void setMovementPredictor(std::unique_ptr<SwimmerMovementPredictor> movementPredictor);
+
+	float getFps() { return fps_; }
+
+	void setSwimmerMaxSpeed(float swimmerMaxSpeed);
 
 private:
 	void growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs);
@@ -91,37 +113,26 @@ private:
 		std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs);
 
 	TrackChangePerFrame createTrackChange(TrackHypothesisTreeNode* pNode);
+	void populateTrackChange(TrackHypothesisTreeNode* pNode, TrackChangePerFrame& result);
 
 	// Truncates hypothesis tree to keep the tree depth fixed and equal 'pruneWindow'. There can be a track change for a track for some former frame.
 	// Note, the changes from different tracks may be created for different previous frames.
 	// The earliest frame index from all track changes is 'readyFrameInd'.
-	void pruneHypothesisTree(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges, int pruneWindow);
+	void pruneHypothesisTreeAndGetTrackChanges(int frameInd, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges, int pruneWindow);
 
-	void pruneLowScoreTracks(std::vector<TrackChangePerFrame>& trackChanges);
+	void pruneLowScoreTracks(int frameInd, std::vector<TrackChangePerFrame>& trackChanges);
 
 	// Finds the old and new root pair for given track path starting at leaf.
 	TrackHypothesisTreeNode* findNewFamilyRoot(TrackHypothesisTreeNode* leaf, int pruneWindow);
 
 	//void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result) const;
 
-public:
-	// TODO: this method should return "hypothesis tree finalizer" object and client will query it to get the next layer of oldest track nodes
-	// Such finalizer object will reuse the set of bestTrackLeafs.
-	bool flushTrackHypothesis(int frameInd, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackChangeList,
-		std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs, bool isBestTrackLeafsInitied, int& pruneWindow);
-	void getMostPossibleHypothesis(int frameInd, std::vector<TrackHypothesisTreeNode*>& hypList);
-private:
+	/// Gets the sequence of observation statuses for given track hypothesis for the last lastFramesCount frames.
+	std::string latestObservationStatus(const TrackHypothesisTreeNode& leafNode, int lastFramesCount, TrackHypothesisTreeNode* leafParentOrNull = nullptr);
+
+	TrackHypothesisTreeNode* findHypothesisWithFrameInd(TrackHypothesisTreeNode* start, int frameInd, int trackFamilyId);
+
 	inline bool isPseudoRoot(const TrackHypothesisTreeNode& node) const;
 	void getLeafSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& leafSet);
 	void getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet);
-public:
-	void logVisualHypothesisTree(int frameInd, const std::string& fileNameTag, const std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs) const;
-public:
-	void setLogDir(const boost::filesystem::path& dir)
-	{
-		logDir_ = dir;
-	}
-
-public:
-	void setMovementPredictor(std::unique_ptr<SwimmerMovementPredictor> movementPredictor);
 };
