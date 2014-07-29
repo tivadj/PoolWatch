@@ -127,6 +127,10 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	//
 	prevFrameBlobs.resize(blobs.size());
 	std::copy(begin(blobs), end(blobs), begin(prevFrameBlobs));
+
+#if PW_DEBUG
+	trackChangeChecker_.setNextTrackChanges(readyFrameInd, trackChanges);
+#endif
 }
 
 void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, const std::vector<DetectedBlob>& blobs, float elapsedTimeMs, int& addedDueCorrespondence, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes)
@@ -1448,3 +1452,85 @@ void MultiHypothesisBlobTracker::setMovementPredictor(unique_ptr<SwimmerMovement
 	movementPredictor_.swap(std::move(movementPredictor));
 }
 
+//
+
+TrackChangeClientSide::TrackChangeClientSide(int trackId, int frameIndOnNew)
+	: TrackId(trackId),
+	FrameIndOnNew(frameIndOnNew),
+	EndFrameInd(frameIndOnNew)
+{
+}
+
+void TrackChangeClientSide::setNextTrackChange(int changeFrameInd)
+{
+	CV_Assert(IsLive && "Can update live track only");
+
+	int nextInd = EndFrameInd;
+	CV_Assert(nextInd == changeFrameInd && "Updating track with non sequential change");
+
+	EndFrameInd++;
+}
+
+void TrackChangeClientSide::terminate()
+{
+	CV_Assert(IsLive);
+	IsLive = false;
+}
+
+void TrackChangeConsistencyChecker::setNextTrackChanges(int readyFrameInd, const std::vector<TrackChangePerFrame>& trackChanges)
+{
+	if (readyFrameInd == -1)
+	{
+		CV_Assert(trackChanges.empty() && "Track changes must be empty if there is no updates");
+		return;
+	}
+
+	for (const TrackChangePerFrame& change : trackChanges)
+	{
+		CV_Assert(change.FrameInd == readyFrameInd && "Got track change for FrameInd != readyFrameInd");
+
+		int trackId = change.FamilyId;
+
+		switch (change.UpdateType)
+		{
+		case TrackChangeUpdateType::New:
+		{
+			TrackChangeClientSide trackItem(trackId, readyFrameInd);
+			trackItem.setNextTrackChange(readyFrameInd);
+
+			trackIdToObj_.insert(std::make_pair(trackId, trackItem));
+
+			break;
+		}
+		case TrackChangeUpdateType::ObservationUpdate:
+		case TrackChangeUpdateType::NoObservation:
+		{
+			auto it = trackIdToObj_.find(trackId);
+			if (it == std::end(trackIdToObj_))
+			{
+				CV_Assert(false && "Got track change for not existent track");
+			}
+			else
+			{
+				TrackChangeClientSide& trackItem = it->second;
+				trackItem.setNextTrackChange(readyFrameInd);
+			}
+			break;
+		}
+		case TrackChangeUpdateType::Pruned:
+		{
+			auto it = trackIdToObj_.find(trackId);
+			if (it == std::end(trackIdToObj_))
+			{
+				CV_Assert(false && "Got track change for not existent track");
+			}
+			else
+			{
+				TrackChangeClientSide& trackItem = it->second;
+				trackItem.terminate();
+			}
+			break;
+		}
+		}
+	}
+}

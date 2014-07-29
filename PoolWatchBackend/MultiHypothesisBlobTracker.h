@@ -1,5 +1,6 @@
 #pragma once
 #include <set>
+#include <map>
 #include <opencv2/core.hpp>
 
 #include <log4cxx/logger.h>
@@ -7,6 +8,31 @@
 #include <boost/filesystem/path.hpp>
 
 #include "TrackHypothesisTreeNode.h"
+
+/// Debug time helper class to keep a trail of upddates to a track.
+struct TrackChangeClientSide
+{
+	int TrackId;
+	int FrameIndOnNew;
+	bool IsLive = true;
+	int EndFrameInd; // next sequential track change should be associated with this frameInd
+
+	TrackChangeClientSide(int trackId, int frameIndOnNew);
+
+	/// Terminates the track. Further track changes are not possible.
+	void terminate();
+
+	/// Associates next track change with this track.
+	void setNextTrackChange(int changeFrameInd);
+};
+
+/// Debug time helper class to check that tracker returns consistent sequential track changes to the client.
+struct TrackChangeConsistencyChecker
+{
+	std::map<int, TrackChangeClientSide> trackIdToObj_;
+	int FrameIndOnNew;
+	void setNextTrackChanges(int readyFrameInd, const std::vector<TrackChangePerFrame>& trackChanges);
+};
 
 /** Represents a tracker which keeps a history of hypothesis to determine moving objects and their positions. */
 class __declspec(dllexport) MultiHypothesisBlobTracker
@@ -135,4 +161,7 @@ private:
 	inline bool isPseudoRoot(const TrackHypothesisTreeNode& node) const;
 	void getLeafSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& leafSet);
 	void getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet);
+#if PW_DEBUG
+	TrackChangeConsistencyChecker trackChangeChecker_;
+#endif
 };

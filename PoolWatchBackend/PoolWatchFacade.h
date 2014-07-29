@@ -73,6 +73,7 @@ __declspec(dllexport) void fixBlobs(std::vector<DetectedBlob>& blobs, const Came
 
 enum TrackChangeUpdateType
 {
+	// TODO: should New and ObservationUpdate be merged?
 	New = 1,
 	ObservationUpdate,
 	NoObservation,
