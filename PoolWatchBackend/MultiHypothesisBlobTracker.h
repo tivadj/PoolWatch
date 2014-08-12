@@ -8,6 +8,7 @@
 #include <boost/filesystem/path.hpp>
 
 #include "TrackHypothesisTreeNode.h"
+#include "AppearanceModel.h"
 
 /// Debug time helper class to keep a trail of upddates to a track.
 struct TrackChangeClientSide
@@ -69,6 +70,10 @@ public: // visible to a test module
 	float trackMinScore_ = -15;
 private:
 	boost::filesystem::path logDir_;
+#if PW_DEBUG
+	TrackChangeConsistencyChecker trackChangeChecker_;
+#endif
+	std::unique_ptr<AppearanceModel> appearanceGmmEstimator_;
 public:
 	MultiHypothesisBlobTracker(std::shared_ptr<CameraProjectorBase> cameraProjector, int pruneWindow, float fps);
 	MultiHypothesisBlobTracker(const MultiHypothesisBlobTracker& mht) = delete;
@@ -161,7 +166,4 @@ private:
 	inline bool isPseudoRoot(const TrackHypothesisTreeNode& node) const;
 	void getLeafSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& leafSet);
 	void getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet);
-#if PW_DEBUG
-	TrackChangeConsistencyChecker trackChangeChecker_;
-#endif
 };

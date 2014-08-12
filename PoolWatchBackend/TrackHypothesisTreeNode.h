@@ -6,6 +6,7 @@
 #include <boost/optional.hpp>
 
 #include "PoolWatchFacade.h"
+#include "AppearanceModel.h"
 
 enum class TrackHypothesisCreationReason
 {
@@ -64,6 +65,11 @@ struct TrackHypothesisTreeNode
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
 	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild, bool updateChildrenCollection = false);
+
+	// appearance data
+	static const int AppearanceGmmMaxSize = 5;
+	GaussMixtureCompoenent AppearanceGmm[AppearanceGmmMaxSize];
+	int AppearanceGmmCount = 0;
 };
 
 // Enumerates nodes from leaf to root but no more than pruneWindow nodes.

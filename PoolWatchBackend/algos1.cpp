@@ -33,6 +33,22 @@ namespace PoolWatch
 		float ex = std::expf(-0.5 * (x - mu)*(x - mu) / s2);
 		return coef * ex;
 	}
+
+	// Computes the probability of a point pX being from normal distribution with diagonal covariance matrix with equal sigmas.
+	// spaceDim=the dimension of the space (3 for RGB)
+	auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float
+	{
+		float sum2 = 0;
+		for (int i = 0; i < spaceDim; ++i)
+			sum2 += PoolWatch::sqr(pX[i] - pMu[i]);
+
+		float expPow = -0.5 / (sigma*sigma) * sum2;
+
+		float coef = 1 / std::powf(std::sqrt(2 * M_PI)*sigma, spaceDim / 2.0f);
+		float result = coef * std::expf(expPow);
+
+		return result;
+	}
 }
 
 void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, vector<uchar>& vertexSet)

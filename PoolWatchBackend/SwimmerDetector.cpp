@@ -608,6 +608,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 		cv::Rect bnd = cv::boundingRect(contour.outlinePixels);
 		blob.BoundingBox = cv::Rect2f(bnd.x, bnd.y, bnd.width, bnd.height);
 
+		// FilledImage
 		// draw shape without any noise that hit the bounding box
 		curOutlineMat.setTo(0);
 		singleContourTmp[0] = contour.outlinePixels;
@@ -615,6 +616,10 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 		//cv::Mat localImgOld = noTenuousBridges(Range(bnd.y, bnd.y + bnd.height), Range(bnd.x, bnd.x + bnd.width));
 		cv::Mat localImg = curOutlineMat(bnd).clone();
 		blob.FilledImage = localImg;
+
+		// FilledImageRgb
+		cv::Mat blobImgRgb(image, bnd);
+		blobImgRgb.copyTo(blob.FilledImageRgb, localImg);
 
 		cv::Moments ms = cv::moments(localImg, true);
 		float cx = ms.m10 / ms.m00;

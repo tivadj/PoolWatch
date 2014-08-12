@@ -52,6 +52,8 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 
 	// default to Kalman Filter
 	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps, swimmerMaxSpeed_);
+
+	appearanceGmmEstimator_ = std::make_unique<AppearanceModel>(TrackHypothesisTreeNode::AppearanceGmmMaxSize);
 }
 
 
@@ -183,11 +185,30 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
 		childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
 
-		//
-		float score;
+		// compute score
+
+		float movementScore;
 		cv::Point3f estPos;
-		movementPredictor_->estimateAndSave(*leafHyp, blobCentrWorld, estPos, score, childHyp);
-		childHyp.Score = score;
+		movementPredictor_->estimateAndSave(*leafHyp, blobCentrWorld, estPos, movementScore, childHyp);
+
+		// update appearance
+		appearanceGmmEstimator_->loadGmmComponents(leafHyp->AppearanceGmm, leafHyp->AppearanceGmmCount);
+		appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0,0,0));
+		appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm, TrackHypothesisTreeNode::AppearanceGmmMaxSize, pChildHyp->AppearanceGmmCount);
+
+		float appearanceScore = 0;
+		float appearanceScore2 = 0;
+		if (leafHyp->AppearanceGmmCount > 0 && pChildHyp->AppearanceGmmCount > 0)
+		{
+			// appearance score
+			float dist2 = gmmsL2NormDistance(leafHyp->AppearanceGmm, leafHyp->AppearanceGmmCount, pChildHyp->AppearanceGmm, pChildHyp->AppearanceGmmCount, 8);
+			// score function pass the data={{0,maxScore}, {2300,0.01}}
+			const float maxScore = 1.5;
+			const float c1 = 0.00218; // bends exponent to pass through data[1] point
+			appearanceScore = maxScore * std::expf(-c1 * dist2);
+		}
+
+		childHyp.Score = movementScore + appearanceScore;
 		childHyp.EstimatedPosWorld = estPos;
 		childHyp.Age = leafHyp->Age + 1;
 
@@ -284,6 +305,12 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 		float score;
 		movementPredictor_->initScoreAndState(frameInd, blobInd, blobCentrWorld, score, childHyp);
 		childHyp.Score = score;
+
+		// update appearance
+		appearanceGmmEstimator_->initGmmComponents();
+		appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0, 0, 0));
+		appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm, TrackHypothesisTreeNode::AppearanceGmmMaxSize, pChildHyp->AppearanceGmmCount);
+
 		childHyp.Age = 0;
 
 #if LOG_DEBUG_EX

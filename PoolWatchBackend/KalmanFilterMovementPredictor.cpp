@@ -1,4 +1,5 @@
 #include "KalmanFilterMovementPredictor.h"
+#include "algos1.h"
 
 float normalizedDistance(const cv::Mat& pos, const cv::Mat& mu, const cv::Mat& sigma)
 {
@@ -36,21 +37,33 @@ float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& 
 	return result;
 }
 
-
-KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps)
+// shift = distance from predicted to observed points
+float estimateProbOfShift(float shift, float sigma)
 {
-	initKalmanFilter(kalmanFilter_, fps);
+	assert(shift >= 0 && "Distance must be non negative");
+	
+	float result = PoolWatch::normalProb(shift, 0, sigma);
+	return  result * 2; // since shift is positive we consider only positibe part of gauss curve
+}
+
+
+const float spatDensClutter = 0.0026f;
+const float spatDensNew = 4e-6;
+
+KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps, float swimmerMaxSpeed)
+{
+	initKalmanFilter(kalmanFilter_, fps, swimmerMaxSpeed);
 
 	// penalty for missed observation
 	// prob 0.4 - penalty - 0.9163
 	// prob 0.6 - penalty - 0.5108
 	const float probDetection = 0.95f;
 	const float penalty = log(1 - probDetection);
-	//penalty_ = penalty;
-	penalty_ = -1.79 / 200;
+	penalty_ = penalty;
+	//penalty_ = -1.79 / 200;
 }
 
-void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps)
+void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps, float swimmerMaxSpeed)
 {
 	kalmanFilter.init(KalmanFilterDynamicParamsCount, 2, 0);
 
@@ -59,9 +72,14 @@ void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFil
 	// 2.3m / s is max speed for swimmers
 	// let say 0.5m / s is an average speed
 	// estimate sigma as one third of difference between max and mean shift per frame
-	float maxShiftM = 2.3f / fps;
-	float meanShiftM = 0.5f / fps;
-	float sigma = (maxShiftM - meanShiftM) / 3;
+	float maxShiftM = swimmerMaxSpeed / fps;
+	blobMaxShift_ = maxShiftM;
+
+	//float meanShiftM = 0.5f / fps;
+	//float meanShiftM = 23.0f / fps;
+	//float sigma = (maxShiftM - meanShiftM) / 3;
+	//float sigma = (maxShiftM - meanShiftM);
+	float sigma = maxShiftM / 3;
 	setIdentity(kalmanFilter.processNoiseCov, cv::Scalar::all(sigma*sigma));
 
 	kalmanFilter.measurementMatrix = (cv::Mat_<float>(2, 4) << 1, 0, 0, 0, 0, 1, 0, 0);
@@ -83,9 +101,14 @@ void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observat
 	float precision = nt / (float)(nt + fa);
 	float initialScore = -log(precision);
 
+	// TODO: ?
 	// if initial score is large, then tracks with missed detections may
 	// be evicted from hypothesis tree
-	initialScore = abs(6 * penalty_);
+
+	//int timeToLive = 6; // life time of FA till it dies
+	//initialScore = abs(timeToLive * penalty_);
+
+	initialScore = log(spatDensNew / spatDensClutter);
 
 	score = initialScore;
 
@@ -113,7 +136,6 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 	cv::Point3f predictedPos = cv::Point3f(predictedPos2.at<float>(0, 0), predictedPos2.at<float>(1, 0), CameraProjector::zeroHeight());
 
 	// correct position if blob was detected
-
 	if (blobCentrWorld != nullptr)
 	{
 		const auto& blobPosW = blobCentrWorld.get();
@@ -125,8 +147,20 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 		auto estPosMat = kalmanFilter.correct(obsPosWorld2);
 		estPos = cv::Point3f(estPosMat.at<float>(0, 0), estPosMat.at<float>(1, 0), CameraProjector::zeroHeight());
 
+		float dist = cv::norm(estPos - predictedPos);
+
 		//
-		auto shiftScore = kalmanFilterDistance(kalmanFilter, obsPosWorld2);
+		auto shiftScoreOld = kalmanFilterDistance(kalmanFilter, obsPosWorld2);
+		
+		float pd = 0.9f;
+		float sigma = blobMaxShift_ / 2; // 2 means that 2sig=95% of values will be at max shift
+		float probObs = estimateProbOfShift(dist, sigma);
+		auto shiftScore = std::log(probObs * pd / (spatDensClutter + spatDensNew));
+		const float minShiftScore = 0.001;
+		if (shiftScore < minShiftScore)
+			shiftScore = minShiftScore;
+		CV_Assert(shiftScore >= 0);
+
 		score = pLeaf->Score + shiftScore;
 	}
 	else

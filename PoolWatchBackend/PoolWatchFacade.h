@@ -64,7 +64,13 @@ struct DetectedBlob
 	cv::Point2f Centroid;
 	// TODO: analyze usage to check whether to represent it as a vector of points?
 	cv::Mat_<int32_t> OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
-	cv::Mat FilledImage; // [W,H] image contains only bounding box of this blob
+
+	cv::Mat FilledImage; // [W,H] CV_8UC1 image contains only bounding box of this blob
+
+	// used in appearance modeling
+	cv::Mat FilledImageRgb; // [W,H] CV_8UC3 image contains only bounding box of this blob
+
+	//
 	cv::Point3f CentroidWorld;
 	float AreaPix; // area of the blob in pixels
 };

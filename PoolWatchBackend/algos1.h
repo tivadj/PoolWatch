@@ -38,6 +38,7 @@ namespace PoolWatch
 
 	__declspec(dllexport) auto deg2rad(const float& degree) -> float;
 	__declspec(dllexport) auto normalProb(float x, float mu, float sigma) -> float;
+	__declspec(dllexport) auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float;
 }
 
 class EMQuick : public cv::EM
