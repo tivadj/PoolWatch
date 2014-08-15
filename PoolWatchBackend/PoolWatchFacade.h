@@ -1,10 +1,12 @@
 #pragma once
+#include <array>
 #include <stdint.h>
 #include <functional>
 #if SAMPLE_MATLABPROX
 #include "mex.h"
 #endif
 #include <opencv2/core.hpp>
+#include "AppearanceModel.h"
 
 #ifdef POOLWATCH_EXPORTS
 #define POOLWATCH_API __declspec(dllexport)
@@ -56,6 +58,8 @@ public:
 	static float zeroHeight() { return 0; }
 };
 
+const int ColorSignatureGmmMaxSize = 3;
+
 /** Rectangular region of tracket target, which is detected in camera's image frame. */
 struct DetectedBlob
 {
@@ -69,6 +73,8 @@ struct DetectedBlob
 
 	// used in appearance modeling
 	cv::Mat FilledImageRgb; // [W,H] CV_8UC3 image contains only bounding box of this blob
+	std::array<GaussMixtureCompoenent, ColorSignatureGmmMaxSize> ColorSignature;
+	int ColorSignatureGmmCount = 0;
 
 	//
 	cv::Point3f CentroidWorld;

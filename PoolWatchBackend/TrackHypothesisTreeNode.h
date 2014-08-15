@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <vector>
 #include <memory>
 #include <tuple>
@@ -67,8 +68,8 @@ struct TrackHypothesisTreeNode
 	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild, bool updateChildrenCollection = false);
 
 	// appearance data
-	static const int AppearanceGmmMaxSize = 5;
-	GaussMixtureCompoenent AppearanceGmm[AppearanceGmmMaxSize];
+	static const int AppearanceGmmMaxSize = ColorSignatureGmmMaxSize;
+	std::array<GaussMixtureCompoenent, AppearanceGmmMaxSize> AppearanceGmm;
 	int AppearanceGmmCount = 0;
 };
 
@@ -82,5 +83,7 @@ class SwimmerMovementPredictor
 public:
 	virtual void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
 
-	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+	// Estimates position and score of movement from position of curNode to blobCentrWorld. Saves state into saveNode.
+	// deltaMovementScore = delta score of shifting from current node to proposed blob's center.
+	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) = 0;
 };

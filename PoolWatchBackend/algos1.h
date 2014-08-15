@@ -44,6 +44,7 @@ namespace PoolWatch
 class EMQuick : public cv::EM
 {
 public:
+	EMQuick(int nclusters, int covMatType);
 	EMQuick(const EMQuick&) = delete;
 	static cv::Vec2d predict2(cv::InputArray _sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, cv::Mat& cacheL);
 	static cv::Vec2d computeProbabilitiesInplace(cv::Mat& sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, cv::Mat& cacheL);
@@ -52,9 +53,17 @@ public:
 	{
 		return this->nclusters;
 	}
+	const cv::Mat& getWeights()
+	{
+		return this->weights;
+	}
 	const cv::Mat& getMeans()
 	{
 		return this->means;
+	}
+	const std::vector<cv::Mat>& getCovs()
+	{
+		return this->covs;
 	}
 	const std::vector<cv::Mat>& getInvCovsEigenValuesPar()
 	{

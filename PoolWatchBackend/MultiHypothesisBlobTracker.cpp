@@ -1,4 +1,5 @@
 #include <vector>
+#include <array>
 #include <cassert>
 #include <memory>
 #include <set>
@@ -64,6 +65,13 @@ MultiHypothesisBlobTracker::~MultiHypothesisBlobTracker()
 void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& readyFrameInd,
 	std::vector<TrackChangePerFrame>& trackChanges)
 {
+#if PW_DEBUG
+	// check blobs
+	for (const DetectedBlob& blob : blobs)
+	{
+		CV_Assert(blob.ColorSignatureGmmCount >= 0 && "Blob's color signature must be initialized (required for calculation of appearance score)");
+	}
+#endif
 	growTrackHyposhesisTree(frameInd, blobs, fps, elapsedTimeMs);
 
 	pruneLowScoreTracks(frameInd,trackChanges);
@@ -191,29 +199,45 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		cv::Point3f estPos;
 		movementPredictor_->estimateAndSave(*leafHyp, blobCentrWorld, estPos, movementScore, childHyp);
 
-		// update appearance
-		appearanceGmmEstimator_->loadGmmComponents(leafHyp->AppearanceGmm, leafHyp->AppearanceGmmCount);
-		appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0,0,0));
-		appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm, TrackHypothesisTreeNode::AppearanceGmmMaxSize, pChildHyp->AppearanceGmmCount);
+		// update color signature
+		//appearanceGmmEstimator_->loadGmmComponents(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount);
+		//appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0,0,0));
+		//appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
 
+		// merge color signature
+		const float MaxRidgeRatio = 0.8;
+		const float GmmComponentMinWeight = 0.001;
+		float maxRidgeRatio = MaxRidgeRatio;
+		float componentMinWeight = GmmComponentMinWeight;
+		float learningRate = 0.06;
+		mergeTwoGaussianMixtures(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount,
+			maxRidgeRatio, componentMinWeight, learningRate, pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
+
+		// calculate appearance score
+
+		float dist2 = -1;
 		float appearanceScore = 0;
-		float appearanceScore2 = 0;
 		if (leafHyp->AppearanceGmmCount > 0 && pChildHyp->AppearanceGmmCount > 0)
 		{
 			// appearance score
-			float dist2 = gmmsL2NormDistance(leafHyp->AppearanceGmm, leafHyp->AppearanceGmmCount, pChildHyp->AppearanceGmm, pChildHyp->AppearanceGmmCount, 8);
-			// score function pass the data={{0,maxScore}, {2300,0.01}}
+			int tableStep = 8;
+			dist2 = gmmsL2NormDistance(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount, tableStep);
+			// score function pass the {0,maxScore} and approaches zero in infinity
 			const float maxScore = 1.5;
-			const float c1 = 0.00218; // bends exponent to pass through data[1] point
+			//const float c1 = 0.00218; // bends exponent to pass through {2300,0.01} point
+			//const float c1 = 125.266f; // bends exponent to pass through {0.04, 0.01} point
+			const float c1 = 6.26f; // bends exponent to pass through {0.8, 0.01} point
 			appearanceScore = maxScore * std::expf(-c1 * dist2);
 		}
 
-		childHyp.Score = movementScore + appearanceScore;
+		childHyp.Score = leafHyp->Score + movementScore + appearanceScore;
+
+		//
 		childHyp.EstimatedPosWorld = estPos;
 		childHyp.Age = leafHyp->Age + 1;
 
 #if LOG_DEBUG_EX
-		LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score << " Age=" << pChildHyp->Age << " Obs=" << latestObservationStatus(*pChildHyp, 5, leafHyp));
+		LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score << " (dM=" << movementScore << " dA=" << appearanceScore <<" dist2=" <<dist2 << ") Age=" << pChildHyp->Age << " Obs=" << latestObservationStatus(*pChildHyp, 5, leafHyp));
 #endif
 		//
 
@@ -255,11 +279,16 @@ void MultiHypothesisBlobTracker::makeNoObservationHypothesis(int frameInd, Track
 	childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
 
 	//
-	float score;
+	float movementScore;
 	cv::Point3f estPos;
-	movementPredictor_->estimateAndSave(*leafHyp, nullptr, estPos, score, childHyp);
-	childHyp.Score = score;
+	movementPredictor_->estimateAndSave(*leafHyp, nullptr, estPos, movementScore, childHyp);
+	childHyp.Score = leafHyp->Score + movementScore;
 	childHyp.EstimatedPosWorld = estPos;
+
+	// propogate color signature from parent track hypothesis node
+	std::copy(std::begin(leafHyp->AppearanceGmm), std::begin(leafHyp->AppearanceGmm) + leafHyp->AppearanceGmmCount, std::begin(pChildHyp->AppearanceGmm));
+	pChildHyp->AppearanceGmmCount = leafHyp->AppearanceGmmCount;
+
 	childHyp.Age = leafHyp->Age;
 
 #if LOG_DEBUG_EX
@@ -302,14 +331,19 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 		childHyp.EstimatedPosWorld = blobCentrWorld;
 		childHyp.KalmanFilterState = cv::Mat(4, 1, CV_32FC1);
 		childHyp.KalmanFilterStateCovariance = cv::Mat(4, 4, CV_32FC1);
-		float score;
-		movementPredictor_->initScoreAndState(frameInd, blobInd, blobCentrWorld, score, childHyp);
-		childHyp.Score = score;
+		float movementScore;
+		movementPredictor_->initScoreAndState(frameInd, blobInd, blobCentrWorld, movementScore, childHyp);
+		childHyp.Score = movementScore;
 
 		// update appearance
-		appearanceGmmEstimator_->initGmmComponents();
-		appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0, 0, 0));
-		appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm, TrackHypothesisTreeNode::AppearanceGmmMaxSize, pChildHyp->AppearanceGmmCount);
+		//appearanceGmmEstimator_->initGmmComponents();
+		//appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0, 0, 0));
+		//appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
+
+		// init color signature with one from the blob
+		assert(blob.ColorSignatureGmmCount <= pChildHyp->AppearanceGmm.size());
+		std::copy(std::begin(blob.ColorSignature), std::begin(blob.ColorSignature) + blob.ColorSignatureGmmCount, std::begin(pChildHyp->AppearanceGmm));
+		pChildHyp->AppearanceGmmCount = blob.ColorSignatureGmmCount;
 
 		childHyp.Age = 0;
 
@@ -1052,15 +1086,24 @@ std::string MultiHypothesisBlobTracker::latestObservationStatus(TrackHypothesisT
 	std::reverse(std::begin(nodes), std::end(nodes));
 
 	std::stringstream buf;
+	TrackHypothesisTreeNode* prevNode = nullptr;
 	for (TrackHypothesisTreeNode* pNode : nodes)
 	{
 		if (isPseudoRoot(*pNode))
 			continue; // root is the first node in the sequence
 
+		// insert comma if no one of two consequtive nodes is noObs
+		if (prevNode != nullptr && 
+			prevNode->ObservationInd != TrackHypothesisTreeNode::DetectionIndNoObservation &&
+			pNode   ->ObservationInd != TrackHypothesisTreeNode::DetectionIndNoObservation)
+			buf << ",";
+
 		if (pNode->ObservationInd == TrackHypothesisTreeNode::DetectionIndNoObservation)
-			buf << "o"; // noObs
+			buf << "-"; // noObs
 		else
-			buf << "+"; // gotObs
+			buf << pNode->ObservationInd; // gotObs
+
+		prevNode = pNode;
 	}
 	return buf.str();
 }

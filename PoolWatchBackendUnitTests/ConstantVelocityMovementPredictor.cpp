@@ -34,7 +34,7 @@ void ConstantVelocityMovementPredictor::initScoreAndState(int frameInd, int obse
 	saveState.vy = swimmerVelocity.y;
 }
 
-void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3_<float>& estPos, float& score, TrackHypothesisTreeNode& saveNode)
+void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3_<float>& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode)
 {
 	const auto& curState = nodeState(curNode);
 
@@ -48,9 +48,8 @@ void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTre
 	// model constant speed movement
 	estPos = curPos + swimmerVelocity;
 
-	score = curNode.Score;
 	if (blobCentrWorld != nullptr)
-		score += normalizedDistance(blobCentrWorld.get(), estPos, sigma_);
+		deltaMovementScore = normalizedDistance(blobCentrWorld.get(), estPos, sigma_);
 	else
 	{
 		// penalty for missed observation
@@ -59,7 +58,7 @@ void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTre
 		const float probDetection = 0.6f;
 		//const float penalty = log(1 - probDetection);
 		const float penalty = 1.79/10;
-		score += penalty;
+		deltaMovementScore = penalty;
 	}
 
 	// save

@@ -38,13 +38,13 @@ namespace PoolWatch
 	// spaceDim=the dimension of the space (3 for RGB)
 	auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float
 	{
+		float coef = 1 / std::powf(std::sqrt(2 * M_PI)*sigma, spaceDim);
+
 		float sum2 = 0;
 		for (int i = 0; i < spaceDim; ++i)
 			sum2 += PoolWatch::sqr(pX[i] - pMu[i]);
 
 		float expPow = -0.5 / (sigma*sigma) * sum2;
-
-		float coef = 1 / std::powf(std::sqrt(2 * M_PI)*sigma, spaceDim / 2.0f);
 		float result = coef * std::expf(expPow);
 
 		return result;
@@ -552,6 +552,10 @@ void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec
 	{
 		mask2 = mask2.reshape(1, image.rows);
 	}
+}
+
+EMQuick::EMQuick(int nclusters, int covMatType) : cv::EM(nclusters, covMatType)
+{
 }
 
 Vec2d EMQuick::predict2(InputArray _sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, Mat& cacheL)

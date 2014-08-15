@@ -121,7 +121,7 @@ void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observat
 	childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(KalmanFilterDynamicParamsCount, KalmanFilterDynamicParamsCount);
 }
 
-void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode)
+void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode)
 {
 	const TrackHypothesisTreeNode* pLeaf = &curNode;
 	TrackHypothesisTreeNode& childHyp = saveNode;
@@ -161,14 +161,14 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 			shiftScore = minShiftScore;
 		CV_Assert(shiftScore >= 0);
 
-		score = pLeaf->Score + shiftScore;
+		deltaMovementScore = shiftScore;
 	}
 	else
 	{
 		// as there is no observation, the predicted position is the best estimate
 		estPos = predictedPos;
 
-		score = pLeaf->Score + penalty_; // punish for no observation
+		deltaMovementScore = penalty_; // punish for no observation
 	}
 	//childHyp.EstimatedPosWorld = estPos;
 	//childHyp.Score = score;

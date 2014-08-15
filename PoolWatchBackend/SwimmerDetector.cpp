@@ -1,4 +1,5 @@
 #include <vector>
+#include <array>
 #include <cassert>
 #include <numeric>
 
@@ -12,6 +13,7 @@
 #include "SwimmingPoolObserver.h"
 #include "algos1.h"
 #include "VideoLogger.h"
+#include "AppearanceModel.h"
 
 using namespace std;
 using namespace cv;
@@ -609,6 +611,7 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 		blob.BoundingBox = cv::Rect2f(bnd.x, bnd.y, bnd.width, bnd.height);
 
 		// FilledImage
+
 		// draw shape without any noise that hit the bounding box
 		curOutlineMat.setTo(0);
 		singleContourTmp[0] = contour.outlinePixels;
@@ -618,8 +621,14 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 		blob.FilledImage = localImg;
 
 		// FilledImageRgb
+
 		cv::Mat blobImgRgb(image, bnd);
 		blobImgRgb.copyTo(blob.FilledImageRgb, localImg);
+
+		// Color signature
+		fixColorSignature(blobImgRgb, localImg, cv::Vec3b(0,0,0), blob);
+
+		// Centroid
 
 		cv::Moments ms = cv::moments(localImg, true);
 		float cx = ms.m10 / ms.m00;
@@ -645,6 +654,74 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 		//
 		blobs.push_back(blob);
 	}
+}
+
+// transparentCol=color to avoid copying
+void copyTo(const cv::Mat& sourceImageRgb, const cv::Mat& sourceImageMask, cv::Vec3b transparentCol, std::vector<Vec3b>& resultPixels)
+{
+	CV_Assert(sourceImageRgb.type() == CV_8UC3);
+	CV_Assert(sourceImageMask.type() == CV_8UC1);
+	CV_Assert(sourceImageRgb.cols == sourceImageMask.cols);
+	CV_Assert(sourceImageRgb.rows == sourceImageMask.rows);
+
+	CV_Assert(sourceImageRgb.isContinuous() && "NotImplemented: Only continuous input matrices are supported");
+	CV_Assert(sourceImageMask.isContinuous());
+
+	cv::Mat blobPixList = sourceImageRgb.reshape(1, 3);
+	cv::Mat blobMaskList = sourceImageMask.reshape(1, 1);
+	assert(blobPixList.cols == blobMaskList.cols && "Image and mask must be of the same size");
+
+	Vec3b* pPixSrc = reinterpret_cast<Vec3b*>(blobPixList.data);
+	uchar* pMask = blobMaskList.data;
+	for (int x = 0; x < blobMaskList.cols; ++x, ++pMask, ++pPixSrc)
+	{
+		bool isBlob = *pMask;
+		if (isBlob)
+		{
+			resultPixels.push_back(*pPixSrc);
+		}
+	}
+}
+
+void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::Mat& blobImageMask, cv::Vec3b transparentCol, DetectedBlob& resultBlob)
+{
+	CV_Assert(blobImageRgb.cols == blobImageMask.cols);
+	CV_Assert(blobImageRgb.rows == blobImageMask.rows);
+
+	std::vector<Vec3b> pixs;
+	copyTo(blobImageRgb, blobImageMask, transparentCol, pixs);
+
+	cv::Mat pixsMat(pixs.size(), 3, CV_8UC1, pixs.data()); // [N,3] each row has a pixel, because OpenCV is row-major
+
+	// EM training works with double type
+	cv::Mat pixsDouble; // [N,3]
+	pixsMat.convertTo(pixsDouble, CV_64FC1);
+
+	const int nclusters = TrackHypothesisTreeNode::AppearanceGmmMaxSize;
+	EMQuick em(nclusters, cv::EM::COV_MAT_SPHERICAL);
+	bool trainOp = em.train(pixsDouble);
+	assert(trainOp);
+
+	std::array<GaussMixtureCompoenent, nclusters> colorSignatureTmp;
+	for (int i = 0; i < nclusters; ++i)
+	{
+		colorSignatureTmp[i].weight = em.getWeights().at<double>(i);
+		colorSignatureTmp[i].muR = em.getMeans().at<double>(i, 0);
+		colorSignatureTmp[i].muG = em.getMeans().at<double>(i, 1);
+		colorSignatureTmp[i].muB = em.getMeans().at<double>(i, 2);
+		auto variance = em.getCovs()[i].at<double>(0, 0); // assumes diagonal spherical covariance matrix
+		colorSignatureTmp[i].sigma = std::sqrtf(variance);
+	}
+
+	// simplify (by merging close GMM components) the color signature
+
+	const float MaxRidgeRatio = 0.8;
+	const float GmmComponentMinWeight = 0.05;
+	float maxRidgeRatio = MaxRidgeRatio;
+	float componentMinWeight = GmmComponentMinWeight;
+	mergeGaussianMixtureComponents(colorSignatureTmp.data(), colorSignatureTmp.size(), maxRidgeRatio, componentMinWeight, resultBlob.ColorSignature.data(), resultBlob.ColorSignature.size(), resultBlob.ColorSignatureGmmCount);
+
+	assert(resultBlob.ColorSignatureGmmCount > 0);
 }
 
 void SwimmerDetector::trainLaneSeparatorClassifier(WaterClassifier& wc)
