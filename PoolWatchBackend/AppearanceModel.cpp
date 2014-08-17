@@ -604,12 +604,7 @@ void mergeGaussianMixtureComponents(const GaussMixtureCompoenent* gmm, int gmmSi
 	CV_Assert(!mergedComponents.empty(), "There must be at least one component after merging");
 
 	// ensure sum of weights is one
-
-	float sumWeight = std::accumulate(std::begin(mergedComponents), std::end(mergedComponents), 0.0f,
-		[](float ax, const GaussMixtureCompoenent& c) { return ax + c.weight; });
-
-	for (GaussMixtureCompoenent& c : mergedComponents)
-		c.weight /= sumWeight;
+	fixGmmWeights(mergedComponents.data(), mergedComponents.size());
 
 	// for readability sort the GMM components by weight descending
 	std::sort(std::begin(mergedComponents), std::end(mergedComponents), [](const GaussMixtureCompoenent& c1, const GaussMixtureCompoenent& c2) { return c1.weight > c2.weight; });
@@ -620,4 +615,16 @@ void mergeGaussianMixtureComponents(const GaussMixtureCompoenent* gmm, int gmmSi
 	auto endIt = std::begin(mergedComponents);
 	std::advance(endIt, rsultGmmSize);
 	std::copy(std::begin(mergedComponents), endIt, resultGmm);
+}
+
+void fixGmmWeights(GaussMixtureCompoenent* gmm, int gmmSize)
+{
+	float sumWeight = std::accumulate(gmm, gmm+gmmSize, 0.0f,
+		[](float ax, const GaussMixtureCompoenent& c) { return ax + c.weight; });
+
+	for (int i = 0; i < gmmSize; ++i)
+	{
+		GaussMixtureCompoenent& c = gmm[i];
+		c.weight /= sumWeight;
+	}
 }

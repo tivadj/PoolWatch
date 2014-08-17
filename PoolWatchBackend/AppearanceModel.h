@@ -41,3 +41,7 @@ __declspec(dllexport) void mergeTwoGaussianMixtures(GaussMixtureCompoenent const
 
 // Merges similar comonents in one GMM.
 __declspec(dllexport) void mergeGaussianMixtureComponents(const GaussMixtureCompoenent* gmm, int gmmSize, float maxRidgeRatio, float componentMinWeight, GaussMixtureCompoenent * resultGmm, int resultGmmMaxSize, int& rsultGmmSize);
+
+// Ensures that GMM has the total sum of weights for each GMM component equals one.
+void fixGmmWeights(GaussMixtureCompoenent* gmm, int gmmSize);
+

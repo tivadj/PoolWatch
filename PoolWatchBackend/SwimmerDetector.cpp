@@ -664,23 +664,51 @@ void copyTo(const cv::Mat& sourceImageRgb, const cv::Mat& sourceImageMask, cv::V
 	CV_Assert(sourceImageRgb.cols == sourceImageMask.cols);
 	CV_Assert(sourceImageRgb.rows == sourceImageMask.rows);
 
-	CV_Assert(sourceImageRgb.isContinuous() && "NotImplemented: Only continuous input matrices are supported");
-	CV_Assert(sourceImageMask.isContinuous());
-
-	cv::Mat blobPixList = sourceImageRgb.reshape(1, 3);
-	cv::Mat blobMaskList = sourceImageMask.reshape(1, 1);
-	assert(blobPixList.cols == blobMaskList.cols && "Image and mask must be of the same size");
-
-	Vec3b* pPixSrc = reinterpret_cast<Vec3b*>(blobPixList.data);
-	uchar* pMask = blobMaskList.data;
-	for (int x = 0; x < blobMaskList.cols; ++x, ++pMask, ++pPixSrc)
+	if (false && sourceImageRgb.isContinuous() && sourceImageMask.isContinuous())
 	{
-		bool isBlob = *pMask;
-		if (isBlob)
+		cv::Mat blobPixList = sourceImageRgb.reshape(1, 3);
+		cv::Mat blobMaskList = sourceImageMask.reshape(1, 1);
+		assert(blobPixList.cols == blobMaskList.cols && "Image and mask must be of the same size");
+
+		Vec3b* pPixSrc = reinterpret_cast<Vec3b*>(blobPixList.data);
+		uchar* pMask = blobMaskList.data;
+		for (int x = 0; x < blobMaskList.cols; ++x, ++pMask, ++pPixSrc)
 		{
-			resultPixels.push_back(*pPixSrc);
+			bool isBlob = *pMask;
+			if (isBlob)
+			{
+				resultPixels.push_back(*pPixSrc);
+			}
 		}
 	}
+	else
+	{
+		uchar* pSrcRowStart = sourceImageRgb.data;
+		uchar* pSrcMaskRowStart = sourceImageMask.data;
+		for (int y = 0; y < sourceImageRgb.rows; ++y)
+		{
+			Vec3b* pSrcPix = reinterpret_cast<Vec3b*>(pSrcRowStart);
+			uchar* pSrcMask = pSrcMaskRowStart;
+
+			for (int x = 0; x < sourceImageRgb.cols; ++x)
+			{
+				bool isBlob = *pSrcMask;
+				if (isBlob)
+				{
+					resultPixels.push_back(*pSrcPix);
+				}
+				++pSrcPix;
+				++pSrcMask;
+			}
+
+			pSrcRowStart += sourceImageRgb.step;
+			pSrcMaskRowStart += sourceImageMask.step;
+		}
+	}
+
+	// ensure all fore pixels were copied
+	int sum1 = cv::countNonZero(sourceImageMask);
+	CV_DbgAssert(sum1 == resultPixels.size());
 }
 
 void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::Mat& blobImageMask, cv::Vec3b transparentCol, DetectedBlob& resultBlob)
@@ -698,20 +726,34 @@ void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::M
 	pixsMat.convertTo(pixsDouble, CV_64FC1);
 
 	const int nclusters = TrackHypothesisTreeNode::AppearanceGmmMaxSize;
-	auto termCrit = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 10, 0.01);
+	auto termCrit = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 10, FLT_EPSILON);
 	EMQuick em(nclusters, cv::EM::COV_MAT_SPHERICAL, termCrit);
 	bool trainOp = em.train(pixsDouble);
 	assert(trainOp);
 
 	std::array<GaussMixtureCompoenent, nclusters> colorSignatureTmp;
+	int colorSignatureTmpSize = 0;
 	for (int i = 0; i < nclusters; ++i)
 	{
-		colorSignatureTmp[i].weight = em.getWeights().at<double>(i);
-		colorSignatureTmp[i].muR = em.getMeans().at<double>(i, 0);
-		colorSignatureTmp[i].muG = em.getMeans().at<double>(i, 1);
-		colorSignatureTmp[i].muB = em.getMeans().at<double>(i, 2);
+		colorSignatureTmp[colorSignatureTmpSize].weight = em.getWeights().at<double>(i);
+		colorSignatureTmp[colorSignatureTmpSize].muR = em.getMeans().at<double>(i, 0);
+		colorSignatureTmp[colorSignatureTmpSize].muG = em.getMeans().at<double>(i, 1);
+		colorSignatureTmp[colorSignatureTmpSize].muB = em.getMeans().at<double>(i, 2);
 		auto variance = em.getCovs()[i].at<double>(0, 0); // assumes diagonal spherical covariance matrix
-		colorSignatureTmp[i].sigma = std::sqrtf(variance);
+		
+		// for some reason cv::EM may get GMM component with almost zero variance, ignore it
+		if (variance < 0.0001)
+			continue;
+		colorSignatureTmp[colorSignatureTmpSize].sigma = std::sqrtf(variance);
+		colorSignatureTmpSize++;
+	}
+
+	CV_Assert(colorSignatureTmpSize > 0 && "EM got GMM with zero components");
+
+	bool wasExcludedComponent = colorSignatureTmpSize < colorSignatureTmp.size();
+	if (wasExcludedComponent)
+	{
+		fixGmmWeights(colorSignatureTmp.data(), colorSignatureTmpSize);
 	}
 
 	// simplify (by merging close GMM components) the color signature
@@ -720,7 +762,7 @@ void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::M
 	const float GmmComponentMinWeight = 0.05;
 	float maxRidgeRatio = MaxRidgeRatio;
 	float componentMinWeight = GmmComponentMinWeight;
-	mergeGaussianMixtureComponents(colorSignatureTmp.data(), colorSignatureTmp.size(), maxRidgeRatio, componentMinWeight, resultBlob.ColorSignature.data(), resultBlob.ColorSignature.size(), resultBlob.ColorSignatureGmmCount);
+	mergeGaussianMixtureComponents(colorSignatureTmp.data(), colorSignatureTmpSize, maxRidgeRatio, componentMinWeight, resultBlob.ColorSignature.data(), resultBlob.ColorSignature.size(), resultBlob.ColorSignatureGmmCount);
 
 	assert(resultBlob.ColorSignatureGmmCount > 0);
 }
