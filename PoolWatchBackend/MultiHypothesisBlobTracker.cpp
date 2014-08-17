@@ -96,7 +96,8 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 		if (!bestTrackLeafs.empty())
 			for (const TrackHypothesisTreeNode* pLeaf : bestTrackLeafs)
 			{
-				bld << endl << "  FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ObsInd=" << pLeaf->ObservationInd << " " << pLeaf->ObservationPos << " Score=" << pLeaf->Score << " Age=" << pLeaf->Age << " Obs=" << latestObservationStatus(*pLeaf, 5);
+				std::string obsStr = latestObservationStatus(*pLeaf, 5);
+				bld << endl << "  FamilyId=" << pLeaf->FamilyId << " LeafId=" << pLeaf->Id << " ObsInd=" << pLeaf->ObservationInd << " " << pLeaf->ObservationPos << " Score=" << pLeaf->Score << " Age=" << pLeaf->Age << " Obs=" << obsStr;
 			}
 		log_->debug(bld.str());
 	}
@@ -215,19 +216,20 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 
 		// calculate appearance score
 
-		float dist2 = -1;
+		float appearDist = -1;
 		float appearanceScore = 0;
 		if (leafHyp->AppearanceGmmCount > 0 && pChildHyp->AppearanceGmmCount > 0)
 		{
 			// appearance score
-			int tableStep = 8;
-			dist2 = gmmsL2NormDistance(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount, tableStep);
+			bool distOp = normalizedL2Distance(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount, appearDist);
+			CV_Assert(distOp && "There must be some distance between two valid GMMs");
+
 			// score function pass the {0,maxScore} and approaches zero in infinity
 			const float maxScore = 1.5;
 			//const float c1 = 0.00218; // bends exponent to pass through {2300,0.01} point
 			//const float c1 = 125.266f; // bends exponent to pass through {0.04, 0.01} point
 			const float c1 = 6.26f; // bends exponent to pass through {0.8, 0.01} point
-			appearanceScore = maxScore * std::expf(-c1 * dist2);
+			appearanceScore = maxScore * std::expf(-c1 * appearDist);
 		}
 
 		childHyp.Score = leafHyp->Score + movementScore + appearanceScore;
@@ -237,7 +239,8 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		childHyp.Age = leafHyp->Age + 1;
 
 #if LOG_DEBUG_EX
-		LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score << " (dM=" << movementScore << " dA=" << appearanceScore <<" dist2=" <<dist2 << ") Age=" << pChildHyp->Age << " Obs=" << latestObservationStatus(*pChildHyp, 5, leafHyp));
+		std::string obsStr = latestObservationStatus(*pChildHyp, 5, leafHyp);
+		LOG4CXX_DEBUG(log_, "grow Corresp FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " ObsInd=" << pChildHyp->ObservationInd << " " << pChildHyp->ObservationPos << " Score=" << pChildHyp->Score << " (dM=" << movementScore << " dA=" << appearanceScore << " dist2=" << appearDist << ") Age=" << pChildHyp->Age << " Obs=" << obsStr);
 #endif
 		//
 
@@ -292,7 +295,8 @@ void MultiHypothesisBlobTracker::makeNoObservationHypothesis(int frameInd, Track
 	childHyp.Age = leafHyp->Age;
 
 #if LOG_DEBUG_EX
-	LOG4CXX_DEBUG(log_, "grow NoObs FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " Score=" << pChildHyp->Score << " Age=" << pChildHyp->Age << " Obs=" << latestObservationStatus(*pChildHyp, 5, leafHyp));
+	std::string obsStr = latestObservationStatus(*pChildHyp, 5, leafHyp);
+	LOG4CXX_DEBUG(log_, "grow NoObs FamilyId=" << leafHyp->FamilyId << " LeafId=" << leafHyp->Id << " ChildId=" << pChildHyp->Id << " Score=" << pChildHyp->Score << " Age=" << pChildHyp->Age << " Obs=" << obsStr);
 #endif
 
 	leafHyp->addChildNode(std::move(pChildHyp));

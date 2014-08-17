@@ -698,7 +698,8 @@ void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::M
 	pixsMat.convertTo(pixsDouble, CV_64FC1);
 
 	const int nclusters = TrackHypothesisTreeNode::AppearanceGmmMaxSize;
-	EMQuick em(nclusters, cv::EM::COV_MAT_SPHERICAL);
+	auto termCrit = TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 10, 0.01);
+	EMQuick em(nclusters, cv::EM::COV_MAT_SPHERICAL, termCrit);
 	bool trainOp = em.train(pixsDouble);
 	assert(trainOp);
 

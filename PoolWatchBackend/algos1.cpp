@@ -558,6 +558,10 @@ EMQuick::EMQuick(int nclusters, int covMatType) : cv::EM(nclusters, covMatType)
 {
 }
 
+EMQuick::EMQuick(int nclusters, int covMatType, const cv::TermCriteria& termCrit) : cv::EM(nclusters, covMatType, termCrit)
+{
+}
+
 Vec2d EMQuick::predict2(InputArray _sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, Mat& cacheL)
 {
 	Mat sample = _sample.getMat();

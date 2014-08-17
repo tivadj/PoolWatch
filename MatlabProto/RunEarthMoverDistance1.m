@@ -16,9 +16,9 @@ function run(obj)
     %RunEarthMoverDistance1.analyzeHistogramDistributions(obj,debug);
     %RunEarthMoverDistance1.testColorAppearModelHistEarthMoverDistance1(obj, debug);
     %RunEarthMoverDistance1.testColorAppearModelHistBackProjection(obj, debug);
-    %RunEarthMoverDistance1.testColorAppearModelMixtureOfGaussians(obj, debug);
+    RunEarthMoverDistance1.testColorAppearModelMixtureOfGaussians(obj, debug);
     %RunEarthMoverDistance1.testAppearModelRecognitionVersusNumberOfPixelsForTraining(obj, debug);
-    RunEarthMoverDistance1.testMixtureOfGaussiansMerging(obj,debug);
+    %RunEarthMoverDistance1.testMixtureOfGaussiansMerging(obj,debug);
 end
 
 function simple1(obj, debug)
@@ -186,7 +186,7 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
     labelNames = obj.v.labelNames;
     classCount = length(labelNames);
     
-    for mixCnt=16
+    for mixCnt=6
     % header of log output
     fprintf('%d', mixCnt); % no newline
         
@@ -256,7 +256,7 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
     % print distances between each GMM
     if true
         n=length(groupMixGaussList);
-        tableStep = 2;
+        tableStep = 1;
         gmmSimilarit = zeros(n,n);
         for i1=1:n
             em1 = groupMixGaussList{i1};
@@ -268,7 +268,8 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
                 em2 = groupMixGaussList{i2};
                 %gmmFun2 = @(pix) utils.PixelClassifier.evalMixtureGaussians(pix', em2.Means, em2.Covs, em2.Weights);
                 %dist = RunEarthMoverDistance1.normalizedL2Distance(obj, gmmFun1,gmmFun2);
-                dist = RunEarthMoverDistance1.normalizedL2DistanceMem(obj, tableStep, em1.Weights, em1.Means, em1.Covs, em2.Weights, em2.Means, em2.Covs);
+                %dist = RunEarthMoverDistance1.normalizedL2DistanceMem(obj, tableStep, em1.Weights, em1.Means, em1.Covs, em2.Weights, em2.Means, em2.Covs);
+                dist = RunEarthMoverDistance1.normalizedL2DistanceExact(obj, em1.Weights, em1.Means, em1.Covs, em2.Weights, em2.Means, em2.Covs);
                 gmmSimilarit(i1,i2) = dist;
             end
         end
@@ -276,6 +277,80 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
     end
     
     end
+end
+
+% Computes Integrate[N1(mu1,cov1) * N2(mu2,cov2),dx]
+function value = integrateTwoGaussiansProduct(obj, mu1,cov1, mu2,cov2)
+    c1 = det(2*pi*(cov1 + cov2))^(-0.5);
+    c2 = exp(-0.5*(mu1-mu2)' * ((cov1+cov2)\(mu1-mu2)) );
+    value = c1 * c2;
+end
+
+% Computes Integrate[GMM1(Mus1,Covs1) * GMM2(Mus2,Covs2),dX]
+function value = integrateTwoGmmsProduct(obj, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs)
+    n1=length(oneWeights);
+    n2=length(otherWeights);
+    
+    value=0;
+    for i1=1:n1
+        weight1 = oneWeights(i1);
+        mu1=reshape(oneMeans(i1,:),[],1);
+        cov1=oneCovs{i1};
+        
+        for i2=1:n2
+            weight2 = otherWeights(i2);
+            mu2=reshape(otherMeans(i2,:),[],1);
+            cov2=otherCovs{i2};
+            
+            prod = RunEarthMoverDistance1.integrateTwoGaussiansProduct(obj, mu1, cov1, mu2, cov2);
+            value = value + weight1 * weight2 * prod;
+        end
+    end
+end
+
+% Computes Integrate[GMM1(Mus,Covs)^2),dX]
+function value = integrateGmmSqr(obj, weights,means,covs)
+    n=length(weights);
+    
+    value=0;
+    
+    % sum(pi^2)
+    for i=1:n
+        weight1 = weights(i);
+        cov=covs{i};
+        
+        % two GMM components are the same (use simplified formula)
+        prod = 1/sqrt(det(4*pi*cov));
+        value = value + weight1^2 * prod;
+    end
+    
+    % sum(+2 * pi * pj)
+    for i1 = 1 : n
+        weight1 = weights(i1);
+        mu1=reshape(means(i1,:),[],1);
+        cov1=covs{i1};
+        
+        for i2=i1+1 : n
+            weight2 = weights(i2);
+            mu2=reshape(means(i2,:),[],1);
+            cov2=covs{i2};
+            
+            prod = RunEarthMoverDistance1.integrateTwoGaussiansProduct(obj, mu1, cov1, mu2, cov2);
+            value = value + 2 * weight1 * weight2 * prod;
+        end
+    end
+end
+
+function dist = normalizedL2DistanceExact(obj, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs)
+    sumP1 = RunEarthMoverDistance1.integrateGmmSqr(obj, oneWeights,oneMeans,oneCovs);
+    sumP2 = RunEarthMoverDistance1.integrateGmmSqr(obj, otherWeights,otherMeans,otherCovs);
+
+    denom1 = sqrt(sumP1);
+    denom2 = sqrt(sumP2);
+
+    p12=RunEarthMoverDistance1.integrateTwoGmmsProduct(obj, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs);
+    
+    dist = 2*(1 - (1/(denom1*denom2)) * p12);
 end
 
 function dist = normalizedL2DistanceMem(obj, tableStep, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs)
