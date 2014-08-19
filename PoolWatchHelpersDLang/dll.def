@@ -11,3 +11,4 @@ EXPORTS
 	computeConnectedComponentsCount301
 	computeConnectedComponentsCount302
 	computeTrackIncopatibilityGraph
+	computeTrackIncopatibilityGraphDirectAccess

@@ -330,3 +330,17 @@ auto branchReversed(RootedTreeT, NodeIdT)(ref RootedTreeT tree, NodeIdT pathFrom
 	}
 	return BranchReversedRange();
 }
+
+// Gather leaves in the rooted tree.
+//void getLeaves(RootedTreeT, OutRangeT)(ref RootedTreeT tree, OutputRange!(RootedTreeT.NodeId) result)
+void getLeaves(RootedTreeT, OutRangeT)(ref RootedTreeT tree, OutRangeT result)
+//if (isOutputRange!(OutRangeT,RootedTreeT.NodeId))
+{
+	foreach(n; tree.nodes)
+	{
+		if (!tree.hasChildren(n))
+		{
+			result.put(n);
+		}
+	}
+}

@@ -40,18 +40,25 @@ struct ObservationConflict
 struct TrackHypothesisTreeNode
 {
 	static const int DetectionIndNoObservation = -1;
+	static const int AppearanceGmmMaxSize = ColorSignatureGmmMaxSize;
 
-	int Id;
-	int FamilyId;
+	// NOTE: must bitwise match corresponding DLang structure
+	// struct {
+	int32_t Id;
 	float Score; // determines validity of the hypothesis(from root to this node); the more is better
-	std::vector<std::unique_ptr<TrackHypothesisTreeNode>> Children;
+	int32_t FrameInd;
+	int ObservationOrNoObsId = -1; // >= 0 (eg 0,1,2) for valid observation; <0 (eg -1,-2,-3) to mean no observation for each hypothesis node
+	TrackHypothesisTreeNode** ChildrenArray = nullptr; // pointer to the array of children; must be in sync with Children[0]
+	int32_t ChildrenCount = 0; // must be in sync with Children.size()
 	TrackHypothesisTreeNode* Parent = nullptr;
-	int ObservationInd;
-	int ObservationOrNoObsId = -1;
-	int FrameInd;
+	// }
+
+	int FamilyId;
+	int ObservationInd; // >= 0 (eg 0,1,2) for valid observation; -1 for 'no observation'
+	std::vector<std::unique_ptr<TrackHypothesisTreeNode>> Children;
 	cv::Point2f ObservationPos;      // in pixels
 	cv::Point3f ObservationPosWorld; // in meters
-	cv::Point3f EstimatedPosWorld;
+	cv::Point3f EstimatedPosWorld; // in meters
 	TrackHypothesisCreationReason CreationReason;
 #if DO_CACHE_ICL
 	std::vector<ObservationConflict> IncompatibleNodes; // the list of nodes, this node is incompatible with
@@ -63,14 +70,14 @@ struct TrackHypothesisTreeNode
 	int Age = 0;  // frames
 //#endif
 
+	// appearance data
+	std::array<GaussMixtureCompoenent, AppearanceGmmMaxSize> AppearanceGmm;
+	int AppearanceGmmCount = 0;
+
+public:
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
 	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild, bool updateChildrenCollection = false);
-
-	// appearance data
-	static const int AppearanceGmmMaxSize = ColorSignatureGmmMaxSize;
-	std::array<GaussMixtureCompoenent, AppearanceGmmMaxSize> AppearanceGmm;
-	int AppearanceGmmCount = 0;
 };
 
 // Enumerates nodes from leaf to root but no more than pruneWindow nodes.

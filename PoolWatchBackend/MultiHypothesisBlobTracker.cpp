@@ -27,6 +27,7 @@ extern "C"
 		int32_t* pLast;
 	};
 	Int32PtrPair computeTrackIncopatibilityGraph(const int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, int noObservationId, Int32Allocator int32Alloc);
+	Int32PtrPair computeTrackIncopatibilityGraphDirectAccess(const TrackHypothesisTreeNode* pNode, int collisionIgnoreNodeId, Int32Allocator int32Alloc);
 }
 #endif
 
@@ -50,6 +51,7 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 	trackHypothesisForestPseudoNode_.FrameInd = 0;
 	trackHypothesisForestPseudoNode_.ObservationInd = 0;
 	trackHypothesisForestPseudoNode_.Parent = nullptr;
+	fixHypNodeConsistency(&trackHypothesisForestPseudoNode_);
 
 	// default to Kalman Filter
 	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps, swimmerMaxSpeed_);
@@ -75,6 +77,11 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 	growTrackHyposhesisTree(frameInd, blobs, fps, elapsedTimeMs);
 
 	pruneLowScoreTracks(frameInd,trackChanges);
+
+#if PW_DEBUG
+	// validate the hypothesis tree after changes (after growth and pruning)
+	checkHypNodesConsistency();
+#endif
 
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
@@ -141,6 +148,9 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 
 #if PW_DEBUG
 	trackChangeChecker_.setNextTrackChanges(readyFrameInd, trackChanges);
+
+	// validate the hypothesis nodes after pruning
+	checkHypNodesConsistency();
 #endif
 }
 
@@ -404,11 +414,17 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 		noObsOrder++;
 	}
 
+	for (auto pLeaf : leafSet)
+		fixHypNodeConsistency(pLeaf);
+
 	// initiate new track sparingly(each N frames)
 
 	if (frameInd % initNewTrackDelay_ == 0)
 	{
 		makeNewTrackHypothesis(frameInd, blobs, addedNew, observationIndToHypNodes);
+		
+		// fix root, as new hypothesis were added to it
+		fixHypNodeConsistency(&trackHypothesisForestPseudoNode_);
 	}
 
 	LOG4CXX_DEBUG(log_, "addedNew=" << addedNew << " addedDueCorrespondence=" << addedDueCorrespondence << " addedDueNoObservation=" << addedDueNoObservation);
@@ -416,6 +432,28 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 #if DO_CACHE_ICL
 	updateIncompatibilityLists(leafSet, observationIndToHypNodes);
 #endif
+}
+
+void MultiHypothesisBlobTracker::fixHypNodeConsistency(TrackHypothesisTreeNode* pNode)
+{
+	int count = (int)pNode->Children.size();
+	pNode->ChildrenCount = count;
+	pNode->ChildrenArray = count > 0 ? reinterpret_cast<TrackHypothesisTreeNode**>(&pNode->Children.front()) : nullptr;
+}
+
+void MultiHypothesisBlobTracker::checkHypNodesConsistency()
+{
+	std::vector<TrackHypothesisTreeNode*> allNodes;
+	getSubtreeSet(&trackHypothesisForestPseudoNode_, allNodes);
+
+	for (TrackHypothesisTreeNode* node : allNodes)
+	{
+		CV_Assert(node->ChildrenCount == (int)node->Children.size());
+		if (node->Children.empty())
+			CV_Assert(node->ChildrenArray == nullptr);
+		else
+			CV_Assert(node->ChildrenArray == (void*)&node->Children.front());
+	}
 }
 
 #if DO_CACHE_ICL
@@ -753,17 +791,17 @@ void MultiHypothesisBlobTracker::validateConformanceDLangImpl()
 #endif
 
 
-int MultiHypothesisBlobTracker::compoundObservationId(const TrackHypothesisTreeNode& node)
-{
-	//if (node.ObservationInd == DetectionIndNoObservation)
-	//	return DetectionIndNoObservation;
-	//return node.FrameInd*MaxObservationsCountPerFrame + node.ObservationInd;
-	return node.FrameInd*MaxObservationsCountPerFrame + node.ObservationOrNoObsId;
-}
+//int MultiHypothesisBlobTracker::compoundObservationId(const TrackHypothesisTreeNode& node)
+//{
+//	//if (node.ObservationInd == DetectionIndNoObservation)
+//	//	return DetectionIndNoObservation;
+//	//return node.FrameInd*MaxObservationsCountPerFrame + node.ObservationInd;
+//	return node.FrameInd*MaxObservationsCountPerFrame + node.ObservationOrNoObsId;
+//}
 
 void MultiHypothesisBlobTracker::hypothesisTreeToTreeStringRec(const TrackHypothesisTreeNode& startFrom, vector<int32_t>& encodedTreeString)
 {
-	int compoundId = compoundObservationId(startFrom);
+	//int compoundId = compoundObservationId(startFrom);
 	
 	encodedTreeString.push_back(startFrom.Id);
 	encodedTreeString.push_back(startFrom.FrameInd);
@@ -828,6 +866,7 @@ void MultiHypothesisBlobTracker::createTrackIncompatibilityGraphUsingPerNodeICL(
 	}
 }
 #else
+
 void MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLang(const vector<int32_t>& encodedTreeString, vector<int32_t>& incompGraphEdgePairs) const
 {
 	Int32Allocator int32Alloc;
@@ -846,8 +885,43 @@ void MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLang(const vecto
 	};
 
 	// Note: we ignore incompNodesRange because the result is populated in incompGraphEdgePairs
-	Int32PtrPair incompNodesRange = computeTrackIncopatibilityGraph(&encodedTreeString[0], (int)encodedTreeString.size(),
-	trackHypothesisForestPseudoNode_.Id, OpenBracket, CloseBracket, DetectionIndNoObservation, int32Alloc);
+	Int32PtrPair incompNodesRange = computeTrackIncopatibilityGraph(&encodedTreeString[0], (int)encodedTreeString.size(), trackHypothesisForestPseudoNode_.Id, OpenBracket, CloseBracket, DetectionIndNoObservation, int32Alloc);
+
+#if PW_DEBUG
+	if (incompNodesRange.pFirst == nullptr)
+	{
+		CV_Assert(incompNodesRange.pLast == nullptr);
+		CV_Assert(incompGraphEdgePairs.empty());
+	}
+	else
+	{
+		size_t sz = incompNodesRange.pLast - incompNodesRange.pFirst;
+		CV_Assert(incompGraphEdgePairs.size() == sz);
+		CV_Assert(incompGraphEdgePairs.size() % 2 == 0 && "Vertices list contains pair (from,to) of vertices for each edge");
+	}
+#endif
+}
+
+void MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLangDirectAccess(vector<int32_t>& incompGraphEdgePairs) const
+{
+	Int32Allocator int32Alloc;
+	int32Alloc.pUserData = &incompGraphEdgePairs;
+	int32Alloc.CreateArrayInt32 = [](size_t celem, void* pUserData) -> int32_t*
+	{
+		CV_Assert(celem > 0);
+		std::vector<int32_t>* pVec = reinterpret_cast<std::vector<int32_t>*>(pUserData);
+		pVec->resize(celem);
+
+		return &(*pVec)[0];
+	};
+	int32Alloc.DestroyArrayInt32 = [](int32_t* pInt32, void* pUserData) -> void
+	{
+		// vector manages its memory
+	};
+
+	// Note: we ignore incompNodesRange because the result is populated in incompGraphEdgePairs
+	Int32PtrPair incompNodesRange = computeTrackIncopatibilityGraphDirectAccess(&trackHypothesisForestPseudoNode_, trackHypothesisForestPseudoNode_.Id, int32Alloc);
+
 #if PW_DEBUG
 	if (incompNodesRange.pFirst == nullptr)
 	{
@@ -884,10 +958,41 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 	createTrackIncompatibilityGraphUsingPerNodeICL(leafSet, nodeIdToNode, incompatibTrackEdges);
 #else
 	{
-		vector<int32_t> encodedTreeString;
-		hypothesisTreeToTreeStringRec(trackHypothesisForestPseudoNode_, encodedTreeString);
+		//vector<int32_t> encodedTreeString;
+		//hypothesisTreeToTreeStringRec(trackHypothesisForestPseudoNode_, encodedTreeString);
+		//createTrackIncopatibilityGraphDLang(encodedTreeString, incompatibTrackEdges); // [1x(2*edgesCount)]
 
-		createTrackIncopatibilityGraphDLang(encodedTreeString, incompatibTrackEdges); // [1x(2*edgesCount)]
+		//vector<int32_t> incompatibTrackEdgesNew;
+		createTrackIncopatibilityGraphDLangDirectAccess(incompatibTrackEdges); // [1x(2*edgesCount)]
+
+		//
+		//CV_Assert(incompatibTrackEdges.size() == incompatibTrackEdgesNew.size());
+		//auto toPairsFun = [](const std::vector<int>& edgesList)->std::vector < std::pair<int, int> >
+		//{
+		//	std::vector<std::pair<int, int>> result;
+		//	for (int i = 0; i < (int)edgesList.size() / 2; ++i)
+		//	{
+		//		int i1 = edgesList[i * 2];
+		//		int i2 = edgesList[i * 2 + 1];
+		//		int left = std::min(i1, i2);
+		//		int right = std::max(i1, i2);
+		//		result.push_back(std::make_pair(left, right));
+		//	}
+		//	std::sort(std::begin(result), std::end(result), [](const std::pair<int, int>& x, const std::pair<int, int>& y)
+		//	{
+		//		if (x.first != y.first)
+		//			return x.first < y.first;
+		//		return x.second < y.second;
+		//	});
+		//	return result;
+		//};
+
+		//std::vector<std::pair<int, int>> ps1 = toPairsFun(incompatibTrackEdges);
+		//std::vector<std::pair<int, int>> ps2 = toPairsFun(incompatibTrackEdgesNew);
+		//for (int i = 0; i < ps1.size(); ++i)
+		//{
+		//	CV_Assert(ps1[i] == ps2[i]);
+		//}
 	}
 #endif
 
@@ -917,7 +1022,7 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 
 	//
 
-	vector<uchar> indepVertexSet;
+	vector<uchar> isInIndepVertexSet;
 #if DO_CACHE_ICL
 	maximumWeightIndependentSetNaiveMaxFirstCpp(connectedVertices, nodeIdToNode, indepVertexSet);
 #else
@@ -938,12 +1043,12 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 		g.setVertexPayload(i, vertexWeights[i]);
 
 	//maximumWeightIndependentSetNaiveMaxFirst(g, indepVertexSet);
-	maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(g, indepVertexSet);
-	assert(indepVertexSet.size() == connectedVertices.size());
+	maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(g, isInIndepVertexSet);
+	assert(isInIndepVertexSet.size() == connectedVertices.size());
 #endif
 
-	for (size_t i = 0; i < indepVertexSet.size(); ++i)
-		if (indepVertexSet[i])
+	for (size_t i = 0; i < isInIndepVertexSet.size(); ++i)
+		if (isInIndepVertexSet[i])
 		{
 			int32_t vertexId = connectedVertices[i];
 			auto pNode = nodeIdToNode[vertexId];
@@ -1371,8 +1476,9 @@ void MultiHypothesisBlobTracker::pruneLowScoreTracks(int frameInd, std::vector<T
 			// remove child
 			auto parent = pNodeToRemove->Parent;
 			std::unique_ptr<TrackHypothesisTreeNode> pChild = std::move(parent->pullChild(pNodeToRemove, true));
+			fixHypNodeConsistency(parent);
 
-			// family was pruned?
+			// family root was pruned?
 			if (isPseudoRoot(*parent))
 			{
 				bool wasPublishedAsNew = pChild->CreationReason != TrackHypothesisCreationReason::New;

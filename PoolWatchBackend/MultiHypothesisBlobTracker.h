@@ -106,6 +106,14 @@ public:
 private:
 	void growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs);
 
+	// Updates the node so all its fields are consistent.
+	// Some fields, like ChildrensCount or FirstChild, duplicate data in other fields and must be consistent.
+	// These helper fields are used in DLang code.
+	static void fixHypNodeConsistency(TrackHypothesisTreeNode* pNode);
+	
+	// Ensures that each node in the hypothesis tree is consistent.
+	void checkHypNodesConsistency();
+
 	// "Correspondence" hypothesis2: track has correspondent observations in this frame
 	void makeCorrespondenceHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, const std::vector<DetectedBlob>& blobs, float elapsedTimeMs, int& addedDueCorrespondence, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes);
 
@@ -130,13 +138,14 @@ private:
 	void maximumWeightIndependentSetNaiveMaxFirstCpp(const std::vector<int32_t>& connectedVertices, const std::map<int32_t, TrackHypothesisTreeNode*>& treeNodeIdToNode, std::vector<bool>& indepVertexSet);
 #endif
 
-	int compoundObservationId(const TrackHypothesisTreeNode& node);
+	//int compoundObservationId(const TrackHypothesisTreeNode& node);
 
 	void hypothesisTreeToTreeStringRec(const TrackHypothesisTreeNode& startFrom, std::vector<int32_t>& encodedTreeString);
 #if DO_CACHE_ICL
 	void createTrackIncompatibilityGraphUsingPerNodeICL(const std::vector<TrackHypothesisTreeNode*>& leafSet, const std::map<int, TrackHypothesisTreeNode*>& nodeIdToNode, std::vector<int32_t>& incompatibTrackEdges);
 #else
 	void createTrackIncopatibilityGraphDLang(const std::vector<int32_t>& encodedTreeString, std::vector<int32_t>& incompGraphEdgePairs) const;
+	void createTrackIncopatibilityGraphDLangDirectAccess(std::vector<int32_t>& incompGraphEdgePairs) const;
 	void validateConformanceDLangImpl();
 #endif
 
