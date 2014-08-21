@@ -128,6 +128,7 @@
     <ClCompile Include="MultiHypothesisBlobTracker.cpp" />
     <ClCompile Include="PaintHelper.cpp" />
     <ClCompile Include="PoolBoundaryDetector.cpp" />
+    <ClCompile Include="PoolWatchDLangInterop.cpp" />
     <ClCompile Include="PoolWatchFacade.cpp" />
     <ClCompile Include="MatlabInterop.cpp" />
     <ClCompile Include="SvgImageMaskSerializer.cpp" />

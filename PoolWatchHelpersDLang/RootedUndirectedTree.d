@@ -336,7 +336,7 @@ auto branchReversed(RootedTreeT, NodeIdT)(ref RootedTreeT tree, NodeIdT pathFrom
 void getLeaves(RootedTreeT, OutRangeT)(ref RootedTreeT tree, OutRangeT result)
 //if (isOutputRange!(OutRangeT,RootedTreeT.NodeId))
 {
-	foreach(n; tree.nodes)
+	foreach(RootedTreeT.NodeId n; tree.nodes)
 	{
 		if (!tree.hasChildren(n))
 		{

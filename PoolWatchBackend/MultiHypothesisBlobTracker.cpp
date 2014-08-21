@@ -28,6 +28,7 @@ extern "C"
 	};
 	Int32PtrPair computeTrackIncopatibilityGraph(const int* pEncodedTree, int encodedTreeLength, int collisionIgnoreNodeId, int openBracketLex, int closeBracketLex, int noObservationId, Int32Allocator int32Alloc);
 	Int32PtrPair computeTrackIncopatibilityGraphDirectAccess(const TrackHypothesisTreeNode* pNode, int collisionIgnoreNodeId, Int32Allocator int32Alloc);
+	void pwFindBestTracks(const TrackHypothesisTreeNode* pNode, int collisionIgnoreNodeId, int attemptCount, CppVectorPtrWrapper* trackHypVectorWrapper);
 }
 #endif
 
@@ -939,8 +940,27 @@ void MultiHypothesisBlobTracker::createTrackIncopatibilityGraphDLangDirectAccess
 #endif
 
 
-void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesisTreeNode*>& leafSet,
-	std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
+void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesisTreeNode*>& leafSet, std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
+{
+	findBestTracksDLang(bestTrackLeafs);
+
+#if PW_DEBUG
+	std::vector<TrackHypothesisTreeNode*> hyps;
+	findBestTracksCpp(leafSet, hyps);
+
+	//
+
+	std::sort(std::begin(bestTrackLeafs), std::end(bestTrackLeafs));
+	std::sort(std::begin(hyps), std::end(hyps));
+
+	bool eqSize = hyps.size() == bestTrackLeafs.size();
+	CV_Assert(eqSize);
+	for (int i = 0; i < (int)hyps.size(); ++i)
+		CV_Assert(bestTrackLeafs[i] == hyps[i]);
+#endif
+}
+
+void MultiHypothesisBlobTracker::findBestTracksCpp(std::vector<TrackHypothesisTreeNode*> const& leafSet, std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
 {
 	// incompatibility graph in the form of list of edges, each edge is a pair of vertices
 	vector<int32_t> incompatibTrackEdges;
@@ -1050,10 +1070,21 @@ void MultiHypothesisBlobTracker::findBestTracks(const std::vector<TrackHypothesi
 	for (size_t i = 0; i < isInIndepVertexSet.size(); ++i)
 		if (isInIndepVertexSet[i])
 		{
-			int32_t vertexId = connectedVertices[i];
-			auto pNode = nodeIdToNode[vertexId];
-			bestTrackLeafs.push_back(pNode);
+		int32_t vertexId = connectedVertices[i];
+		auto pNode = nodeIdToNode[vertexId];
+		bestTrackLeafs.push_back(pNode);
 		}
+}
+
+void MultiHypothesisBlobTracker::findBestTracksDLang(std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
+{
+	CppVectorPtrWrapper trackHypsWrapper;
+	PoolWatch::bindVectorWrapper(trackHypsWrapper, bestTrackLeafs);
+
+	// attempt count for maximum weight independent set algorithm
+	// actually, such number of naive implemenation of MWISP algorithm are run, each using slightly perturbed order of collision graph nodes
+	const int attemptCount = 5;
+	pwFindBestTracks(&trackHypothesisForestPseudoNode_, trackHypothesisForestPseudoNode_.Id, attemptCount, &trackHypsWrapper);
 }
 
 #if DO_CACHE_ICL

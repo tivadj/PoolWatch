@@ -8,7 +8,6 @@ import std.string;
 import std.array;
 import std.range;
 import std.typecons; // tuple
-//import std.copy;
 import std.container; // SList
 
 import PoolWatchHelpersDLang.traversal;
@@ -18,6 +17,8 @@ import PoolWatchHelpersDLang.MatrixUndirectedGraph;
 import PoolWatchHelpersDLang.MatrixUndirectedGraph2;
 import PoolWatchHelpersDLang.NearestCommonAncestorOfflineAlgorithm;
 import PoolWatchHelpersDLang.RootedUndirectedTree;
+import PoolWatchHelpersDLang.UndirectedAdjacencyVectorGraph;
+import PoolWatchHelpersDLang.MultiHypothesisBlobTracker;
 
 extern void poolTest1()
 {
@@ -75,6 +76,13 @@ extern (C)
 		int32_t* pFirst;
 		int32_t* pLast;
 	};
+
+	// Wrapper for std::vector<void*>
+	struct CppVectorPtrWrapper
+	{
+		void* Vector;
+		void function(CppVectorPtrWrapper* sender, void* ptr) PushBack;
+	}
 }
 
 extern (C) void computeMWISP(int* pVertices, int nodesCount, int* pEdgePerRow, int edgePerRowSize, double* pWeights, int weightsSize, bool* pIndepVerticesMask, int indepVerticesMaskSize)
@@ -425,177 +433,6 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 	}
 }
 
-// NOTE: must bitwise match corresponding CPP structure
-struct TrackHypothesisTreeNode
-{
-	int32_t Id;
-	float Score; // determines validity of the hypothesis(from root to this node); the more is better
-	int32_t FrameInd;
-	int ObservationOrNoObsId = -1; // >= 0 (eg 0,1,2) for valid observation; <0 (eg -1,-2,-3) to mean no observation for each hypothesis node
-	TrackHypothesisTreeNode** ChildrenArray = null; // pointer to the array of children
-	int32_t ChildrenCount = 0;
-	TrackHypothesisTreeNode* Parent = null;
-}
-
-struct HypTreeAdapter
-{
-	struct NodeId
-	{
-		alias pNode_ this;
-		TrackHypothesisTreeNode* pNode_;
-		this(TrackHypothesisTreeNode* pNode) { pNode_ = pNode; }
-		bool isNull()
-		{
-			return pNode_ == null;
-		}
-	}
-
-	NodeId hypTreeNode;
-	
-	this(TrackHypothesisTreeNode* hypTreeNode)
-	{
-		this.hypTreeNode = NodeId(hypTreeNode);
-	}
-	
-	bool hasChildren(NodeId node)
-	{
-		return node.ChildrenCount > 0;
-	}
-
-	NodeId parent(NodeId node)
-	{
-		return NodeId(node.Parent);
-	}
-
-	struct HypNodesIterator
-	{
-		NodeId startFrom;
-		this(NodeId startFrom) 
-		{
-			this.startFrom = startFrom;
-		}
-		private int traverseTreeRec(NodeId current, int delegate(NodeId) dg)
-		{
-			int result = dg(current);
-			if (result) return result;
-
-			auto childrenPtrs = current.ChildrenArray[0..current.ChildrenCount];
-			foreach (NodeId pChild; childrenPtrs)
-			{
-				result = traverseTreeRec(pChild, dg);
-				if (result) return result;
-			}
-
-			return 0;
-		}
-		int opApply(int delegate(NodeId) dg)
-		{
-			return traverseTreeRec(startFrom, dg);
-		}
-	}
-
-	auto nodes()
-	{
-		return HypNodesIterator(hypTreeNode);
-	}
-}
-
-void findCollisionEdges(RootedTreeT,OutRangeT)(ref RootedTreeT hypTree, OutRangeT edgesList, int collisionIgnoreNodeId)
-{
-	alias RootedTreeT.NodeId NodeId;
-
-	// find leaves
-
-	RootedTreeT.NodeId[] leaves;
-	RefAppender!(RootedTreeT.NodeId[]) leavesApppender = appender(&leaves);
-
-	getLeaves(hypTree, leavesApppender);
-
-	// check compatibility of each pair of tracks
-
-	struct FrameAndObsInd
-	{
-		int FrameInd;
-		int ObservationInd;
-	}
-	bool[FrameAndObsInd] observIdSet; // 
-
-	for (int n1=0; n1 < leaves.length-1; n1++)
-	{
-		auto leaf1 = leaves[n1];
-		//writeln("leaf1ObservId=", leaf1Data.ObservationId);
-
-		// populate set of observationIds for the first leaf
-		// NOTE: two hypothesis can't conflict on 'no observation'
-
-		observIdSet.clear;
-
-		auto populateBranchObservationIds = delegate void(ref RootedTreeT tree, RootedTreeT.NodeId leaf1)
-		{
-			foreach(RootedTreeT.NodeId node; tree.branchReversed(leaf1))
-			{
-				auto nodeId = node.Id;
-				if (nodeId == collisionIgnoreNodeId)
-					break;
-
-				auto frameInd = node.FrameInd;
-				auto obsInd = node.ObservationOrNoObsId;
-
-				FrameAndObsInd conflictObs;
-				conflictObs.FrameInd = frameInd;
-				conflictObs.ObservationInd = obsInd;
-				observIdSet[conflictObs] = true;
-			}
-		};
-		populateBranchObservationIds(hypTree, leaf1);
-
-		//write("keys:");
-		//foreach(id; observIdSet.keys)
-		//{
-		//    write(" ", id);
-		//}
-		//writeln;
-
-		// check collisions
-
-		for (int n2=n1+1; n2 < leaves.length; n2++)
-		{
-			auto leaf2 = leaves[n2];
-
-			bool isCollision = false;
-
-			// iterate through leaf2 branch
-			foreach(RootedTreeT.NodeId internalNode2; hypTree.branchReversed(leaf2))
-			{
-				if (internalNode2.Id == collisionIgnoreNodeId)
-					break;
-
-				auto frameInd2 = internalNode2.FrameInd;
-				auto obsInd2 = internalNode2.ObservationOrNoObsId;
-				//writeln("node2 ObservId=", obsId2);
-
-				FrameAndObsInd conflictObs2;
-				conflictObs2.FrameInd = frameInd2;
-				conflictObs2.ObservationInd = obsInd2;
-
-				auto collide = observIdSet.get(conflictObs2, false);
-				if (collide)
-				{
-					isCollision = true;
-					break;
-				}
-			}
-
-			if (isCollision)
-			{
-				auto edge = tuple(leaf1.Id,  leaf2.Id);
-				edgesList.put(edge);
-				//writeln("edge ", edge[0], " ", edge[1]);
-			}
-		}
-	}
-}
-
 // Operates directly on the hypothesis tree.
 extern (C) 
 Int32PtrPair computeTrackIncopatibilityGraphDirectAccess(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, Int32Allocator allocator)
@@ -636,4 +473,17 @@ Int32PtrPair computeTrackIncopatibilityGraphDirectAccess(TrackHypothesisTreeNode
 		result.pLast = pNodeIdsArray + len;
 	}
 	return result;
+}
+
+extern (C) 
+void pwFindBestTracks(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, int attemptCount, CppVectorPtrWrapper* bestTracks)
+{
+	TrackHypothesisTreeNode*[] bestTracksVector;
+	auto bestTracksApp = appender(&bestTracksVector);
+
+	findBestTracks(hypTree, collisionIgnoreNodeId, attemptCount, bestTracksApp);
+
+	// populate result
+	foreach(void* hypNode; bestTracksVector)
+		bestTracks.PushBack(bestTracks, hypNode);
 }

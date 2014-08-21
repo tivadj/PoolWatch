@@ -12,3 +12,4 @@ EXPORTS
 	computeConnectedComponentsCount302
 	computeTrackIncopatibilityGraph
 	computeTrackIncopatibilityGraphDirectAccess
+	pwFindBestTracks

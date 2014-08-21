@@ -51,6 +51,10 @@ struct TrackHypothesisTreeNode
 	TrackHypothesisTreeNode** ChildrenArray = nullptr; // pointer to the array of children; must be in sync with Children[0]
 	int32_t ChildrenCount = 0; // must be in sync with Children.size()
 	TrackHypothesisTreeNode* Parent = nullptr;
+	
+	// Used by DCode in MWISP algorithm.
+	// Stores a pointer to corresponding node in a collision graph of track hypothesis nodes.
+	void* MwispNode = nullptr;
 	// }
 
 	int FamilyId;

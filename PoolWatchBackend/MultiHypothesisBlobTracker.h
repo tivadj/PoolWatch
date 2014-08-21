@@ -149,8 +149,9 @@ private:
 	void validateConformanceDLangImpl();
 #endif
 
-	void findBestTracks(const std::vector<TrackHypothesisTreeNode*>& leafSet,
-		std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs);
+	void findBestTracks(const std::vector<TrackHypothesisTreeNode*>& leafSet, std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs);
+	void findBestTracksCpp(const std::vector<TrackHypothesisTreeNode*>& leafSet, std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs);
+	void findBestTracksDLang(std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs);
 
 	TrackChangePerFrame createTrackChange(TrackHypothesisTreeNode* pNode);
 	void populateTrackChange(TrackHypothesisTreeNode* pNode, TrackChangePerFrame& result);

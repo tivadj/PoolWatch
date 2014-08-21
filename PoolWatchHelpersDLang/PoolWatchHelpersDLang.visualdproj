@@ -300,9 +300,12 @@ where link.exe</preBuildCommand>
   <File path="GraphHelpers.d" />
   <File path="MatrixUndirectedGraph.d" />
   <File path="MatrixUndirectedGraph2.d" />
+  <File path="MaxWeightIndependentSet.d" />
+  <File path="MultiHypothesisBlobTracker.d" />
   <File path="NearestCommonAncestorOfflineAlgorithm.d" />
   <File path="PoolWatchInteropDLang.d" />
   <File path="RootedUndirectedTree.d" />
   <File path="traversal.d" />
+  <File path="UndirectedAdjacencyVectorGraph.d" />
  </Folder>
 </DProject>
