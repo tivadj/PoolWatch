@@ -1,31 +1,31 @@
 #include "KalmanFilterMovementPredictor.h"
 #include "algos1.h"
 
-float normalizedDistance(const cv::Mat& pos, const cv::Mat& mu, const cv::Mat& sigma)
+bool normalizedDistance(const cv::Matx21f& pos, const cv::Matx21f& mu, const cv::Matx22f& sigma, float& dist)
 {
-	cv::Mat zd = pos - mu;
-	cv::Mat mahalanobisDistance = zd.t() * sigma.inv() * zd;
-	//auto md = mahalanobisDistance.at<float>(0, 0);
-	double determinant = cv::determinant(sigma);
-	float dist = mahalanobisDistance.at<float>(0, 0) + static_cast<float>(log(determinant));
-	return dist;
-}
+	const int InvMethod = cv::DECOMP_LU;
 
-float normalizedDistance(const cv::Point3f& pos, const cv::Point3f& mu, float sigma)
-{
-	cv::Point3f zd = pos - mu;
-	float mahalanobisDistance = zd.dot(zd) * (1/sigma);
+	auto zd = pos - mu;
 	
+	bool invOp = false;
+	auto sigmaInv = sigma.inv(InvMethod, &invOp);
+	if (!invOp)
+		return false;
+
+	cv::Matx<float,1,1> mahalanobisDistance = zd.t() * sigmaInv * zd;
+	auto md = mahalanobisDistance.val[0];
+
 	double determinant = cv::determinant(sigma);
-	float dist = mahalanobisDistance + static_cast<float>(log(determinant));
-	return -dist;
+
+	dist = static_cast<float>(md + log(determinant));
+	return true;
 }
 
 /// Computes distance between predicted position of the Kalman Filter and given observed position.
 /// It corresponds to Matlab's vision.KalmanFilter.distance() function.
 /// Parameter observedPos is a column vector.
 // http://www.mathworks.com/help/vision/ref/vision.kalmanfilter.distance.html
-float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& observedPos)
+bool kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Matx21f& observedPos, float& dist)
 {
 	cv::Mat residualCovariance = kalmanFilter.measurementMatrix * kalmanFilter.errorCovPost * kalmanFilter.measurementMatrix.t() + kalmanFilter.measurementNoiseCov;
 	//auto rc = residualCovariance.at<float>(0, 0);
@@ -33,8 +33,11 @@ float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& 
 	cv::Mat mu = kalmanFilter.measurementMatrix * kalmanFilter.statePre;
 	//auto mm = mu.at<float>(0, 0);
 
-	float result = normalizedDistance(observedPos, mu, residualCovariance);
-	return result;
+	bool distOp = normalizedDistance(observedPos, mu, residualCovariance, dist);
+	if (!distOp)
+		return false;
+
+	return true;
 }
 
 // shift = distance from predicted to observed points
@@ -114,11 +117,10 @@ void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observat
 
 	// save Kalman Filter state
 
-	cv::Mat_<float> state(KalmanFilterDynamicParamsCount, 1, 0.0f); // [X,Y, vx=0, vy=0]'
-	state(0) = blobCentrWorld.x;
-	state(1) = blobCentrWorld.y;
+	cv::Matx41f state(blobCentrWorld.x, blobCentrWorld.y, 0, 0); // [X,Y, vx=0, vy=0]'
 	childHyp.KalmanFilterState = state;
-	childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(KalmanFilterDynamicParamsCount, KalmanFilterDynamicParamsCount);
+	childHyp.KalmanFilterStateCovariance = cv::Matx44f::zeros();
+	CV_DbgAssert(KalmanFilterDynamicParamsCount == decltype(state)::rows);
 }
 
 void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode)
@@ -128,8 +130,10 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 
 	// prepare Kalman Filter state
 	cv::KalmanFilter& kalmanFilter = kalmanFilter_; // use cached Kalman Filter object
-	kalmanFilter.statePost = pLeaf->KalmanFilterState.clone();
-	kalmanFilter.errorCovPost = pLeaf->KalmanFilterStateCovariance.clone();
+
+	// each hypothesis node has its own copy of Kalman Filter state, hence copy=true
+	kalmanFilter.statePost = cv::Mat(pLeaf->KalmanFilterState, true);
+	kalmanFilter.errorCovPost = cv::Mat(pLeaf->KalmanFilterStateCovariance, true);
 
 	//
 	cv::Mat predictedPos2 = kalmanFilter.predict();
@@ -140,17 +144,18 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 	{
 		const auto& blobPosW = blobCentrWorld.get();
 
-		auto obsPosWorld2 = cv::Mat_<float>(2, 1); // ignore Z
-		obsPosWorld2(0) = blobPosW.x;
-		obsPosWorld2(1) = blobPosW.y;
+		cv::Matx21f obsPosWorld2(blobPosW.x, blobPosW.y); // ignore Z
+		
+		auto obsPosWorld2Mat = cv::Mat_<float>(obsPosWorld2, false);
+		auto estPosMat = kalmanFilter.correct(obsPosWorld2Mat);
 
-		auto estPosMat = kalmanFilter.correct(obsPosWorld2);
 		estPos = cv::Point3f(estPosMat.at<float>(0, 0), estPosMat.at<float>(1, 0), CameraProjector::zeroHeight());
-
 		float dist = cv::norm(estPos - predictedPos);
 
 		//
-		auto shiftScoreOld = kalmanFilterDistance(kalmanFilter, obsPosWorld2);
+		//float shiftScoreOld = -1;
+		//bool distOp = kalmanFilterDistance(kalmanFilter, obsPosWorld2, shiftScoreOld);
+		//CV_Assert(distOp);
 		
 		float pd = 0.9f;
 		float sigma = blobMaxShift_ / 2; // 2 means that 2sig=95% of values will be at max shift

@@ -67,8 +67,8 @@ struct TrackHypothesisTreeNode
 #if DO_CACHE_ICL
 	std::vector<ObservationConflict> IncompatibleNodes; // the list of nodes, this node is incompatible with
 #endif
-	cv::Mat_<float> KalmanFilterState; // [X, Y, vx, vy] in meters and m/sec
-	cv::Mat_<float> KalmanFilterStateCovariance;  // [4x4]
+	cv::Matx41f KalmanFilterState; // [X, Y, vx, vy] in meters and m/sec
+	cv::Matx44f KalmanFilterStateCovariance;  // [4x4]
 	
 //#if PW_DEBUGXXX
 	int Age = 0;  // frames
