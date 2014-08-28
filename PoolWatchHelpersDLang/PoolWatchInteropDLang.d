@@ -81,7 +81,7 @@ extern (C)
 	struct CppVectorPtrWrapper
 	{
 		void* Vector;
-		void function(CppVectorPtrWrapper* sender, void* ptr) PushBack;
+		void function(CppVectorPtrWrapper* sender, void* ptr) @nogc PushBack;
 	}
 }
 
@@ -222,7 +222,7 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 
 	//
 
-	alias NcaNodePayload!(RootedUndirectedTreeFacade.NodeId) NcaNodeDataT;
+	alias NcaNodePayload NcaNodeDataT;
 	struct HypothesisNode
 	{
 		int NodeId;
@@ -236,13 +236,13 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 
 	RootedTreeT tree;
 
-	auto nodeDataFun = delegate HypothesisNode* (ref RootedTreeT tree, RootedTreeT.NodeId node) { 
+	scope auto nodeDataFun = delegate HypothesisNode* (ref RootedTreeT tree, RootedTreeT.NodeId node) { 
 		return &tree.nodePayload(node);
 	};
 
 	int[3] nodeDataEntriesBuff;
 	auto nullNode = tree.root;
-	auto initNodeDataFun = delegate void(RootedTreeT.NodeId node)
+	scope auto initNodeDataFun = delegate void(RootedTreeT.NodeId node)
 	{
 		HypothesisNode* data = &tree.nodePayload(node);
 		data.NodeId = nodeDataEntriesBuff[0];
@@ -476,14 +476,12 @@ Int32PtrPair computeTrackIncopatibilityGraphDirectAccess(TrackHypothesisTreeNode
 }
 
 extern (C) 
-void pwFindBestTracks(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, int attemptCount, CppVectorPtrWrapper* bestTracks)
+void pwFindBestTracks(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, int attemptCount, CppVectorPtrWrapper* bestTracks) 
 {
-	TrackHypothesisTreeNode*[] bestTracksVector;
-	auto bestTracksApp = appender(&bestTracksVector);
-
-	findBestTracks(hypTree, collisionIgnoreNodeId, attemptCount, bestTracksApp);
+	CppVector!(TrackHypothesisTreeNode*) bestTracksVector;
+	findBestTracks(hypTree, collisionIgnoreNodeId, attemptCount, &bestTracksVector);
 
 	// populate result
-	foreach(void* hypNode; bestTracksVector)
+	foreach(TrackHypothesisTreeNode* hypNode; bestTracksVector)
 		bestTracks.PushBack(bestTracks, hypNode);
 }

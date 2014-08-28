@@ -18,7 +18,7 @@ void run()
 void testSchieberFig31()
 {
 	writeln("testSchieberFig31");
-	alias NcaNodePayload!(RootedUndirectedTreeFacade.NodeId) NcaNodeDataT;
+	alias NcaNodePayload NcaNodeDataT;
 	alias RootedUndirectedTree!NcaNodeDataT TreeT;
 
 	TreeT tree;

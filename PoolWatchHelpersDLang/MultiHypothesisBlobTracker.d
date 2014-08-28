@@ -13,6 +13,7 @@ import std.math;
 
 import PoolWatchHelpersDLang.UndirectedAdjacencyVectorGraph;
 import PoolWatchHelpersDLang.RootedUndirectedTree;
+import PoolWatchHelpersDLang.GraphHelpers;
 
 // NOTE: must bitwise match corresponding CPP structure
 struct TrackHypothesisTreeNode
@@ -29,68 +30,62 @@ struct TrackHypothesisTreeNode
 
 struct HypTreeAdapter
 {
-	struct NodeId
-	{
-		alias pNode_ this;
-		TrackHypothesisTreeNode* pNode_;
-		this(TrackHypothesisTreeNode* pNode) { pNode_ = pNode; }
-		bool isNull()
-		{
-			return pNode_ == null;
-		}
-		//TrackHypothesisTreeNode* get()
-		//{
-		//    return pNode_;
-		//}
-	}
+	alias TrackHypothesisTreeNode* NodeId;
 
 	NodeId hypTreeNode;
 
-	this(TrackHypothesisTreeNode* hypTreeNode)
+	this(TrackHypothesisTreeNode* hypTreeNode) @nogc
 	{
-		this.hypTreeNode = NodeId(hypTreeNode);
+		this.hypTreeNode = hypTreeNode;
 	}
 
-	bool hasChildren(NodeId node)
+	bool isNull(NodeId node) @nogc
+	{
+		return node == null;
+	}
+
+	bool hasChildren(NodeId node) @nogc
 	{
 		return node.ChildrenCount > 0;
 	}
 
-	NodeId parent(NodeId node)
+	NodeId parent(NodeId node) @nogc
 	{
 		return NodeId(node.Parent);
 	}
 
-	struct HypNodesIterator
+	auto nodes() @nogc
 	{
-		NodeId startFrom;
-		this(NodeId startFrom) 
+		static struct HypNodesIterator
 		{
-			this.startFrom = startFrom;
-		}
-		private int traverseTreeRec(NodeId current, int delegate(NodeId) dg)
-		{
-			int result = dg(current);
-			if (result) return result;
+			NodeId startFrom;
 
-			auto childrenPtrs = current.ChildrenArray[0..current.ChildrenCount];
-			foreach (NodeId pChild; childrenPtrs)
+			private int traverseTreeRec(NodeId current, int delegate(NodeId) @nogc dg) @nogc
 			{
-				result = traverseTreeRec(pChild, dg);
+				int result = dg(current);
 				if (result) return result;
-			}
 
-			return 0;
+				auto childrenPtrs = current.ChildrenArray[0..current.ChildrenCount];
+				foreach (NodeId pChild; childrenPtrs)
+				{
+					result = traverseTreeRec(pChild, dg);
+					if (result) return result;
+				}
+
+				return 0;
+			}
+			int opApply(int delegate(NodeId) @nogc dg) @nogc
+			{
+				return traverseTreeRec(startFrom, dg);
+			}
 		}
-		int opApply(int delegate(NodeId) dg)
-		{
-			return traverseTreeRec(startFrom, dg);
-		}
+
+		return HypNodesIterator(hypTreeNode);
 	}
 
-	auto nodes()
+	unittest
 	{
-		return HypNodesIterator(hypTreeNode);
+		//static assert(isInputRange!HypNodesIterator);
 	}
 }
 
@@ -100,10 +95,9 @@ void findCollisionEdges(RootedTreeT,OutRangeT)(ref RootedTreeT hypTree, OutRange
 
 	// find leaves
 
-	RootedTreeT.NodeId[] leaves;
-	RefAppender!(RootedTreeT.NodeId[]) leavesApppender = appender(&leaves);
-
-	getLeaves(hypTree, leavesApppender);
+	CppVector!(RootedTreeT.NodeId) leaves;
+	foreach(n; getLeaves(hypTree))
+		leaves.pushBack(n);
 
 	// check compatibility of each pair of tracks
 
@@ -112,7 +106,7 @@ void findCollisionEdges(RootedTreeT,OutRangeT)(ref RootedTreeT hypTree, OutRange
 		int FrameInd;
 		int ObservationInd;
 	}
-	bool[FrameAndObsInd] observIdSet; // 
+	scope bool[FrameAndObsInd] observIdSet; // 
 
 	for (int n1=0; n1 < leaves.length-1; n1++)
 	{
@@ -190,21 +184,15 @@ void findCollisionEdges(RootedTreeT,OutRangeT)(ref RootedTreeT hypTree, OutRange
 	}
 }
 
-struct MwispPayload
+void findCollisionGraph(TrackHypothesisTreeT,ConflictingTracksHypothesisGraphT)(ref TrackHypothesisTreeT hypTree, int collisionIgnoreNodeId, CppVector!(HypTreeAdapter.NodeId) leaves, ref ConflictingTracksHypothesisGraphT conflictTrackGraph)
 {
-	bool IsVisited;
-	bool InIndependentSet;
-	TrackHypothesisTreeNode* HypNode;
-}
+	// init bidirectional hypothesis tree node - track conflicting graph association
+	
+	conflictTrackGraph.reserveNodes(leaves.length);
 
-void findCollisionGraph(RootedTreeT)(ref RootedTreeT hypTree, int collisionIgnoreNodeId, RootedTreeT.NodeId[] leaves, ref UndirectedAdjacencyGraphVectorImpl!MwispPayload mwispGraph)
-{
-	alias UndirectedAdjacencyGraphVectorImpl!MwispPayload MwispGraph;
-
-	// init bidirectional HypTreeNode-MwispGraphNode association
-	foreach(RootedTreeT.NodeId leaf; leaves)
+	foreach(TrackHypothesisTreeT.NodeId leaf; leaves)
 	{
-		MwispGraph.NodeId mwispNode = mwispGraph.addNode();
+		ConflictingTracksHypothesisGraphT.NodeId mwispNode = conflictTrackGraph.addNode();
 		mwispNode.NodePayload.HypNode =leaf;
 
 		leaf.MwispNode = mwispNode;
@@ -217,7 +205,7 @@ void findCollisionGraph(RootedTreeT)(ref RootedTreeT hypTree, int collisionIgnor
 		int FrameInd;
 		int ObservationInd;
 	}
-	bool[FrameAndObsInd] observIdSet; // 
+	scope bool[FrameAndObsInd] observIdSet; // TODO: require @nogc hash table
 
 	for (int n1=0; n1 < leaves.length-1; n1++)
 	{
@@ -228,9 +216,9 @@ void findCollisionGraph(RootedTreeT)(ref RootedTreeT hypTree, int collisionIgnor
 
 		observIdSet.clear;
 
-		auto populateBranchObservationIds = delegate void(ref RootedTreeT tree, RootedTreeT.NodeId leaf1)
+		auto populateBranchObservationIds = delegate void(ref TrackHypothesisTreeT tree, TrackHypothesisTreeT.NodeId leaf1)
 		{
-			foreach(RootedTreeT.NodeId node; tree.branchReversed(leaf1))
+			foreach(TrackHypothesisTreeT.NodeId node; tree.branchReversed(leaf1))
 			{
 				auto nodeId = node.Id;
 				if (nodeId == collisionIgnoreNodeId)
@@ -256,7 +244,7 @@ void findCollisionGraph(RootedTreeT)(ref RootedTreeT hypTree, int collisionIgnor
 			bool isCollision = false;
 
 			// iterate through leaf2 branch
-			foreach(RootedTreeT.NodeId internalNode2; hypTree.branchReversed(leaf2))
+			foreach(TrackHypothesisTreeT.NodeId internalNode2; hypTree.branchReversed(leaf2))
 			{
 				if (internalNode2.Id == collisionIgnoreNodeId)
 					break;
@@ -280,24 +268,32 @@ void findCollisionGraph(RootedTreeT)(ref RootedTreeT hypTree, int collisionIgnor
 			if (isCollision)
 			{
 				auto edge = tuple(leaf1.Id,  leaf2.Id);
-				auto node1 = cast(MwispGraph.NodeId)leaf1.MwispNode;
-				auto node2 = cast(MwispGraph.NodeId)leaf2.MwispNode;
-				mwispGraph.addEdge(node1, node2);
+				auto node1 = cast(ConflictingTracksHypothesisGraphT.NodeId)leaf1.MwispNode;
+				auto node2 = cast(ConflictingTracksHypothesisGraphT.NodeId)leaf2.MwispNode;
+				conflictTrackGraph.addEdge(node1, node2);
 			}
 		}
 	}
 }
 
-float findMaximumWeightIndependentSetMaxFirst(ref UndirectedAdjacencyGraphVectorImpl!MwispPayload mwispGraph, UndirectedAdjacencyGraphVectorImpl!(MwispPayload).NodeId[] descWeightNodes)
+// The payload to find Maximum Weigth Independent Set (MWIS) payload.
+struct MwisPayload
 {
-	assert(mwispGraph.nodesCount == descWeightNodes.length);
+	bool IsVisited;
+	bool InIndependentSet;
+	TrackHypothesisTreeNode* HypNode; // reference to a tree hypothesis node
+}
 
-	alias UndirectedAdjacencyGraphVectorImpl!MwispPayload MwisGraph;
+@nogc float findMaximumWeightIndependentSetMaxFirst(ref UndirectedAdjacencyGraphVectorImpl!MwisPayload mwisGraph, UndirectedAdjacencyGraphVectorImpl!(MwisPayload).NodeId[] descWeightNodes)
+{
+	assert(mwisGraph.nodesCount == descWeightNodes.length);
+
+	alias UndirectedAdjacencyGraphVectorImpl!MwisPayload MwisGraph;
 
 	// prepare workspace
-	foreach(MwisGraph.NodeId n; mwispGraph.nodes)
+	foreach(MwisGraph.NodeId n; mwisGraph.nodes)
 	{
-		MwispPayload* data = &n.NodePayload;
+		MwisPayload* data = &n.NodePayload;
 		data.IsVisited = false;
 		data.InIndependentSet = false;
 	}
@@ -306,7 +302,7 @@ float findMaximumWeightIndependentSetMaxFirst(ref UndirectedAdjacencyGraphVector
 
 	foreach(MwisGraph.NodeId n; descWeightNodes)
 	{
-		MwispPayload* data = &n.NodePayload;
+		MwisPayload* data = &n.NodePayload;
 		if (data.IsVisited)
 			continue;
 
@@ -316,9 +312,9 @@ float findMaximumWeightIndependentSetMaxFirst(ref UndirectedAdjacencyGraphVector
 		independentSetWeight += data.HypNode.Score;
 
 		// exclude all neigbour edges
-		foreach(MwisGraph.NodeId adj; mwispGraph.adjacentNodes(n))
+		foreach(MwisGraph.NodeId adj; mwisGraph.adjacentNodes(n))
 		{
-			MwispPayload* adjData = &adj.NodePayload;
+			MwisPayload* adjData = &adj.NodePayload;
 
 			assert(!adjData.InIndependentSet, "Neighbour node can't be in independent set");
 
@@ -333,25 +329,21 @@ float findMaximumWeightIndependentSetMaxFirst(ref UndirectedAdjacencyGraphVector
 // and performs naive max weight independent set implementation.
 // minAttemptsCount [1..numNodes]=number of perturbations of the initially sorted (in weight desc order) nodes.
 // This parameter should be > 1, otherwise algo choses non-optimal solution even for simplest scenarios
-void findMaximumWeightIndependentSet_MaxFirstMultiAttempts(ref UndirectedAdjacencyGraphVectorImpl!MwispPayload mwispGraph, int minAttemptsCount, UndirectedAdjacencyGraphVectorImpl!(MwispPayload).NodeId[]* pMaxIndependentSet)
+void findMaximumWeightIndependentSet_MaxFirstMultiAttempts(MwisGraphT)(ref MwisGraphT mwisGraph, int minAttemptsCount, CppVector!(MwisGraphT.NodeId)* pMaxIndependentSet)
 {
 	assert(minAttemptsCount >= 1);
 
-	alias UndirectedAdjacencyGraphVectorImpl!MwispPayload MwisGraph;
+	CppVector!(MwisGraphT.NodeId) nodes;
+	nodes.reserve(mwisGraph.nodesCount);
 
-	MwisGraph.NodeId[] nodes;
-	nodes.reserve(mwispGraph.nodesCount);
-	auto app = appender(&nodes);
-
-	//copy(mwispGraph.nodes, nodes); // TODO: ERROR:
-	foreach(MwisGraph.NodeId n; mwispGraph.nodes)
+	//copy(mwisGraph.nodes, nodes); // TODO: ERROR:
+	foreach(MwisGraphT.NodeId n; mwisGraph.nodes)
 	{
-		app.put(n);
+		nodes.pushBack(n);
 	}
 
-	auto decWeightFun = function (MwisGraph.NodeId n1, MwisGraph.NodeId n2) { return n1.NodePayload.HypNode.Score > n2.NodePayload.HypNode.Score; };
-	sort!decWeightFun(nodes);
-
+	auto decWeightFun = function (MwisGraphT.NodeId n1, MwisGraphT.NodeId n2) @nogc { return n1.NodePayload.HypNode.Score > n2.NodePayload.HypNode.Score; };
+	sort!decWeightFun(nodes[]);
 
 	//
 	int attemptCount = cast(int)log(nodes.length);
@@ -372,20 +364,19 @@ void findMaximumWeightIndependentSet_MaxFirstMultiAttempts(ref UndirectedAdjacen
 		swap(nodes[0],  nodes[bringToFrontNode]); // perturb weight desc order
 
 		//
-		float independentSetWeight = findMaximumWeightIndependentSetMaxFirst(mwispGraph, nodes);
+		float independentSetWeight = findMaximumWeightIndependentSetMaxFirst(mwisGraph, nodes[]);
 		if (independentSetWeight > maxIndependentSetWeight)
 		{
 			// save the better result
 			maxIndependentSetWeight = independentSetWeight;
 
-			pMaxIndependentSet.length = 0;
+			pMaxIndependentSet.clear;
 
-			scope RefAppender!(MwisGraph.NodeId[]) maxIndependentSetApp = appender(pMaxIndependentSet);
-			foreach(MwisGraph.NodeId n; mwispGraph.nodes)
+			foreach(MwisGraphT.NodeId n; mwisGraph.nodes)
 			{
-				MwispPayload* data = &n.NodePayload;
+				MwisPayload* data = &n.NodePayload;
 				if (data.InIndependentSet)
-					maxIndependentSetApp.put(n);
+					pMaxIndependentSet.pushBack(n);
 			}
 		}
 		
@@ -394,46 +385,49 @@ void findMaximumWeightIndependentSet_MaxFirstMultiAttempts(ref UndirectedAdjacen
 }
 
 
-void findBestTracks(OutHypRangeT)(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, int minAttemptsCount, OutHypRangeT bestTracks)
+void findBestTracks(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, int minAttemptsCount, CppVector!(TrackHypothesisTreeNode*)* pBestTracks)
 {
 	auto hypTreeAdapt = HypTreeAdapter(hypTree);
 
 	// find leaves
 
-	HypTreeAdapter.NodeId[] leaves;
-	RefAppender!(HypTreeAdapter.NodeId[]) leavesApppender = appender(&leaves);
-
-	getLeaves(hypTreeAdapt, leavesApppender);
+	CppVector!(HypTreeAdapter.NodeId) leaves;
+	foreach(e; getLeaves(hypTreeAdapt))
+		leaves.pushBack(e);
 
 	//
-	alias UndirectedAdjacencyGraphVectorImpl!MwispPayload MwisGraph;
-	MwisGraph mwispGraph;
-	findCollisionGraph(hypTreeAdapt, collisionIgnoreNodeId, leaves, mwispGraph);
+	alias UndirectedAdjacencyGraphVectorImpl!MwisPayload ConflictingTrackHypothesisGraphT;
+	ConflictingTrackHypothesisGraphT conflictTrackGraph;
+	findCollisionGraph(hypTreeAdapt, collisionIgnoreNodeId, leaves, conflictTrackGraph);
 
 	// find isolated vertices, they always are the best candidates
-	// leaves - mwispGraph.nodes
-	sort(leaves);
-	auto sortedConnectedNodes = new HypTreeAdapter.NodeId[mwispGraph.nodesCount];
-	foreach(i,n; mwispGraph.nodes)
+	// leaves - conflictTrackGraph.nodes
+	sort(leaves[]);
+	scope auto sortedConnectedNodes = new HypTreeAdapter.NodeId[conflictTrackGraph.nodesCount];
+	foreach(i,n; conflictTrackGraph.nodes)
 		sortedConnectedNodes[i] = n.NodePayload.HypNode;
 
 	sort(sortedConnectedNodes);
 
-	auto isolatedNodes = setDifference(leaves, sortedConnectedNodes);
+	scope auto isolatedNodes = setDifference(leaves[], sortedConnectedNodes);
 
 	//
-	MwisGraph.NodeId[] maxIndependentSet;
-	findMaximumWeightIndependentSet_MaxFirstMultiAttempts(mwispGraph, minAttemptsCount, &maxIndependentSet);
+	CppVector!(ConflictingTrackHypothesisGraphT.NodeId) maxIndependentSet;
+	maxIndependentSet.reserve(conflictTrackGraph.nodesCount);
+
+	findMaximumWeightIndependentSet_MaxFirstMultiAttempts!(ConflictingTrackHypothesisGraphT)(conflictTrackGraph, minAttemptsCount, &maxIndependentSet);
 
 	// populate result
+	int expectLength = maxIndependentSet.length * 2;
+	pBestTracks.reserve(expectLength);
 
 	foreach(TrackHypothesisTreeNode* hypNode; isolatedNodes)
-		bestTracks.put(hypNode);
+		pBestTracks.pushBack(hypNode);
 
-	foreach(MwisGraph.NodeId n; maxIndependentSet)
+	foreach(ConflictingTrackHypothesisGraphT.NodeId n; maxIndependentSet)
 	{
-		MwispPayload* data = &n.NodePayload;
+		MwisPayload* data = &n.NodePayload;
 		TrackHypothesisTreeNode* hypNode = data.HypNode;
-		bestTracks.put(hypNode);
+		pBestTracks.pushBack(hypNode);
 	}
 }

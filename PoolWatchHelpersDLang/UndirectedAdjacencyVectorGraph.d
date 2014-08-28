@@ -1,54 +1,58 @@
 module PoolWatchHelpersDLang.UndirectedAdjacencyVectorGraph;
 import std.container;
+import PoolWatchHelpersDLang.GraphHelpers;
 
-struct UndirectedAdjacencyVectorGraphFacade
-{
-	//alias UndirectedAdjacencyVectorNode* NodeId;
-
-}
-
-
+// Represents a graph where nodes are associated with other nodes, bypassing edges.
+// The list of adjacent nodes is powered by 'CppVector'.
 struct UndirectedAdjacencyGraphVectorImpl(NodePayloadT)
 {
-	alias UndirectedAdjacencyNode* NodeId;
-	SList!NodeId allNodes;
-	int nodesCount_ = 0;
-
-	struct UndirectedAdjacencyNode
+	private struct UndirectedAdjacencyNode
 	{
-		SList!NodeId AdjacentNodes;
+		CppVector!NodeId AdjacentNodes;
 		NodePayloadT NodePayload;
 	}
 
-	NodeId addNode()
-	{
-		auto node = new UndirectedAdjacencyNode;
-		allNodes.insertFront(node);
-		nodesCount_++;
-		return node;
-	}
+	alias UndirectedAdjacencyNode* NodeId;
 
-	void addEdge(NodeId n1, NodeId n2)
-	{
-		n1.AdjacentNodes.insertFront(n2);
-		n2.AdjacentNodes.insertFront(n1);
-	}
+	private CppVector!NodeId allNodes;
 
-	struct NodesRange
+	~this() @nogc
 	{
-		bool empty()
+		for (int i=0; i < allNodes.length; ++i)
 		{
-			return true;
+			auto pNode = allNodes[i];
+			assert(pNode != null);
+			core.stdc.stdlib.free(pNode);
 		}
 	}
 
-	struct NodesApplyImpl
+	NodeId addNode() @nogc
 	{
-		SList!NodeId nodes;
+		auto pNode = cast(UndirectedAdjacencyNode*)core.stdc.stdlib.malloc(UndirectedAdjacencyNode.sizeof);
+		pNode = std.conv.emplace!(UndirectedAdjacencyNode)(pNode);
 
-		int opApply(int delegate(NodeId node) dg)
+		allNodes.pushBack(pNode);
+		return pNode;
+	}
+
+	void reserveNodes(int count) @nogc
+	{
+		allNodes.reserve(count);
+	}
+
+	void addEdge(NodeId n1, NodeId n2) @nogc
+	{
+		n1.AdjacentNodes.pushBack(n2);
+		n2.AdjacentNodes.pushBack(n1);
+	}
+
+	private static struct NodesApplyImpl
+	{
+		CppVector!(NodeId)* pNodes;
+
+		int opApply(int delegate(NodeId node) @nogc dg)
 		{
-			foreach(NodeId n; this.nodes)
+			foreach(NodeId n; *pNodes)
 			{
 				auto result = dg(n);
 				if (result) return result;
@@ -56,10 +60,10 @@ struct UndirectedAdjacencyGraphVectorImpl(NodePayloadT)
 			return 0;
 		}
 
-		int opApply(int delegate(int index, NodeId node) dg)
+		int opApply(int delegate(int index, NodeId node) @nogc dg) @nogc
 		{
 			int i = 0;
-			foreach(NodeId n; this.nodes)
+			foreach(NodeId n; *pNodes)
 			{
 				auto result = dg(i, n);
 				if (result) return result;
@@ -67,34 +71,25 @@ struct UndirectedAdjacencyGraphVectorImpl(NodePayloadT)
 			}
 			return 0;
 		}
-
-		auto opSlice()
-		{
-			return this.nodes.Range();
-		}
 	}
 
-	auto nodes()
+	auto nodes() @nogc
 	{
-		return NodesApplyImpl(this.allNodes);
+		return NodesApplyImpl(&this.allNodes);
 	}
 
-	int nodesCount()
+	int nodesCount() @nogc
 	{
-		return nodesCount_;
+		return allNodes.length;
 	}
 
-	struct AdjacentVerticesRange
+	private static struct AdjacentVerticesRange
 	{
 		NodeId node_;
-		this(NodeId node)
+
+		int opApply(int delegate(NodeId) @nogc dg)
 		{
-			this.node_ = node;
-		}
-		int opApply(int delegate(NodeId) dg)
-		{
-			auto adjRange = node_.AdjacentNodes[];
-			foreach(adj; adjRange)
+			foreach(NodeId adj; node_.AdjacentNodes)
 			{
 				int result = dg(adj);
 				if (result) return result;
@@ -103,7 +98,7 @@ struct UndirectedAdjacencyGraphVectorImpl(NodePayloadT)
 		}
 	}
 
-	auto adjacentNodes(NodeId node)
+	auto adjacentNodes(NodeId node) @nogc
 	{
 		return AdjacentVerticesRange(node);
 	}

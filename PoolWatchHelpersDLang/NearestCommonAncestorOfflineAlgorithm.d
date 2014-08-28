@@ -5,19 +5,20 @@ import std.math;
 import std.exception;
 import std.algorithm; // max
 import PoolWatchHelpersDLang.DepthFirstSearchImpl;
+import PoolWatchHelpersDLang.RootedUndirectedTree;
 
 // TODO: how this structure would look like if we force normalized (zero-based) nodes for tree.
-struct NcaNodePayload(NodeId)
+struct NcaNodePayload
 {
 	uint Preorder;
 
 	uint InLabel;
-	NodeId InLabelNode;
+	ubyte[getNodeIdSize!RootedUndirectedTree] InLabelNode;
 
 	uint Ascendant;
 	uint Level;
 	uint Size;
-	NodeId HeadNode;
+	ubyte[getNodeIdSize!RootedUndirectedTree] HeadNode;
 	uint Head; // debug
 	DepthFirstSearchNodeData DfsData;
 }
@@ -27,7 +28,7 @@ struct NcaNodePayload(NodeId)
 // It makes sense only for rooted trees.
 struct NearestCommonAncestorOfflineAlgorithm(RootedTreeT, alias ncaDataFun)
 {
-	alias NcaNodePayload!(RootedTreeT.NodeId) NcaNodeDataT;
+	alias NcaNodePayload NcaNodeDataT;
 	RootedTreeT* pRootedTree_;
 	RootedTreeT.NodeId[] preorderToData_;
 

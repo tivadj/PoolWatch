@@ -6,89 +6,75 @@ import std.format;
 import std.array;
 import std.traits; // Unqual
 import PoolWatchHelpersDLang.NearestCommonAncestorOfflineAlgorithm;
+import PoolWatchHelpersDLang.GraphHelpers;
 
-struct RootedUndirectedTreeFacade
+// Returns compile time size of the NodeId for RootedUndirectedTree type.
+// static assert(getNodeIdSize!RootedUndirectedTree == 4)
+template getNodeIdSize(alias TreeT) 
+if (is(TreeT!double == RootedUndirectedTree!(double)))
 {
-	// TODO: if it is const then what modifier should be on Dfs.seedVertex?
-	static NodeId NullNode = NodeId(null);
-
-	struct NodeId // TODO: static?
-	{
-		alias pNode_ this;
-		TreeNode* pNode_;
-		this(TreeNode* pNode) { pNode_ = pNode; }
-		bool isNull()
-		{
-			return pNode_ == null;
-		}
-	}
-
-	struct TreeNode
-	{
-		//int Id;
-		SList!NodeId Children;
-		NodeId Parent;
-	}
-
-	//template treeType(NodePayloadT)
-	//{
-	//    enum treeType = RootedUndirectedTree(NodePayloadT);
-	//}
+	enum int getNodeIdSize = (void*).sizeof;
 }
 
 struct RootedUndirectedTree(NodePayloadT)
 {
-	alias NodePayloadT NodePayloadType;
-	alias RootedUndirectedTreeFacade.NodeId NodeId;
-	alias RootedUndirectedTreeFacade.NullNode NullNode;
-
-	NodeId root_ = NodeId(null);
-	int nodesCount_;
-	//int nodeIdGenerator = 0;
-
-
-	private struct TreeNodeInternal
+	private static struct TreeNode
 	{
-		//int Id;
-		RootedUndirectedTreeFacade.TreeNode CoreData;
-		alias CoreData this;
-		
+		CppVector!NodeId Children;
+		NodeId Parent;
+
 		static if (!is(typeof(NodePayloadT) == PoolWatchHelpersDLang.GraphHelpers.EmptyPayload))
 		{
 			NodePayloadT NodePayload;
 		}
 	}
 
-	// this() {}
+	alias TreeNode* NodeId;
+	enum size_t NodeIdSize = getNodeIdSize!RootedUndirectedTree;
+	static assert(NodeId.sizeof == NodeIdSize);
+
+	private 
+	{
+		NodeId root_ = NodeId(null);
+		int nodesCount_;
+	}
 
 	~this()
 	{
-		deallocate(root_);
+		deallocateRec(root_);
 	}
 
-	NodeId createRootNode()
+	bool isNull(NodeId node) @nogc
 	{
-		return addChildNode(NullNode);
+		return node == null;
 	}
 
-	NodeId root()
+	NodeId createRootNode() @nogc
+	{
+		return addChildNode(null);
+	}
+
+	NodeId root() @nogc
 	{
 		return root_;
 	}
 
-	NodeId addChildNode(NodeId node)
+	NodeId addChildNode(NodeId node) @nogc
 	{
+		const static Exception exc = new Exception("Root node already exist");
+
 		auto child = allocateNewNode;
 
-		if (node.isNull)
+		if (isNull(node))
 		{
 			// create root
-			enforce(root_.isNull, "Root node already exist");
+			if (!isNull(root_))
+				throw exc;
 			root_ = child;
 		}
 		else
 		{
-			node.Children.insertFront(child);
+			node.Children.pushBack(child);
 		}
 		child.Parent = node;
 
@@ -97,41 +83,40 @@ struct RootedUndirectedTree(NodePayloadT)
 		return child;
 	}
 
-	NodeId parent(NodeId node)
+	NodeId parent(NodeId node) @nogc
 	{
-		enforce(!node.isNull);
+		const static Exception exc = new Exception("Reference can't be null");
+		//enforce(!isNull(node));
+		if (isNull(node))
+			throw exc;
 		return node.Parent;
 	}
 
-	private NodeId allocateNewNode()
+	private NodeId allocateNewNode() @nogc
 	{
-		auto pRoot = new TreeNodeInternal;
-		//pRoot.Id = nodeIdGenerator++;
-
-		// reduce information about allocated node being TreeNodeInternal
-		// and present it as TreeNode
-		auto pCore = cast(RootedUndirectedTreeFacade.TreeNode*)pRoot;
-		return NodeId(pCore);
+		auto pRoot = cast(TreeNode*)core.stdc.stdlib.malloc(TreeNode.sizeof);
+		auto pRoot2 = std.conv.emplace!(TreeNode)(pRoot);
+		assert(pRoot == pRoot2);
+		return pRoot;
 	}
 
-	private void deallocate(NodeId startFrom)
+	private void deallocateRec(NodeId startFrom) @nogc
 	{
-		if (startFrom.isNull)
+		if (isNull(startFrom))
 			return;
 
-		foreach(NodeId child; startFrom.Children)
+		foreach(NodeId child; startFrom.Children[])
 		{
-			deallocate(child);
+			deallocateRec(child);
 		}
 
-		destroy(startFrom.pNode_);
+		core.stdc.stdlib.free(startFrom);
 	}
 
 	struct NodeChildrenRange
 	{
 		NodeId node_;
-		this(NodeId node) { node_ = node; }
-		int opApply(int delegate(NodeId node) dg)
+		int opApply(int delegate(NodeId node) @nogc dg)
 		{
 			foreach(child; node_.Children)
 			{
@@ -142,7 +127,7 @@ struct RootedUndirectedTree(NodePayloadT)
 		}
 	}
 
-	NodeChildrenRange children(NodeId node)
+	auto children(NodeId node) @nogc
 	{
 		return NodeChildrenRange(node);
 	}
@@ -152,80 +137,82 @@ struct RootedUndirectedTree(NodePayloadT)
 	//    return node.Children.length;
 	//}
 
-	bool hasChildren(NodeId node)
+	bool hasChildren(NodeId node) @nogc
 	{
 		return !node.Children.empty;
 	}
 
 	static if (!is(typeof(NodePayloadT) == PoolWatchHelpersDLang.GraphHelpers.EmptyPayload))
 	{
-		ref NodePayloadT nodePayload(NodeId node)
+		ref NodePayloadT nodePayload(NodeId node) @nogc
 		{
 			// recover full infromation that TreeNode* is actually TreeNodeInternal*
-			auto pNodeInternal = cast(TreeNodeInternal*)node.pNode_;
-			auto pPayload = cast(NodePayloadT*)&pNodeInternal.NodePayload;
+			// TODO: can we return just 'node.NodePayload' or it the copy will be returned
+			auto pPayload = cast(NodePayloadT*)&node.NodePayload;
 			return *pPayload;
 		}
 	}
 
-	auto adjacentNodes(NodeId node)
+	private static struct AdjacentNodesRange
 	{
-		auto rootedTree = &this;
+		RootedUndirectedTree!(NodePayloadT)* rootedTree_;
+		NodeId node_;
 
-		struct AdjacentNodesRange
+		int opApply(scope int delegate(NodeId) @nogc dg) @nogc
 		{
-			int opApply(int delegate(NodeId) dg)
+			foreach(child; rootedTree_.children(node_))
 			{
-				foreach(child; rootedTree.children(node))
-				{
-					int result = dg(child);
-					if (result) return result;
-				}
-
-				if (!node.Parent.isNull)
-				{
-					int result = dg(node.Parent);
-					if (result) return result;
-				}
-
-				return 0;
-			}
-		}
-		return AdjacentNodesRange();
-	}
-
-	// TODO: should DFS be used here?
-	auto nodes()
-	{
-		auto rootedTree = &this;
-
-		struct AllTreeNodesRange
-		{
-			int opApply(int delegate(NodeId) dg)
-			{
-				return opApplyRec(rootedTree.root, dg);
-			}
-			private int opApplyRec(NodeId startFrom, int delegate(NodeId) dg)
-			{
-				if (startFrom.isNull)
-					return 0;
-
-				int result = dg(startFrom);
+				int result = dg(child);
 				if (result) return result;
-
-				foreach(child; rootedTree.children(startFrom))
-				{
-					int result = opApplyRec(child, dg);
-					if (result) return result;
-				}
-
-				return 0;
 			}
+
+			if (!rootedTree_.isNull(node_.Parent))
+			{
+				int result = dg(node_.Parent);
+				if (result) return result;
+			}
+
+			return 0;
 		}
-		return AllTreeNodesRange();
 	}
 
-	int nodesCount()
+	auto adjacentNodes(NodeId node) @nogc
+	{
+		return AdjacentNodesRange(&this, node);
+	}
+
+	private static struct AllTreeNodesRange
+	{
+		RootedUndirectedTree!(NodePayloadT)* rootedTree_;
+
+		int opApply(int delegate(NodeId) @nogc dg) @nogc
+		{
+			return opApplyRec(rootedTree_.root, dg);
+		}
+		private int opApplyRec(NodeId startFrom, int delegate(NodeId) @nogc dg) @nogc
+		{
+			if (rootedTree_.isNull(startFrom))
+				return 0;
+
+			int result = dg(startFrom);
+			if (result) return result;
+
+			foreach(child; rootedTree_.children(startFrom))
+			{
+				int result = opApplyRec(child, dg);
+				if (result) return result;
+			}
+
+			return 0;
+		}
+	}
+	// TODO: should DFS be used here?
+	auto nodes() @nogc
+	{
+		return AllTreeNodesRange(&this);
+	}
+
+	int nodesCount() @nogc
 	{
 		return nodesCount_;
 	}
@@ -308,39 +295,59 @@ if (is(NodeIdT == RootedTreeT.NodeId))
 	}
 }
 
+private struct BranchReversedRange(RootedTreeT,NodeIdT)
+{
+	RootedTreeT* tree;
+	NodeIdT pathFromMe;
+
+	int opApply(int delegate(NodeIdT) dg)
+	{
+		auto current = pathFromMe;
+		while (!tree.isNull(current))
+		{
+			auto result = dg(current);
+			if (result) return result;
+
+			current = tree.parent(current);
+		}
+		return 0;
+	}
+}
+
 /// Gets path from node $(D pathFromMe) to root, navigating parental relashions. The result is a reversal of branch(leaf) nodes.
 // http://www.proofwiki.org/wiki/Definition:Rooted_Tree/Branch
 //auto branchReversed(RootedTreeT)(ref RootedTreeT tree, RootedTreeT.NodeId pathFromMe) // NOTE: can't infer parameter types
-auto branchReversed(RootedTreeT, NodeIdT)(ref RootedTreeT tree, NodeIdT pathFromMe) if (is(NodeIdT == RootedTreeT.NodeId))
+auto branchReversed(RootedTreeT, NodeIdT)(ref RootedTreeT tree, NodeIdT pathFromMe) @nogc
+if (is(NodeIdT == RootedTreeT.NodeId))
 {
-	struct BranchReversedRange
-	{
-		int opApply(int delegate(RootedTreeT.NodeId) dg)
-		{
-			auto current = pathFromMe;
-			while (!current.isNull)
-			{
-				auto result = dg(current);
-				if (result) return result;
+	return BranchReversedRange!(RootedTreeT,NodeIdT)(&tree, pathFromMe);
+}
 
-				current = tree.parent(current);
+private struct LeavesRange(RootedTreeT)
+{
+	RootedTreeT tree_;
+	int opApply(int delegate(RootedTreeT.NodeId) @nogc dg) @nogc
+	{
+		foreach(RootedTreeT.NodeId n; tree_.nodes)
+		{
+			if (!tree_.hasChildren(n))
+			{
+				int result = dg(n);
+				if (result) return result;
 			}
-			return 0;
 		}
+		return 0;
 	}
-	return BranchReversedRange();
 }
 
 // Gather leaves in the rooted tree.
-//void getLeaves(RootedTreeT, OutRangeT)(ref RootedTreeT tree, OutputRange!(RootedTreeT.NodeId) result)
-void getLeaves(RootedTreeT, OutRangeT)(ref RootedTreeT tree, OutRangeT result)
-//if (isOutputRange!(OutRangeT,RootedTreeT.NodeId))
+auto getLeaves(RootedTreeT)(ref RootedTreeT tree) @nogc
 {
-	foreach(RootedTreeT.NodeId n; tree.nodes)
-	{
-		if (!tree.hasChildren(n))
-		{
-			result.put(n);
-		}
-	}
+	return LeavesRange!(RootedTreeT)(tree);
+}
+
+unittest
+{
+	import std.range : isInputRange;
+	//static assert(isInputRange!LeavesRange);
 }

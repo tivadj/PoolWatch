@@ -1,11 +1,13 @@
 #include <opencv2\core.hpp>
-#include <opencv2\matlab\mxarray.hpp>
 
 #include <ctime> // time_t
 
 #include "PoolWatchFacade.h"
 
 #if SAMPLE_MATLABPROX
+
+#include <opencv2\matlab\mxarray.hpp>
+
 /** Safe wrapper around Matlab mexFunction. */
 void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
