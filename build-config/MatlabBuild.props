@@ -16,7 +16,7 @@
 
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>libmex.lib;libmx.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!--<AdditionalDependencies>libmex.lib;libmx.lib;%(AdditionalDependencies)</AdditionalDependencies>-->
       <!--<AdditionalOptions Condition="'$(ConfigurationType)' == 'DynamicLibrary'">/ASSEMBLYLINKRESOURCE:"$(PortAudioFullPath)" %(AdditionalOptions)</AdditionalOptions>-->
     </Link>
   </ItemDefinitionGroup>
