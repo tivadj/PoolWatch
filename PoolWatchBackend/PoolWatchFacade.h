@@ -1,10 +1,12 @@
 #pragma once
+#include <array>
 #include <stdint.h>
 #include <functional>
 #if SAMPLE_MATLABPROX
 #include "mex.h"
 #endif
 #include <opencv2/core.hpp>
+#include "AppearanceModel.h"
 
 #ifdef POOLWATCH_EXPORTS
 #define POOLWATCH_API __declspec(dllexport)
@@ -13,6 +15,7 @@
 #endif
 
 //#define PW_EXPORTS __declspec(dllexport)
+//#define PW_EXPORTS POOLWATCH_EXPORTS
 
 __declspec(dllexport) void approxCameraMatrix(int imageWidth, int imageHeight, float fovX, float fovY, float& cx, float& cy, float& fx, float& fy);
 __declspec(dllexport) void fillCameraMatrix(float cx, float cy, float fx, float fy, cv::Matx33f& cameraMatrix);
@@ -20,6 +23,7 @@ __declspec(dllexport) void fillCameraMatrix(float cx, float cy, float fx, float 
 class CameraProjectorBase
 {
 public:
+	virtual ~CameraProjectorBase() {}
 	virtual cv::Point2f worldToCamera(const cv::Point3f& world) const = 0;
 	virtual cv::Point3f cameraToWorld(const cv::Point2f& imagePos) const = 0;
 
@@ -54,6 +58,8 @@ public:
 	static float zeroHeight() { return 0; }
 };
 
+const int ColorSignatureGmmMaxSize = 3;
+
 /** Rectangular region of tracket target, which is detected in camera's image frame. */
 struct DetectedBlob
 {
@@ -62,7 +68,15 @@ struct DetectedBlob
 	cv::Point2f Centroid;
 	// TODO: analyze usage to check whether to represent it as a vector of points?
 	cv::Mat_<int32_t> OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
-	cv::Mat FilledImage; // [W,H] image contains only bounding box of this blob
+
+	cv::Mat FilledImage; // [W,H] CV_8UC1 image contains only bounding box of this blob
+
+	// used in appearance modeling
+	cv::Mat FilledImageRgb; // [W,H] CV_8UC3 image contains only bounding box of this blob
+	std::array<GaussMixtureCompoenent, ColorSignatureGmmMaxSize> ColorSignature;
+	int ColorSignatureGmmCount = 0;
+
+	//
 	cv::Point3f CentroidWorld;
 	float AreaPix; // area of the blob in pixels
 };
@@ -71,6 +85,7 @@ __declspec(dllexport) void fixBlobs(std::vector<DetectedBlob>& blobs, const Came
 
 enum TrackChangeUpdateType
 {
+	// TODO: should New and ObservationUpdate be merged?
 	New = 1,
 	ObservationUpdate,
 	NoObservation,

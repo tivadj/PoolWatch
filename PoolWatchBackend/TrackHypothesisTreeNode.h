@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <vector>
 #include <memory>
 #include <tuple>
@@ -6,6 +7,7 @@
 #include <boost/optional.hpp>
 
 #include "PoolWatchFacade.h"
+#include "AppearanceModel.h"
 
 enum class TrackHypothesisCreationReason
 {
@@ -37,31 +39,54 @@ struct ObservationConflict
 /** Represents node in the tree of hypothesis. */
 struct TrackHypothesisTreeNode
 {
-	int Id;
-	int FamilyId;
+	static const int DetectionIndNoObservation = -1;
+	static const int AppearanceGmmMaxSize = ColorSignatureGmmMaxSize;
+
+	// NOTE: must bitwise match corresponding DLang structure
+	// struct {
+	int32_t Id;
 	float Score; // determines validity of the hypothesis(from root to this node); the more is better
+	int32_t FrameInd;
+	int ObservationOrNoObsId = -1; // >= 0 (eg 0,1,2) for valid observation; <0 (eg -1,-2,-3) to mean no observation for each hypothesis node
+	TrackHypothesisTreeNode** ChildrenArray = nullptr; // pointer to the array of children; must be in sync with Children[0]
+	int32_t ChildrenCount = 0; // must be in sync with Children.size()
+	TrackHypothesisTreeNode* Parent = nullptr;
+	
+	// Used by DCode in MWISP algorithm.
+	// Stores a pointer to corresponding node in a collision graph of track hypothesis nodes.
+	void* MwispNode = nullptr;
+	// }
+
+	int FamilyId;
+	int ObservationInd; // >= 0 (eg 0,1,2) for valid observation; -1 for 'no observation'
 	std::vector<std::unique_ptr<TrackHypothesisTreeNode>> Children;
-	TrackHypothesisTreeNode* Parent;
-	int ObservationInd;
-	int ObservationOrNoObsId = -1;
-	int FrameInd;
 	cv::Point2f ObservationPos;      // in pixels
 	cv::Point3f ObservationPosWorld; // in meters
-	cv::Point3f EstimatedPosWorld;
+	cv::Point3f EstimatedPosWorld; // in meters
 	TrackHypothesisCreationReason CreationReason;
 #if DO_CACHE_ICL
 	std::vector<ObservationConflict> IncompatibleNodes; // the list of nodes, this node is incompatible with
 #endif
-	cv::Mat_<float> KalmanFilterState; // [X, Y, vx, vy] in meters and m/sec
-	cv::Mat_<float> KalmanFilterStateCovariance;  // [4x4]
+	cv::Matx41f KalmanFilterState; // [X, Y, vx, vy] in meters and m/sec
+	cv::Matx44f KalmanFilterStateCovariance;  // [4x4]
+	
+//#if PW_DEBUGXXX
+	int Age = 0;  // frames
+//#endif
 
+	// appearance data
+	std::array<GaussMixtureCompoenent, AppearanceGmmMaxSize> AppearanceGmm;
+	int AppearanceGmmCount = 0;
+
+public:
 	void addChildNode(std::unique_ptr<TrackHypothesisTreeNode> childHyp);
 	TrackHypothesisTreeNode* getAncestor(int ancestorIndex);
 	std::unique_ptr<TrackHypothesisTreeNode> pullChild(TrackHypothesisTreeNode* pChild, bool updateChildrenCollection = false);
 };
 
 // Enumerates nodes from leaf to root but no more than pruneWindow nodes.
-void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result);
+// For takeCount==1 returns the sequence of one element - the leaf node itself.
+void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow, std::vector<TrackHypothesisTreeNode*>& result, TrackHypothesisTreeNode* leafParentOrNull = nullptr);
 
 // Estimates the position of the blob given the state of the blob (position etc).
 class SwimmerMovementPredictor
@@ -69,5 +94,7 @@ class SwimmerMovementPredictor
 public:
 	virtual void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) = 0;
 
-	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode) = 0;
+	// Estimates position and score of movement from position of curNode to blobCentrWorld. Saves state into saveNode.
+	// deltaMovementScore = delta score of shifting from current node to proposed blob's center.
+	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) = 0;
 };

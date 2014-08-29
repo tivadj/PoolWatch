@@ -34,6 +34,9 @@ public:
 	SwimmerDetector(const std::shared_ptr<CameraProjectorBase> cameraProjector);
 	SwimmerDetector(int bodyHalfLenthPix); // used for testing
 	void getBlobs(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
+
+	// Calculates GMM color signature from blob's RGB image
+	static void fixColorSignature(const cv::Mat& blobImageRgb, const cv::Mat& blobImageMask, cv::Vec3b transparentCol, DetectedBlob& resultBlob);
 private:
 	void getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
 	void trainLaneSeparatorClassifier(WaterClassifier& wc);

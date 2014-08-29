@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 
-class MatrixUndirectedGraph
+class __declspec(dllexport) MatrixUndirectedGraph
 {
 	std::vector<bool> adjacencyMatrixByRow;
 	std::vector<double> vertexPayload_;

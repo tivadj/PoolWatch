@@ -16,8 +16,9 @@ function run(obj)
     %RunEarthMoverDistance1.analyzeHistogramDistributions(obj,debug);
     %RunEarthMoverDistance1.testColorAppearModelHistEarthMoverDistance1(obj, debug);
     %RunEarthMoverDistance1.testColorAppearModelHistBackProjection(obj, debug);
-    %RunEarthMoverDistance1.testColorAppearModelMixtureOfGaussians(obj, debug);
-    RunEarthMoverDistance1.testAppearModelRecognitionVersusNumberOfPixelsForTraining(obj, debug);
+    RunEarthMoverDistance1.testColorAppearModelMixtureOfGaussians(obj, debug);
+    %RunEarthMoverDistance1.testAppearModelRecognitionVersusNumberOfPixelsForTraining(obj, debug);
+    %RunEarthMoverDistance1.testMixtureOfGaussiansMerging(obj,debug);
 end
 
 function simple1(obj, debug)
@@ -30,7 +31,7 @@ function simple1(obj, debug)
 end
 
 function testShowImageUsingColorSignatureColors(obj, debug)
-    image = imread('../dinosaur/percepMetrImageDbFig31.png');
+    image = imread('../../dinosaur/percepMetrImageDbFig31.png');
     figure(1), imshow(image);
     
     for nclust=2:16
@@ -50,7 +51,7 @@ function testShowImageUsingColorSignatureColors(obj, debug)
     uniqueColorsCount
     figure(2), imshow(imageSig);
     
-    imwrite(imageSig,sprintf('../output/flower_nclust%2d_uniqcolor%d.png', nclust, uniqueColorsCount));
+    imwrite(imageSig,sprintf('../../output/flower_nclust%2d_uniqcolor%d.png', nclust, uniqueColorsCount));
     
     end
 end
@@ -185,7 +186,7 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
     labelNames = obj.v.labelNames;
     classCount = length(labelNames);
     
-    for mixCnt=16
+    for mixCnt=6
     % header of log output
     fprintf('%d', mixCnt); % no newline
         
@@ -226,7 +227,7 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
     end
 
     % test classifier
-    if true
+    if false
         mixGaussFun = @(pixsFore) RunEarthMoverDistance1.classifyMixGaussian(groupMixGaussList, pixsFore, 1:classCount);
         %mixGaussFakeFun = @(pixsFore, clusts) RunEarthMoverDistance1.classifyMixGaussian(groupMixGaussList, pixsFore, clusts);
         tic;
@@ -251,6 +252,142 @@ function testColorAppearModelMixtureOfGaussians(obj, debug)
 %     hold on;
 %     utils.PixelClassifier.drawMixtureGaussiansEach(obj.v.groupMixGaussList{7}.Means,obj.v.groupMixGaussList{7}.Covs, obj.v.groupMixGaussList{7}.Weights);
 %     hold off;
+
+    % print distances between each GMM
+    if true
+        n=length(groupMixGaussList);
+        tableStep = 1;
+        gmmSimilarit = zeros(n,n);
+        for i1=1:n
+            em1 = groupMixGaussList{i1};
+            gmmFun1 = @(pix) utils.PixelClassifier.evalMixtureGaussians(pix', em1.Means, em1.Covs, em1.Weights);
+            for i2=1:n
+                if i1==i2
+                    continue;
+                end
+                em2 = groupMixGaussList{i2};
+                %gmmFun2 = @(pix) utils.PixelClassifier.evalMixtureGaussians(pix', em2.Means, em2.Covs, em2.Weights);
+                %dist = RunEarthMoverDistance1.normalizedL2Distance(obj, gmmFun1,gmmFun2);
+                %dist = RunEarthMoverDistance1.normalizedL2DistanceMem(obj, tableStep, em1.Weights, em1.Means, em1.Covs, em2.Weights, em2.Means, em2.Covs);
+                dist = RunEarthMoverDistance1.normalizedL2DistanceExact(obj, em1.Weights, em1.Means, em1.Covs, em2.Weights, em2.Means, em2.Covs);
+                gmmSimilarit(i1,i2) = dist;
+            end
+        end
+        display(gmmSimilarit);
+    end
+    
+    end
+end
+
+% Computes Integrate[N1(mu1,cov1) * N2(mu2,cov2),dx]
+function value = integrateTwoGaussiansProduct(obj, mu1,cov1, mu2,cov2)
+    c1 = det(2*pi*(cov1 + cov2))^(-0.5);
+    c2 = exp(-0.5*(mu1-mu2)' * ((cov1+cov2)\(mu1-mu2)) );
+    value = c1 * c2;
+end
+
+% Computes Integrate[GMM1(Mus1,Covs1) * GMM2(Mus2,Covs2),dX]
+function value = integrateTwoGmmsProduct(obj, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs)
+    n1=length(oneWeights);
+    n2=length(otherWeights);
+    
+    value=0;
+    for i1=1:n1
+        weight1 = oneWeights(i1);
+        mu1=reshape(oneMeans(i1,:),[],1);
+        cov1=oneCovs{i1};
+        
+        for i2=1:n2
+            weight2 = otherWeights(i2);
+            mu2=reshape(otherMeans(i2,:),[],1);
+            cov2=otherCovs{i2};
+            
+            prod = RunEarthMoverDistance1.integrateTwoGaussiansProduct(obj, mu1, cov1, mu2, cov2);
+            value = value + weight1 * weight2 * prod;
+        end
+    end
+end
+
+% Computes Integrate[GMM1(Mus,Covs)^2),dX]
+function value = integrateGmmSqr(obj, weights,means,covs)
+    n=length(weights);
+    
+    value=0;
+    
+    % sum(pi^2)
+    for i=1:n
+        weight1 = weights(i);
+        cov=covs{i};
+        
+        % two GMM components are the same (use simplified formula)
+        prod = 1/sqrt(det(4*pi*cov));
+        value = value + weight1^2 * prod;
+    end
+    
+    % sum(+2 * pi * pj)
+    for i1 = 1 : n
+        weight1 = weights(i1);
+        mu1=reshape(means(i1,:),[],1);
+        cov1=covs{i1};
+        
+        for i2=i1+1 : n
+            weight2 = weights(i2);
+            mu2=reshape(means(i2,:),[],1);
+            cov2=covs{i2};
+            
+            prod = RunEarthMoverDistance1.integrateTwoGaussiansProduct(obj, mu1, cov1, mu2, cov2);
+            value = value + 2 * weight1 * weight2 * prod;
+        end
+    end
+end
+
+function dist = normalizedL2DistanceExact(obj, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs)
+    sumP1 = RunEarthMoverDistance1.integrateGmmSqr(obj, oneWeights,oneMeans,oneCovs);
+    sumP2 = RunEarthMoverDistance1.integrateGmmSqr(obj, otherWeights,otherMeans,otherCovs);
+
+    denom1 = sqrt(sumP1);
+    denom2 = sqrt(sumP2);
+
+    p12=RunEarthMoverDistance1.integrateTwoGmmsProduct(obj, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs);
+    
+    dist = 2*(1 - (1/(denom1*denom2)) * p12);
+end
+
+function dist = normalizedL2DistanceMem(obj, tableStep, oneWeights,oneMeans,oneCovs, otherWeights,otherMeans,otherCovs)
+    [xs,ys,zs] = meshgrid(1:tableStep:255,1:tableStep:255,1:tableStep:255);
+    pixs = [reshape(xs,[],1) reshape(ys,[],1) reshape(zs,[],1)];
+    
+    p1 = utils.PixelClassifier.evalMixtureGaussians(pixs, oneMeans, oneCovs, oneWeights);
+    p2 = utils.PixelClassifier.evalMixtureGaussians(pixs, otherMeans, otherCovs, otherWeights);
+    
+    denom1 = sqrt(sum(p1 .^ 2));
+    denom2 = sqrt(sum(p2 .^ 2));
+    
+    dist = sum((p1 ./ denom1 - p2 ./ denom2) .^ 2);
+end
+
+function dist = normalizedL2Distance(obj, gmmFun1, gmmFun2)
+    % find denominator1
+    tableStep = 2;
+
+    denom1 = RunEarthMoverDistance1.iterateTable(obj, tableStep, @(oldDenom,pix) oldDenom + gmmFun1(pix)^2);
+    denom1 = sqrt(denom1);
+    
+    denom2 = RunEarthMoverDistance1.iterateTable(obj, tableStep, @(oldDenom,pix) oldDenom + gmmFun2(pix)^2);
+    denom2 = sqrt(denom2);
+    
+    dist = RunEarthMoverDistance1.iterateTable(obj, tableStep, @(oldDist,pix) oldDist + (gmmFun2(pix)/denom1 - gmmFun2(pix)/denom2));
+end
+
+% pixFun = fun(ax, x) -> ax; ax=1x1 value, x=[3x1] RGB pixel
+function ax = iterateTable(obj, tableStep, pixFun)
+    ax = 0;
+    for i1=1:tableStep:255
+    for i2=1:tableStep:255
+    for i3=1:tableStep:255
+        ax = pixFun(ax, [i1 i2 i3]');
+    end
+    end
     end
 end
 
@@ -436,7 +573,7 @@ function accumulateRgbHistogramFromPixelsOld(groupRgbHist, pixels, cellSizePixel
 end
 
 function [data, labelNames] = loadColorAppearanceData(obj, debug)
-    appearDir = '../dinosaur/appear1';
+    appearDir = '../../dinosaur/appear1';
     labelNames = RunEarthMoverDistance1.getAppearModelTargetNames(appearDir);
 
     data = struct('FilePath', [], 'Label', []);
@@ -775,6 +912,188 @@ function analyzeHistogramDistributions(obj, debug)
     hist(hist1(:,1),1:10)
     prctile(hist1(:,1), 90)
     sum(hist1(:,1)<=3)/sum(hist1(:,1))
+end
+
+function testMixtureOfGaussiansMerging(obj, debug)
+    RunEarthMoverDistance1.prepareTrainTestData(obj, debug);
+    
+    labelNames = obj.v.labelNames;
+    classCount = length(labelNames);
+    
+    if isfield(obj.v, 'clusterLabelToImages')
+        clusterLabelToImages = obj.v.clusterLabelToImages;
+    else
+        clusterLabelToImages = cell(1,classCount);
+
+        %groupMixGaussList = RunEarthMoverDistance1.trainMixtureGaussians(classCount, obj.v.data, obj.v.trainMask, mixCount, covMatType, rgb2FeaturesFun, debug);
+
+        for itemInd=find(obj.v.trainMask)
+            item = obj.v.data(itemInd);
+            itemLabel = item.Label;
+            if debug
+                fprintf('C=%d file=%s\n', itemLabel, item.FilePath);
+            end
+
+            %
+            image = imread(item.FilePath);
+            if debug
+                imshow(image);
+            end
+
+            clusterLabelToImages{itemLabel}{end+1} = image;
+        end
+        obj.v.clusterLabelToImages = clusterLabelToImages;
+    end
+    
+    RunEarthMoverDistance1.learnAppearModelOnASingleClass(obj, clusterLabelToImages);
+end
+
+% learn appearance model on a sequence of images of the single class
+function learnAppearModelOnASingleClass(obj, clusterLabelToImages)
+    accumWeights = [];
+    accumMus = [];
+    accumSigs = {};
+    for lab=1:length(clusterLabelToImages{9})
+        fprintf('label=%d\n', lab);
+        im1 = clusterLabelToImages{9}{lab};
+        figure(3), imshow(im1);
+
+        im1Pixels = reshape(im1,[],3);
+        im1Pixels(sum(im1Pixels,2) == 0, :) = []; % remove black pixels
+
+        nClusters = 5;
+        covMatType= 'Spherical';
+        maxIters=1000;
+        em1 = cv.EM('Nclusters', nClusters, 'CovMatType', covMatType, 'MaxIters', maxIters); % mexopencv
+        em1.train(im1Pixels);
+
+        figure(1), clf, utils.PixelClassifier.drawMixtureGaussiansEach(em1.Means,em1.Covs, em1.Weights);
+        title('current GMM');
+        xlim([0 255]);
+        ylim([0 255]);
+        zlim([0 255]);
+
+        if isempty(accumWeights)
+            accumWeights = em1.Weights;
+            accumMus = em1.Means;
+            accumSigs = em1.Covs;
+        else
+            maxRidgeRatio=0.8;
+            componentMinWeight=0.05;
+            learningRate = 0.01;
+            [mrgWeights,mrgMus,mrgSigs] = RunEarthMoverDistance1.mergeTwoGaussianMixtures(obj, accumWeights,accumMus,accumSigs,em1.Weights,em1.Means,em1.Covs, maxRidgeRatio,componentMinWeight,learningRate);
+            accumWeights = mrgWeights
+            accumMus = mrgMus
+            accumSigs = mrgSigs;
+        end
+        figure(2), clf, utils.PixelClassifier.drawMixtureGaussiansEach(accumMus,accumSigs,accumWeights);
+        title('accumulated GMM');
+        xlim([0 255]);
+        ylim([0 255]);
+        zlim([0 255]);
+    end
+end
+
+% minRidgeRatio = two GMM components are merged if ridgeline ratio greater then this parameter
+% learningRate = how much from new GMMs to take [0..1] (eg 0.01)
+function [resWeights,resMus,resSigs] = mergeTwoGaussianMixtures(obj, w1,mu1,sig1, w2,mu2,sig2, maxRidgeRatio, componentMinWeight, learningRate)
+    n1 = length(w1);
+    n2 = length(w2);
+    ridgeLineSimilarity = zeros(n1,n2);
+    for i1=1:n1
+        oneW = w1(i1);
+        oneMu = reshape(mu1(i1,:), 3,1);
+        oneSig = sig1{i1};
+        for i2=1:n2
+            %gaussianMixtureRidgeRatioDistance(mu1,sig1,mu2,sig2,gmmFun,alphaValuesCount)
+            otherW = w2(i2);
+            otherMu = reshape(mu2(i2,:), 3, 1);
+            otherSig = sig2{i2};
+            
+            twoGmmFun = @(x) oneW * mvnpdf(x,oneMu,oneSig) + otherW * mvnpdf(x,otherMu,otherSig);
+            similar = twoGaussianMixtureComponentsRidgeRatioSimilarity(oneMu,oneSig,otherMu,otherSig,twoGmmFun,14);
+            
+            ridgeLineSimilarity(i1,i2) = similar;
+        end
+    end
+
+    % prepare similarity table
+    ridgeLineSimilarityTable = zeros(n1*n2, 3);
+    ridgeLineSimilarityTable(:,1) = reshape(ridgeLineSimilarity, [], 1);
+    
+    [X,Y] = meshgrid(1:n2,1:n1);
+    ridgeLineSimilarityTable(:,2) = reshape(Y, [], 1);
+    ridgeLineSimilarityTable(:,3) = reshape(X, [], 1);
+    
+    % sort similarity from most to least
+    ridgeLineSimilarityTable = sortrows(ridgeLineSimilarityTable,-1);
+    
+    % merge close components
+    resWeights = zeros(0,1);
+    resMus = zeros(0,3);
+    resSigs = cell(1,0);
+    isMerged1 = zeros(1, n1, 'uint8');
+    isMerged2 = zeros(1, n2, 'uint8');
+    for tableInd=1:size(ridgeLineSimilarityTable,1)
+        i1=ridgeLineSimilarityTable(tableInd,2);
+        i2=ridgeLineSimilarityTable(tableInd,3);
+        if isMerged1(i1) || isMerged2(i2)
+            continue;
+        end
+        similar=ridgeLineSimilarityTable(tableInd,1);
+        if similar < maxRidgeRatio
+            break; % ignore the tail of the table with distinct mixture components
+        end
+        
+        % merge two comonents
+        oneW = w1(i1);
+        oneMu = reshape(mu1(i1,:), 3,1);
+        oneSig = sig1{i1};
+        otherW = w2(i2) * learningRate;
+        otherMu = reshape(mu2(i2,:), 3, 1);
+        otherSig = sig2{i2};
+        [mergeW,mergeMu,mergeSig]=mergeTwoGaussianMixtureCompoenents(oneW,oneMu,oneSig, otherW,otherMu,otherSig);
+        resWeights(end+1) = mergeW;
+        resMus(end+1,:) = mergeMu;
+        resSigs{end+1} = mergeSig;
+        isMerged1(i1) = true;
+        isMerged2(i2) = true;
+    end
+    
+    % append not merged components into the result
+    for i1=1:n1
+        if ~isMerged1(i1)
+            oneW = w1(i1);
+            oneMu = reshape(mu1(i1,:), 3,1);
+            oneSig = sig1{i1};
+            resWeights(end+1) = oneW;
+            resMus(end+1,:) = oneMu;
+            resSigs{end+1} = oneSig;
+        end
+    end
+    for i2=1:n2
+        if ~isMerged2(i2)
+            otherW = w2(i2);
+            otherMu = reshape(mu2(i2,:), 3,1);
+            otherSig = sig2{i2};
+            resWeights(end+1) = otherW;
+            resMus(end+1,:) = otherMu;
+            resSigs{end+1} = otherSig;
+        end
+    end
+    
+    % remove negligible components
+    for i=length(resWeights):-1:1
+        if resWeights(i) < componentMinWeight
+            resWeights(i)=[];
+            resMus(i,:)=[];
+            resSigs(i)=[];
+        end
+    end
+    
+    % ensure sum of weights is one
+    assert(~isempty(resWeights), 'There must be at least one component after merging')
+    resWeights = resWeights / sum(resWeights);
 end
 
 function showHistInRows(histMat, histSize)

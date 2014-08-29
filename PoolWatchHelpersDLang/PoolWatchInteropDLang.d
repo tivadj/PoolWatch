@@ -6,8 +6,8 @@ import std.algorithm;
 import std.format;
 import std.string;
 import std.array;
+import std.range;
 import std.typecons; // tuple
-//import std.copy;
 import std.container; // SList
 
 import PoolWatchHelpersDLang.traversal;
@@ -17,6 +17,8 @@ import PoolWatchHelpersDLang.MatrixUndirectedGraph;
 import PoolWatchHelpersDLang.MatrixUndirectedGraph2;
 import PoolWatchHelpersDLang.NearestCommonAncestorOfflineAlgorithm;
 import PoolWatchHelpersDLang.RootedUndirectedTree;
+import PoolWatchHelpersDLang.UndirectedAdjacencyVectorGraph;
+import PoolWatchHelpersDLang.MultiHypothesisBlobTracker;
 
 extern void poolTest1()
 {
@@ -74,6 +76,13 @@ extern (C)
 		int32_t* pFirst;
 		int32_t* pLast;
 	};
+
+	// Wrapper for std::vector<void*>
+	struct CppVectorPtrWrapper
+	{
+		void* Vector;
+		void function(CppVectorPtrWrapper* sender, void* ptr) @nogc PushBack;
+	}
 }
 
 extern (C) void computeMWISP(int* pVertices, int nodesCount, int* pEdgePerRow, int edgePerRowSize, double* pWeights, int weightsSize, bool* pIndepVerticesMask, int indepVerticesMaskSize)
@@ -213,7 +222,7 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 
 	//
 
-	alias NcaNodePayload!(RootedUndirectedTreeFacade.NodeId) NcaNodeDataT;
+	alias NcaNodePayload NcaNodeDataT;
 	struct HypothesisNode
 	{
 		int NodeId;
@@ -227,13 +236,13 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 
 	RootedTreeT tree;
 
-	auto nodeDataFun = delegate HypothesisNode* (ref RootedTreeT tree, RootedTreeT.NodeId node) { 
+	scope auto nodeDataFun = delegate HypothesisNode* (ref RootedTreeT tree, RootedTreeT.NodeId node) { 
 		return &tree.nodePayload(node);
 	};
 
 	int[3] nodeDataEntriesBuff;
 	auto nullNode = tree.root;
-	auto initNodeDataFun = delegate void(RootedTreeT.NodeId node)
+	scope auto initNodeDataFun = delegate void(RootedTreeT.NodeId node)
 	{
 		HypothesisNode* data = &tree.nodePayload(node);
 		data.NodeId = nodeDataEntriesBuff[0];
@@ -422,4 +431,57 @@ Int32PtrPair computeTrackIncopatibilityGraph(int* pEncodedTree, int encodedTreeL
 		}
 		return  result;
 	}
+}
+
+// Operates directly on the hypothesis tree.
+extern (C) 
+Int32PtrPair computeTrackIncopatibilityGraphDirectAccess(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, Int32Allocator allocator)
+{
+	auto tree = HypTreeAdapter(hypTree);
+
+	//
+	Tuple!(int,int)[] edgesList;
+	auto edgesListAppender = appender(&edgesList);
+	findCollisionEdges(tree, edgesListAppender, collisionIgnoreNodeId);
+
+	// populate result
+
+	Int32PtrPair result;
+
+	auto len = edgesList.length * 2; // (from,two) edge pairs
+	if (len == 0)
+	{
+		result.pFirst = null;
+		result.pLast = null;
+	}
+	else
+	{
+		int32_t* pNodeIdsArray = allocator.CreateArrayInt32(len, allocator.pUserData);
+		scope(failure) allocator.DestroyArrayInt32(pNodeIdsArray, allocator.pUserData);
+
+		int32_t[] nodeIds = pNodeIdsArray[0..len];
+
+		int outInd = 0;
+		foreach(edgeTuple; edgesList)
+		{
+			nodeIds[outInd++] = edgeTuple[0];
+			nodeIds[outInd++] = edgeTuple[1];
+		}
+		assert(len == outInd, "error in data assignment");
+
+		result.pFirst = pNodeIdsArray;
+		result.pLast = pNodeIdsArray + len;
+	}
+	return result;
+}
+
+extern (C) 
+void pwFindBestTracks(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId, int attemptCount, CppVectorPtrWrapper* bestTracks) 
+{
+	CppVector!(TrackHypothesisTreeNode*) bestTracksVector;
+	findBestTracks(hypTree, collisionIgnoreNodeId, attemptCount, &bestTracksVector);
+
+	// populate result
+	foreach(TrackHypothesisTreeNode* hypNode; bestTracksVector)
+		bestTracks.PushBack(bestTracks, hypNode);
 }

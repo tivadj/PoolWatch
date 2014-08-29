@@ -97,6 +97,11 @@
   <ItemGroup>
     <ClInclude Include="algos1.h" />
     <ClInclude Include="algos_amp.cpp" />
+    <ClInclude Include="AppearanceModel.h" />
+    <ClInclude Include="BgSubLib\Bgs.hpp" />
+    <ClInclude Include="BgSubLib\BgsParams.hpp" />
+    <ClInclude Include="BgSubLib\Image.hpp" />
+    <ClInclude Include="BgSubLib\ZivkovicAGMM.hpp" />
     <ClInclude Include="GraphVizHypothesisTreeVisualizer.h" />
     <ClInclude Include="MatrixUndirectedGraph.h" />
     <ClInclude Include="MultiHypothesisBlobTracker.h" />
@@ -112,6 +117,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="algos1.cpp" />
+    <ClCompile Include="AppearanceModel.cpp" />
+    <ClCompile Include="BgSubLib\Image.cpp" />
+    <ClCompile Include="BgSubLib\ZivkovicAGMM.cpp" />
     <ClCompile Include="CameraProjector.cpp" />
     <ClCompile Include="GraphVizHypothesisTreeVisualizer.cpp" />
     <ClCompile Include="KalmanFilterMovementPredictor.cpp" />
@@ -120,6 +128,7 @@
     <ClCompile Include="MultiHypothesisBlobTracker.cpp" />
     <ClCompile Include="PaintHelper.cpp" />
     <ClCompile Include="PoolBoundaryDetector.cpp" />
+    <ClCompile Include="PoolWatchDLangInterop.cpp" />
     <ClCompile Include="PoolWatchFacade.cpp" />
     <ClCompile Include="MatlabInterop.cpp" />
     <ClCompile Include="SvgImageMaskSerializer.cpp" />

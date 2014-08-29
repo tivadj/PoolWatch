@@ -2,7 +2,6 @@
 #include <iostream>
 #include <stdint.h>
 
-#include "opencv2/contrib/compat.hpp"
 #include "opencv2/highgui/highgui_c.h"
 
 #include <boost/lexical_cast.hpp>

@@ -31,7 +31,7 @@
   <useArrayBounds>0</useArrayBounds>
   <noboundscheck>0</noboundscheck>
   <useSwitchError>0</useSwitchError>
-  <useUnitTests>0</useUnitTests>
+  <useUnitTests>1</useUnitTests>
   <useInline>0</useInline>
   <release>0</release>
   <preservePaths>0</preservePaths>
@@ -89,11 +89,12 @@
   <resfile />
   <exefile>$(OutDir)\$(ProjectName).dll</exefile>
   <useStdLibPath>1</useStdLibPath>
-  <additionalOptions />
+  <cRuntime>2</cRuntime>
+  <additionalOptions>-vgc</additionalOptions>
   <preBuildCommand>echo SolutionDir=$(SolutionDir)
 echo OutDir=$(OutDir)
-echo &apos;where link&apos;
-where link.exe</preBuildCommand>
+echo &apos;Searching for link.exe&apos;
+echo where link.exe</preBuildCommand>
   <postBuildCommand />
   <filesToClean>*.obj;*.cmd;*.build;*.json;*.dep</filesToClean>
  </Config>
@@ -186,11 +187,12 @@ where link.exe</preBuildCommand>
   <resfile />
   <exefile>$(OutDir)\$(ProjectName).dll</exefile>
   <useStdLibPath>1</useStdLibPath>
-  <additionalOptions>-L/PROFILE</additionalOptions>
+  <cRuntime>1</cRuntime>
+  <additionalOptions>-vgc</additionalOptions>
   <preBuildCommand>echo SolutionDir=$(SolutionDir)
 echo OutDir=$(OutDir)
-echo &apos;where link&apos;
-where link.exe</preBuildCommand>
+echo &apos;Searching for link.exe&apos;
+echo where link.exe</preBuildCommand>
   <postBuildCommand />
   <filesToClean>*.obj;*.cmd;*.build;*.json;*.dep</filesToClean>
  </Config>
@@ -283,11 +285,12 @@ where link.exe</preBuildCommand>
   <resfile />
   <exefile>$(OutDir)\$(ProjectName)s.lib</exefile>
   <useStdLibPath>1</useStdLibPath>
-  <additionalOptions>-main</additionalOptions>
+  <cRuntime>1</cRuntime>
+  <additionalOptions>-vgc</additionalOptions>
   <preBuildCommand>echo SolutionDir=$(SolutionDir)
 echo OutDir=$(OutDir)
-echo &apos;where link&apos;
-where link.exe</preBuildCommand>
+echo &apos;Searching for link.exe&apos;
+echo where link.exe</preBuildCommand>
   <postBuildCommand />
   <filesToClean>*.obj;*.cmd;*.build;*.json;*.dep</filesToClean>
  </Config>
@@ -300,9 +303,12 @@ where link.exe</preBuildCommand>
   <File path="GraphHelpers.d" />
   <File path="MatrixUndirectedGraph.d" />
   <File path="MatrixUndirectedGraph2.d" />
+  <File path="MaxWeightIndependentSet.d" />
+  <File path="MultiHypothesisBlobTracker.d" />
   <File path="NearestCommonAncestorOfflineAlgorithm.d" />
   <File path="PoolWatchInteropDLang.d" />
   <File path="RootedUndirectedTree.d" />
   <File path="traversal.d" />
+  <File path="UndirectedAdjacencyVectorGraph.d" />
  </Folder>
 </DProject>

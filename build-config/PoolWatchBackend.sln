@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
-VisualStudioVersion = 12.0.30110.0
+VisualStudioVersion = 12.0.30723.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PoolWatchMatlabExecutables", "..\PoolWatchMatlabExecutables\PoolWatchMatlabExecutables.vcxproj", "{2A4DE587-03E1-4609-8140-EF6576CE750F}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -29,6 +29,16 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PoolWatchBackendUnitTests", "..\PoolWatchBackendUnitTests\PoolWatchBackendUnitTests.vcxproj", "{E3EE3031-BCD8-4A60-936C-E71368D29990}"
 	ProjectSection(ProjectDependencies) = postProject
 		{C6CFA10F-549C-44E5-AF6D-412E004003FA} = {C6CFA10F-549C-44E5-AF6D-412E004003FA}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PoolWatchTraceDemoProj1", "..\PoolWatchTraceDemoProj1\PoolWatchTraceDemoProj1.vcxproj", "{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C6CFA10F-549C-44E5-AF6D-412E004003FA} = {C6CFA10F-549C-44E5-AF6D-412E004003FA}
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F56317FF-48D7-4E17-B49E-EB917805642A}"
+	ProjectSection(SolutionItems) = preProject
+		PoolWatchPerformance1.psess = PoolWatchPerformance1.psess
 	EndProjectSection
 EndProject
 Global
@@ -67,6 +77,14 @@ Global
 		{E3EE3031-BCD8-4A60-936C-E71368D29990}.Release|Mixed Platforms.Build.0 = Release|x64
 		{E3EE3031-BCD8-4A60-936C-E71368D29990}.Release|x64.ActiveCfg = Release|x64
 		{E3EE3031-BCD8-4A60-936C-E71368D29990}.Release|x64.Build.0 = Release|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Debug|Mixed Platforms.ActiveCfg = Debug|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Debug|Mixed Platforms.Build.0 = Debug|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Debug|x64.ActiveCfg = Debug|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Debug|x64.Build.0 = Debug|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Release|Mixed Platforms.ActiveCfg = Release|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Release|Mixed Platforms.Build.0 = Release|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Release|x64.ActiveCfg = Release|x64
+		{85ECD60D-45B5-39FC-AF5F-0CBCA7620DD6}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

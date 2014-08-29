@@ -1,30 +1,31 @@
 #include "KalmanFilterMovementPredictor.h"
+#include "algos1.h"
 
-float normalizedDistance(const cv::Mat& pos, const cv::Mat& mu, const cv::Mat& sigma)
+bool normalizedDistance(const cv::Matx21f& pos, const cv::Matx21f& mu, const cv::Matx22f& sigma, float& dist)
 {
-	cv::Mat zd = pos - mu;
-	cv::Mat mahalanobisDistance = zd.t() * sigma.inv() * zd;
-	//auto md = mahalanobisDistance.at<float>(0, 0);
-	double determinant = cv::determinant(sigma);
-	float dist = mahalanobisDistance.at<float>(0, 0) + static_cast<float>(log(determinant));
-	return dist;
-}
+	const int InvMethod = cv::DECOMP_LU;
 
-float normalizedDistance(const cv::Point3f& pos, const cv::Point3f& mu, float sigma)
-{
-	cv::Point3f zd = pos - mu;
-	float mahalanobisDistance = zd.dot(zd) * (1/sigma);
+	auto zd = pos - mu;
 	
+	bool invOp = false;
+	auto sigmaInv = sigma.inv(InvMethod, &invOp);
+	if (!invOp)
+		return false;
+
+	cv::Matx<float,1,1> mahalanobisDistance = zd.t() * sigmaInv * zd;
+	auto md = mahalanobisDistance.val[0];
+
 	double determinant = cv::determinant(sigma);
-	float dist = mahalanobisDistance + static_cast<float>(log(determinant));
-	return -dist;
+
+	dist = static_cast<float>(md + log(determinant));
+	return true;
 }
 
 /// Computes distance between predicted position of the Kalman Filter and given observed position.
 /// It corresponds to Matlab's vision.KalmanFilter.distance() function.
 /// Parameter observedPos is a column vector.
 // http://www.mathworks.com/help/vision/ref/vision.kalmanfilter.distance.html
-float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& observedPos)
+bool kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Matx21f& observedPos, float& dist)
 {
 	cv::Mat residualCovariance = kalmanFilter.measurementMatrix * kalmanFilter.errorCovPost * kalmanFilter.measurementMatrix.t() + kalmanFilter.measurementNoiseCov;
 	//auto rc = residualCovariance.at<float>(0, 0);
@@ -32,25 +33,40 @@ float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& 
 	cv::Mat mu = kalmanFilter.measurementMatrix * kalmanFilter.statePre;
 	//auto mm = mu.at<float>(0, 0);
 
-	float result = normalizedDistance(observedPos, mu, residualCovariance);
-	return result;
+	bool distOp = normalizedDistance(observedPos, mu, residualCovariance, dist);
+	if (!distOp)
+		return false;
+
+	return true;
+}
+
+// shift = distance from predicted to observed points
+float estimateProbOfShift(float shift, float sigma)
+{
+	assert(shift >= 0 && "Distance must be non negative");
+	
+	float result = PoolWatch::normalProb(shift, 0, sigma);
+	return  result * 2; // since shift is positive we consider only positibe part of gauss curve
 }
 
 
-KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps)
+const float spatDensClutter = 0.0026f;
+const float spatDensNew = 4e-6;
+
+KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps, float swimmerMaxSpeed)
 {
-	initKalmanFilter(kalmanFilter_, fps);
+	initKalmanFilter(kalmanFilter_, fps, swimmerMaxSpeed);
 
 	// penalty for missed observation
 	// prob 0.4 - penalty - 0.9163
 	// prob 0.6 - penalty - 0.5108
 	const float probDetection = 0.95f;
 	const float penalty = log(1 - probDetection);
-	//penalty_ = penalty;
-	penalty_ = -1.79 / 200;
+	penalty_ = penalty;
+	//penalty_ = -1.79 / 200;
 }
 
-void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps)
+void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps, float swimmerMaxSpeed)
 {
 	kalmanFilter.init(KalmanFilterDynamicParamsCount, 2, 0);
 
@@ -59,9 +75,14 @@ void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFil
 	// 2.3m / s is max speed for swimmers
 	// let say 0.5m / s is an average speed
 	// estimate sigma as one third of difference between max and mean shift per frame
-	float maxShiftM = 2.3f / fps;
-	float meanShiftM = 0.5f / fps;
-	float sigma = (maxShiftM - meanShiftM) / 3;
+	float maxShiftM = swimmerMaxSpeed / fps;
+	blobMaxShift_ = maxShiftM;
+
+	//float meanShiftM = 0.5f / fps;
+	//float meanShiftM = 23.0f / fps;
+	//float sigma = (maxShiftM - meanShiftM) / 3;
+	//float sigma = (maxShiftM - meanShiftM);
+	float sigma = maxShiftM / 3;
 	setIdentity(kalmanFilter.processNoiseCov, cv::Scalar::all(sigma*sigma));
 
 	kalmanFilter.measurementMatrix = (cv::Mat_<float>(2, 4) << 1, 0, 0, 0, 0, 1, 0, 0);
@@ -83,58 +104,76 @@ void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observat
 	float precision = nt / (float)(nt + fa);
 	float initialScore = -log(precision);
 
+	// TODO: ?
 	// if initial score is large, then tracks with missed detections may
 	// be evicted from hypothesis tree
-	initialScore = abs(6 * penalty_);
+
+	//int timeToLive = 6; // life time of FA till it dies
+	//initialScore = abs(timeToLive * penalty_);
+
+	initialScore = log(spatDensNew / spatDensClutter);
 
 	score = initialScore;
 
 	// save Kalman Filter state
 
-	cv::Mat_<float> state(KalmanFilterDynamicParamsCount, 1, 0.0f); // [X,Y, vx=0, vy=0]'
-	state(0) = blobCentrWorld.x;
-	state(1) = blobCentrWorld.y;
+	cv::Matx41f state(blobCentrWorld.x, blobCentrWorld.y, 0, 0); // [X,Y, vx=0, vy=0]'
 	childHyp.KalmanFilterState = state;
-	childHyp.KalmanFilterStateCovariance = cv::Mat_<float>::eye(KalmanFilterDynamicParamsCount, KalmanFilterDynamicParamsCount);
+	childHyp.KalmanFilterStateCovariance = cv::Matx44f::zeros();
+	CV_DbgAssert(KalmanFilterDynamicParamsCount == decltype(state)::rows);
 }
 
-void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& score, TrackHypothesisTreeNode& saveNode)
+void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode)
 {
 	const TrackHypothesisTreeNode* pLeaf = &curNode;
 	TrackHypothesisTreeNode& childHyp = saveNode;
 
 	// prepare Kalman Filter state
 	cv::KalmanFilter& kalmanFilter = kalmanFilter_; // use cached Kalman Filter object
-	kalmanFilter.statePost = pLeaf->KalmanFilterState.clone();
-	kalmanFilter.errorCovPost = pLeaf->KalmanFilterStateCovariance.clone();
+
+	// each hypothesis node has its own copy of Kalman Filter state, hence copy=true
+	kalmanFilter.statePost = cv::Mat(pLeaf->KalmanFilterState, true);
+	kalmanFilter.errorCovPost = cv::Mat(pLeaf->KalmanFilterStateCovariance, true);
 
 	//
 	cv::Mat predictedPos2 = kalmanFilter.predict();
 	cv::Point3f predictedPos = cv::Point3f(predictedPos2.at<float>(0, 0), predictedPos2.at<float>(1, 0), CameraProjector::zeroHeight());
 
 	// correct position if blob was detected
-
 	if (blobCentrWorld != nullptr)
 	{
 		const auto& blobPosW = blobCentrWorld.get();
 
-		auto obsPosWorld2 = cv::Mat_<float>(2, 1); // ignore Z
-		obsPosWorld2(0) = blobPosW.x;
-		obsPosWorld2(1) = blobPosW.y;
+		cv::Matx21f obsPosWorld2(blobPosW.x, blobPosW.y); // ignore Z
+		
+		auto obsPosWorld2Mat = cv::Mat_<float>(obsPosWorld2, false);
+		auto estPosMat = kalmanFilter.correct(obsPosWorld2Mat);
 
-		auto estPosMat = kalmanFilter.correct(obsPosWorld2);
 		estPos = cv::Point3f(estPosMat.at<float>(0, 0), estPosMat.at<float>(1, 0), CameraProjector::zeroHeight());
+		float dist = cv::norm(estPos - predictedPos);
 
 		//
-		auto shiftScore = kalmanFilterDistance(kalmanFilter, obsPosWorld2);
-		score = pLeaf->Score + shiftScore;
+		//float shiftScoreOld = -1;
+		//bool distOp = kalmanFilterDistance(kalmanFilter, obsPosWorld2, shiftScoreOld);
+		//CV_Assert(distOp);
+		
+		float pd = 0.9f;
+		float sigma = blobMaxShift_ / 2; // 2 means that 2sig=95% of values will be at max shift
+		float probObs = estimateProbOfShift(dist, sigma);
+		auto shiftScore = std::log(probObs * pd / (spatDensClutter + spatDensNew));
+		const float minShiftScore = 0.001;
+		if (shiftScore < minShiftScore)
+			shiftScore = minShiftScore;
+		CV_Assert(shiftScore >= 0);
+
+		deltaMovementScore = shiftScore;
 	}
 	else
 	{
 		// as there is no observation, the predicted position is the best estimate
 		estPos = predictedPos;
 
-		score = pLeaf->Score + penalty_; // punish for no observation
+		deltaMovementScore = penalty_; // punish for no observation
 	}
 	//childHyp.EstimatedPosWorld = estPos;
 	//childHyp.Score = score;
