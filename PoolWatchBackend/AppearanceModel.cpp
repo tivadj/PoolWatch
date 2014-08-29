@@ -300,19 +300,11 @@ bool normalizedL2Distance(GaussMixtureCompoenent const* gmm1, int gmm1Size, Gaus
 }
 
 // Finds "inside" "point" on the "line" between two gaussian components
-bool ridgeLine(const cv::Matx31f& mu1, const cv::Matx33f& cov1, const cv::Matx31f& mu2, const cv::Matx33f& cov2, float alpha, cv::Matx31f& insidePoint)
+bool ridgeLine(const cv::Matx31f& mu1, const cv::Matx33f& cov1Inv, const cv::Matx31f& mu2, const cv::Matx33f& cov2Inv, float alpha, cv::Matx31f& insidePoint)
 {
 	const int InvMethod = DECOMP_LU;
 
-	bool invOp;
-	cv::Matx33f cov1Inv = cov1.inv(InvMethod, &invOp);
-	if (!invOp)
-		return false;
-	
-	cv::Matx33f cov2Inv = cov2.inv(InvMethod, &invOp);
-	if (!invOp)
-		return false;
-
+	bool invOp = false;
 	cv::Matx33f coef1 = ((1 - alpha)*cov1Inv + alpha*cov2Inv).inv(InvMethod, &invOp);
 	if (!invOp)
 		return false;
@@ -325,22 +317,27 @@ bool ridgeLine(const cv::Matx31f& mu1, const cv::Matx33f& cov1, const cv::Matx31
 
 // Finds how similar are the two GMM components. Large value(eg 0.8)
 // means that two components are approximatly the same and might be merged.
-float twoGaussianMixtureComponentsRidgeRatioSimilarity(const cv::Matx31f& mu1, const cv::Matx33f& cov1, const cv::Matx31f& mu2, const cv::Matx33f& cov2,
-	std::function<float(cv::Matx31f)> gmmFun, float alphaValuesCount)
+bool twoGaussianMixtureComponentsRidgeRatioSimilarity(
+	const cv::Matx31f& mu1, const cv::Matx33f& cov1Inv,
+	const cv::Matx31f& mu2, const cv::Matx33f& cov2Inv,
+	std::function<float(cv::Matx31f)> gmmFun, float alphaValuesCount, float& similarity)
 {
 	CV_Assert(alphaValuesCount >= 2);
+	
+	const int InvMethod = DECOMP_LU;
 
 	// find point on the ridge line with min value of GMM
 
 	cv::Matx31f ridgeLinePoint;
 	float gmmMinValue = std::numeric_limits<float>::max();
-	
+
 	float alphaStep = 1 / (alphaValuesCount - 1);
 	for (float alpha = 0; alpha <= 1.0f; alpha += alphaStep)
 	{
 		cv::Matx31f insidePoint;
-		bool ridgePointOp = ridgeLine(mu1, cov1, mu2, cov2, alpha, insidePoint);
-		CV_Assert(ridgePointOp);
+		bool ridgePointOp = ridgeLine(mu1, cov1Inv, mu2, cov2Inv, alpha, insidePoint);
+		if (!ridgePointOp)
+			return false;
 
 		float probValue = gmmFun(insidePoint);
 		if (probValue < gmmMinValue)
@@ -356,8 +353,8 @@ float twoGaussianMixtureComponentsRidgeRatioSimilarity(const cv::Matx31f& mu1, c
 	float probMu2 = gmmFun(mu2);
 	float mode2 = std::min(probMu1, probMu2);
 
-	float similarity = gmmMinValue / mode2;
-	return similarity;
+	similarity = gmmMinValue / mode2;
+	return true;
 }
 
 void mergeGaussianMixtureCompoenents(const GaussMixtureCompoenent& gmmComp1, const GaussMixtureCompoenent& gmmComp2, GaussMixtureCompoenent& resultGmmComp)
@@ -384,7 +381,7 @@ void mergeGaussianMixtureCompoenents(const GaussMixtureCompoenent& gmmComp1, con
 	resultGmmComp.sigma = std::sqrtf(resCov.val[0]); // sigma is a square root of a variance
 }
 
-void mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, float maxRidgeRatio, float componentMinWeight, float learningRate,
+bool mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, float maxRidgeRatio, float componentMinWeight, float learningRate,
 	GaussMixtureCompoenent * resultGmm, int resultGmmMaxSize, int& rsultGmmSize)
 {
 	CV_Assert(learningRate > componentMinWeight && "Learned data is always truncated (no learning occur)");
@@ -404,11 +401,22 @@ void mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, 
 		cv::Matx31f mu1(g1.muR, g1.muG, g1.muB);
 		cv::Matx33f cov1 = cv::Matx33f::eye() * g1.sigma * g1.sigma;
 
+		const int InvMethod = DECOMP_LU;
+
+		bool invOp = false;
+		cv::Matx33f cov1Inv = cov1.inv(InvMethod, &invOp);
+		if (!invOp)
+			return false;
+
 		for (int i2 = 0; i2 < gmm2Size; ++i2)
 		{
 			const GaussMixtureCompoenent& g2 = gmm2[i2];
 			cv::Matx31f mu2(g2.muR, g2.muG, g2.muB);
 			cv::Matx33f cov2 = cv::Matx33f::eye() * g2.sigma * g2.sigma;
+
+			cv::Matx33f cov2Inv = cov1.inv(InvMethod, &invOp);
+			if (!invOp)
+				return false;
 
 			auto gmmFun = [=](const cv::Matx31f& pix) -> float 
 			{
@@ -417,7 +425,9 @@ void mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, 
 				return g1.weight * p1 + g2.weight * p2;
 			};
 
-			float similarity = twoGaussianMixtureComponentsRidgeRatioSimilarity(mu1, cov1, mu2, cov2, gmmFun, 14);
+			float similarity = -1;
+			bool similarityOp = twoGaussianMixtureComponentsRidgeRatioSimilarity(mu1, cov1Inv, mu2, cov2Inv, gmmFun, 14, similarity);
+			CV_Assert(similarityOp);
 			similarities.push_back(GmmPair{ i1, i2, similarity });
 		}
 	}
@@ -505,6 +515,8 @@ void mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, 
 	auto endIt = std::begin(mergedComponents);
 	std::advance(endIt, rsultGmmSize);
 	std::copy(std::begin(mergedComponents), endIt, resultGmm);
+
+	return true;
 }
 
 namespace {
@@ -528,11 +540,22 @@ bool mergeMostSimilarGmmComponents(float maxRidgeRatio, float componentMinWeight
 		cv::Matx31f mu1(g1.muR, g1.muG, g1.muB);
 		cv::Matx33f cov1 = cv::Matx33f::eye() * g1.sigma * g1.sigma;
 
+		const int InvMethod = DECOMP_LU;
+
+		bool invOp = false;
+		cv::Matx33f cov1Inv = cov1.inv(InvMethod, &invOp);
+		if (!invOp)
+			return false;
+
 		for (int i2 = i1 + 1; i2 < (int)mergedComponents.size(); ++i2)
 		{
 			const GaussMixtureCompoenent& g2 = mergedComponents[i2];
 			cv::Matx31f mu2(g2.muR, g2.muG, g2.muB);
 			cv::Matx33f cov2 = cv::Matx33f::eye() * g2.sigma * g2.sigma;
+
+			cv::Matx33f cov2Inv = cov1.inv(InvMethod, &invOp);
+			if (!invOp)
+				return false;
 
 			auto gmmFun = [=](const cv::Matx31f& pix) -> float
 			{
@@ -541,7 +564,10 @@ bool mergeMostSimilarGmmComponents(float maxRidgeRatio, float componentMinWeight
 				return g1.weight * p1 + g2.weight * p2;
 			};
 
-			float similarity = twoGaussianMixtureComponentsRidgeRatioSimilarity(mu1, cov1, mu2, cov2, gmmFun, 14);
+			float similarity = -1;
+			bool similarityOp = twoGaussianMixtureComponentsRidgeRatioSimilarity(mu1, cov1Inv, mu2, cov2Inv, gmmFun, 14, similarity);
+			if (!similarityOp)
+				return false;
 			similarities.push_back(GmmPair{ i1, i2, similarity });
 		}
 	}

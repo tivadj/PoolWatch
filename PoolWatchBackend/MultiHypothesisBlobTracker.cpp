@@ -222,8 +222,9 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		float maxRidgeRatio = MaxRidgeRatio;
 		float componentMinWeight = GmmComponentMinWeight;
 		float learningRate = 0.06;
-		mergeTwoGaussianMixtures(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount,
+		bool mergeOp = mergeTwoGaussianMixtures(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount,
 			maxRidgeRatio, componentMinWeight, learningRate, pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
+		CV_Assert(mergeOp);
 
 		// calculate appearance score
 
@@ -445,7 +446,7 @@ void MultiHypothesisBlobTracker::fixHypNodeConsistency(TrackHypothesisTreeNode* 
 void MultiHypothesisBlobTracker::checkHypNodesConsistency()
 {
 	std::vector<TrackHypothesisTreeNode*> allNodes;
-	getSubtreeSet(&trackHypothesisForestPseudoNode_, allNodes);
+	getSubtreeSet(&trackHypothesisForestPseudoNode_, allNodes, true);
 
 	for (TrackHypothesisTreeNode* node : allNodes)
 	{
@@ -747,7 +748,7 @@ void MultiHypothesisBlobTracker::validateConformanceDLangImpl()
 	getLeafSet(&trackHypothesisForestPseudoNode_, newLeafSet);
 
 	vector<TrackHypothesisTreeNode*> allNodesSet;
-	getSubtreeSet(&trackHypothesisForestPseudoNode_, allNodesSet);
+	getSubtreeSet(&trackHypothesisForestPseudoNode_, allNodesSet, false);
 	std::map<int, TrackHypothesisTreeNode*> nodeIdToNode;
 	for (TrackHypothesisTreeNode* pLeaf : allNodesSet)
 		nodeIdToNode[pLeaf->Id] = pLeaf;
@@ -968,7 +969,7 @@ void MultiHypothesisBlobTracker::findBestTracksCpp(std::vector<TrackHypothesisTr
 	// construct NodeId -> Node map
 	std::map<int, TrackHypothesisTreeNode*> nodeIdToNode;
 	std::vector<TrackHypothesisTreeNode*> fullSubtree;
-	getSubtreeSet(&trackHypothesisForestPseudoNode_, fullSubtree);
+	getSubtreeSet(&trackHypothesisForestPseudoNode_, fullSubtree, false);
 	for (auto pNode : fullSubtree)
 		nodeIdToNode[pNode->Id] = pNode;
 
@@ -1078,6 +1079,11 @@ void MultiHypothesisBlobTracker::findBestTracksCpp(std::vector<TrackHypothesisTr
 
 void MultiHypothesisBlobTracker::findBestTracksDLang(std::vector<TrackHypothesisTreeNode*>& bestTrackLeafs)
 {
+#if PW_DEBUG
+	// validate the hypothesis tree after changes (after growth and pruning)
+	checkHypNodesConsistency();
+#endif
+
 	CppVectorPtrWrapper trackHypsWrapper;
 	PoolWatch::bindVectorWrapper(trackHypsWrapper, bestTrackLeafs);
 
@@ -1298,18 +1304,19 @@ void MultiHypothesisBlobTracker::getLeafSet(TrackHypothesisTreeNode* startNode, 
 	}
 }
 
-void MultiHypothesisBlobTracker::getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet)
+void MultiHypothesisBlobTracker::getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet, bool includePseudoRoot)
 {
 	assert(startNode != nullptr);
 
-	if (!isPseudoRoot(*startNode))
+	bool isRoot = isPseudoRoot(*startNode);
+	if (includePseudoRoot || !isRoot)
 	{
 		subtreeSet.push_back(startNode);
 	}
 
 	for (auto& child : startNode->Children)
 	{
-		getSubtreeSet(&*child, subtreeSet);
+		getSubtreeSet(&*child, subtreeSet, includePseudoRoot);
 	}
 }
 
@@ -1447,6 +1454,7 @@ void MultiHypothesisBlobTracker::pruneHypothesisTreeAndGetTrackChanges(int frame
 
 	//
 
+#if DO_CACHE_ICL
 	std::vector<TrackHypothesisTreeNode*> leavesAfterPruning;
 	std::vector<TrackHypothesisTreeNode*> nodesSubtreeTmp;
 	std::set<int> nodeIdSetAfterPruning;
@@ -1456,14 +1464,13 @@ void MultiHypothesisBlobTracker::pruneHypothesisTreeAndGetTrackChanges(int frame
 		getLeafSet(newRoot.get(), leavesAfterPruning);
 
 		nodesSubtreeTmp.clear();
-		getSubtreeSet(newRoot.get(), nodesSubtreeTmp);
+		getSubtreeSet(newRoot.get(), nodesSubtreeTmp, false);
 		for (TrackHypothesisTreeNode* node : nodesSubtreeTmp)
 		{
 			nodeIdSetAfterPruning.insert(node->Id);
 		}
 	}
 
-#if DO_CACHE_ICL
 	updateIncompatibilityListsOnHypothesisPruning(leavesAfterPruning, nodeIdSetAfterPruning);
 #endif
 
@@ -1475,6 +1482,7 @@ void MultiHypothesisBlobTracker::pruneHypothesisTreeAndGetTrackChanges(int frame
 	{
 		trackHypothesisForestPseudoNode_.addChildNode(std::move(familtyRoot));
 	}
+	fixHypNodeConsistency(&trackHypothesisForestPseudoNode_);
 }
 
 void MultiHypothesisBlobTracker::pruneLowScoreTracks(int frameInd, std::vector<TrackChangePerFrame>& trackChanges)

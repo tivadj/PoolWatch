@@ -175,5 +175,5 @@ private:
 
 	inline bool isPseudoRoot(const TrackHypothesisTreeNode& node) const;
 	void getLeafSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& leafSet);
-	void getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet);
+	void getSubtreeSet(TrackHypothesisTreeNode* startNode, std::vector<TrackHypothesisTreeNode*>& subtreeSet, bool includePseudoRoot);
 };

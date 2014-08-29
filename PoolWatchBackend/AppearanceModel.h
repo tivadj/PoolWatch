@@ -36,7 +36,7 @@ __declspec(dllexport) float normalizedL2DistanceNaive(GaussMixtureCompoenent con
 __declspec(dllexport) bool normalizedL2Distance(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, float& resultDistance);
 
 // Merges two gmms with learning rate applied to the second gmm.
-__declspec(dllexport) void mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, float maxRidgeRatio, float componentMinWeight, float learningRate,
+__declspec(dllexport) bool mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, float maxRidgeRatio, float componentMinWeight, float learningRate,
 	GaussMixtureCompoenent * resultGmm, int resultGmmMaxSize, int& rsultGmmSize);
 
 // Merges similar comonents in one GMM.
