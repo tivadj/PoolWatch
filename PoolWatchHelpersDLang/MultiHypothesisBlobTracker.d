@@ -359,7 +359,7 @@ void findMaximumWeightIndependentSet_MaxFirstMultiAttempts(MwisGraphT)(ref MwisG
 	
 	
 	int bringToFrontNode = 0;
-	for (int attempt=0; attempt < minAttemptsCount; ++attempt, bringToFrontNode++)
+	for (int attempt=0; attempt < attemptCount; ++attempt, bringToFrontNode++)
 	{
 		swap(nodes[0],  nodes[bringToFrontNode]); // perturb weight desc order
 
