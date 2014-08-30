@@ -1,5 +1,6 @@
-#include "TrackHypothesisTreeNode.h"
+#include "MultiHypothesisBlobTracker.h"
 #include <cassert>
+#include <string>
 
 std::string toString(TrackHypothesisCreationReason reason)
 {

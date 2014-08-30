@@ -9,6 +9,7 @@
 #include "SwimmingPoolObserver.h"
 #include "PoolWatchFacade.h"
 #include "algos1.h"
+#include "PaintHelper.h"
 
 using namespace std;
 

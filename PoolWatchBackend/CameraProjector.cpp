@@ -7,6 +7,7 @@
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "CameraProjector.h"
 #include "algos1.h"
 #include "PoolWatchFacade.h"
 using namespace std;

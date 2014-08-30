@@ -16,11 +16,12 @@
 
 #include <QDir>
 
-#include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
 #include "ProgramUtils.h"
 #include "VideoLogger.h"
+#include "CoreUtils.h"
+#include "PaintHelper.h"
 
 namespace SwimmingPoolVideoFileTrackerTestsNS
 {
@@ -144,7 +145,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 #endif
 		// prepare video observer
 
-		const int pruneWindow = 8;
+		const int pruneWindow = 5;
 		const int NewTrackDelay = 7;
 		const float ShapeCentroidNoise = 0.4f;
 		auto cameraProjector = make_shared<CameraProjector>();

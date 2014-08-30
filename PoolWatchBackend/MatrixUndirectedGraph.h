@@ -1,7 +1,8 @@
 #pragma once
 #include <vector>
+#include "PoolWatchFacade.h"
 
-class __declspec(dllexport) MatrixUndirectedGraph
+class PW_EXPORTS MatrixUndirectedGraph
 {
 	std::vector<bool> adjacencyMatrixByRow;
 	std::vector<double> vertexPayload_;

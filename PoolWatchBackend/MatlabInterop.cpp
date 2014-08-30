@@ -1,6 +1,7 @@
 #include "MatlabInterop.h"
 
 #if SAMPLE_MATLABPROX
+#include <opencv2\matlab\mxarray.hpp>
 
 mxArrayPtr pwCreateArrayInt32(size_t celem)
 {
@@ -33,4 +34,21 @@ void PWmexPrintfNull(const char*)
 	// no output
 }
 
+/** Safe wrapper around Matlab mexFunction. */
+void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
+{
+	try
+	{
+		mexFun(nlhs, plhs, nrhs, prhs);
+	}
+	catch (cv::Exception& e) {
+		matlab::error(std::string("cv::exception caught: ").append(e.what()).c_str());
+	}
+	catch (std::exception& e) {
+		matlab::error(std::string("std::exception caught: ").append(e.what()).c_str());
+	}
+	catch (...) {
+		matlab::error("Uncaught exception occurred in mex function");
+	}
+}
 #endif

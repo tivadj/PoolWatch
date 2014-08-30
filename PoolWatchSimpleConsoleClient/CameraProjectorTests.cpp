@@ -1,5 +1,5 @@
 #include "algos1.h"
-#include "PoolWatchFacade.h"
+#include "CameraProjector.h"
 
 namespace CameraProjectorTestsNS
 {

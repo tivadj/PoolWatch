@@ -5,14 +5,15 @@
 
 #include <opencv2\core.hpp>
 
+#include "PoolWatchFacade.h"
 #include "MatrixUndirectedGraph.h"
 #include "WaterClassifier.h"
 
-__declspec(dllexport) void classifyAndGetMask(const cv::Mat& image, std::function<bool(const cv::Vec3d&)>  pred, cv::Mat_<uchar>& mask);
-__declspec(dllexport) void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec3d&)> computeOne, cv::Mat_<double>& mask);
+PW_EXPORTS void classifyAndGetMask(const cv::Mat& image, std::function<bool(const cv::Vec3d&)>  pred, cv::Mat_<uchar>& mask);
+PW_EXPORTS void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec3d&)> computeOne, cv::Mat_<double>& mask);
 
-__declspec(dllexport) void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
-__declspec(dllexport) void maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
+PW_EXPORTS void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
+PW_EXPORTS void maximumWeightIndependentSetNaiveMaxFirstMultipleSeeds(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
 
 struct IndependentSetValidationResult
 {
@@ -36,9 +37,9 @@ namespace PoolWatch
 		return x*x;
 	}
 
-	__declspec(dllexport) auto deg2rad(const float& degree) -> float;
-	__declspec(dllexport) auto normalProb(float x, float mu, float sigma) -> float;
-	__declspec(dllexport) auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float;
+	PW_EXPORTS auto deg2rad(const float& degree) -> float;
+	PW_EXPORTS auto normalProb(float x, float mu, float sigma) -> float;
+	PW_EXPORTS auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float;
 }
 
 class EMQuick : public cv::EM

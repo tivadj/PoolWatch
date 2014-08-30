@@ -13,10 +13,10 @@
 
 #include <boost/thread/tss.hpp>
 
-#include "PoolWatchFacade.h"
 #include "WaterClassifier.h"
 #include "../PoolWatchBackend/algos_amp.cpp"
 #include "algos1.h"
+#include "SvgImageMaskSerializer.h"
 
 namespace WaterClassifierTestsNS
 {

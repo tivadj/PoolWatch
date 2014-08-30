@@ -5,7 +5,7 @@
 
 #include "PoolWatchFacade.h"
 
-class POOLWATCH_API WaterClassifier
+class PW_EXPORTS WaterClassifier
 {
 public:
 	cv::EM waterMixGauss_;

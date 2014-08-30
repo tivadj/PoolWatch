@@ -14,6 +14,7 @@
 #include "algos1.h"
 #include "VideoLogger.h"
 #include "AppearanceModel.h"
+#include "SvgImageMaskSerializer.h"
 
 using namespace std;
 using namespace cv;
@@ -171,6 +172,15 @@ void splitBlobsAccordingToPreviousFrameBlobs(const cv::Mat& imageBodyBin, const 
 	else
 		imageBodySplit = imageBodyBin;
 }
+
+struct ContourInfo
+{
+	std::vector<cv::Point> outlinePixels;
+	float area;
+	bool markDeleted;
+	cv::Point2f contourCentroid;
+	cv::Point3f contourCentroidWorld;
+};
 
 void fixContourInfo(ContourInfo& c, CameraProjectorBase* pCameraProjector)
 {

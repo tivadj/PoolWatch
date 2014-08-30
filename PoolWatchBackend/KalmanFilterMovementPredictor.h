@@ -1,11 +1,13 @@
 #pragma once
 #include <opencv2\video\tracking.hpp> // KalmanFilter
-#include "TrackHypothesisTreeNode.h"
+#include "PoolWatchFacade.h"
+#include "MultiHypothesisBlobTracker.h"
+#include "SwimmerMovementModel.h"
 
 float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& observedPos);
-_declspec(dllimport) float normalizedDistance(const cv::Point3f& pos, const cv::Point3f& mu, float sigma);
+PW_EXPORTS bool normalizedDistance(const cv::Matx21f& pos, const cv::Matx21f& mu, const cv::Matx22f& sigma, float& dist);
 
-class _declspec(dllexport) KalmanFilterMovementPredictor : public SwimmerMovementPredictor
+class PW_EXPORTS KalmanFilterMovementPredictor : public SwimmerMovementPredictor
 {
 	const int KalmanFilterDynamicParamsCount = 4;
 	const float NullPosX = -1;

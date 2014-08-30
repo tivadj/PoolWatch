@@ -1,5 +1,5 @@
 #include <opencv2\core.hpp>
-#include "PoolWatchFacade.h"
+#include "SvgImageMaskSerializer.h"
 
 namespace SvgImageMaskSerializerNS
 {

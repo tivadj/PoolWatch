@@ -4,11 +4,11 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <boost/filesystem.hpp>
-
+#include "PoolWatchFacade.h"
 // Logs OpenCV images in a video file. Each set of images are associated with a separate
 // stream. Each stream writes to a separated video file using cv::VideoWriter, which is
 // initialized lazily.
-class __declspec(dllexport) VideoLogger
+class PW_EXPORTS VideoLogger
 {
 	static double fps_;
 	static boost::filesystem::path logDir_;

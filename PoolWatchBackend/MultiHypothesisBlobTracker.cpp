@@ -9,6 +9,7 @@
 
 #include <log4cxx/logger.h>
 
+#include "PoolWatchFacade.h"
 #include "PoolWatchDLangInterop.h"
 #include "algos1.h"
 #include "MultiHypothesisBlobTracker.h"
@@ -1671,30 +1672,6 @@ void MultiHypothesisBlobTracker::setMovementPredictor(unique_ptr<SwimmerMovement
 	movementPredictor_.swap(std::move(movementPredictor));
 }
 
-//
-
-TrackChangeClientSide::TrackChangeClientSide(int trackId, int frameIndOnNew)
-	: TrackId(trackId),
-	FrameIndOnNew(frameIndOnNew),
-	EndFrameInd(frameIndOnNew)
-{
-}
-
-void TrackChangeClientSide::setNextTrackChange(int changeFrameInd)
-{
-	CV_Assert(IsLive && "Can update live track only");
-
-	int nextInd = EndFrameInd;
-	CV_Assert(nextInd == changeFrameInd && "Updating track with non sequential change");
-
-	EndFrameInd++;
-}
-
-void TrackChangeClientSide::terminate()
-{
-	CV_Assert(IsLive);
-	IsLive = false;
-}
 
 void TrackChangeConsistencyChecker::setNextTrackChanges(int readyFrameInd, const std::vector<TrackChangePerFrame>& trackChanges)
 {

@@ -15,7 +15,6 @@
 
 #include <CppUnitTest.h>
 
-#include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
 #include "TestingUtils.h"
@@ -52,7 +51,7 @@ namespace PoolWatchBackendUnitTests
 			auto cameraProjector = make_shared<LinearCameraProjector>();
 
 			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->swimmerMaxSpeed_ = 1.1;
+			blobTracker->setSwimmerMaxSpeed(1.1);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
 
@@ -120,7 +119,7 @@ namespace PoolWatchBackendUnitTests
 			auto cameraProjector = make_shared<LinearCameraProjector>();
 
 			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->swimmerMaxSpeed_ = 1.1;
+			blobTracker->setSwimmerMaxSpeed(1.1);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
 
@@ -184,7 +183,7 @@ namespace PoolWatchBackendUnitTests
 			auto cameraProjector = make_shared<LinearCameraProjector>();
 
 			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->swimmerMaxSpeed_ = 1.1;
+			blobTracker->setSwimmerMaxSpeed(1.1);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
 
@@ -268,7 +267,7 @@ namespace PoolWatchBackendUnitTests
 			auto cameraProjector = make_shared<LinearCameraProjector>();
 
 			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->swimmerMaxSpeed_ = 1.1;
+			blobTracker->setSwimmerMaxSpeed(1.1);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
 

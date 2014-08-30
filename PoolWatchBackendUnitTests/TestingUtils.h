@@ -11,7 +11,6 @@
 
 #include <log4cxx/logger.h>
 
-#include "PoolWatchFacade.h"
 #include "KalmanFilterMovementPredictor.h"
 #include <SwimmingPoolObserver.h>
 

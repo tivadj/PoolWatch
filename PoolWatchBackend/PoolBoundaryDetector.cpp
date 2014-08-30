@@ -5,7 +5,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgproc/types_c.h>
 
-#include "PoolWatchFacade.h"
+#include "VisualObservation.h"
 
 using namespace std;
 

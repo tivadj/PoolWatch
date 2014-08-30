@@ -5,6 +5,7 @@
 
 #include <boost/lexical_cast.hpp> // CV_RGB
 
+#include "PaintHelper.h"
 #include "MultiHypothesisBlobTracker.h"
 
 namespace PoolWatch

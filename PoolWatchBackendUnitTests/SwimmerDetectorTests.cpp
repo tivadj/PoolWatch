@@ -15,7 +15,6 @@
 
 #include <CppUnitTest.h>
 
-#include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "SwimmingPoolObserver.h"
 #include "TestingUtils.h"

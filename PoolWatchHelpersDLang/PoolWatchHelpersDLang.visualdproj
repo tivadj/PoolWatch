@@ -303,7 +303,6 @@ echo where link.exe</preBuildCommand>
   <File path="GraphHelpers.d" />
   <File path="MatrixUndirectedGraph.d" />
   <File path="MatrixUndirectedGraph2.d" />
-  <File path="MaxWeightIndependentSet.d" />
   <File path="MultiHypothesisBlobTracker.d" />
   <File path="NearestCommonAncestorOfflineAlgorithm.d" />
   <File path="PoolWatchInteropDLang.d" />
