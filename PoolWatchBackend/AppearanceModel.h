@@ -2,9 +2,7 @@
 #include <opencv2/core/mat.hpp>
 
 #include "PoolWatchFacade.h"
-#include "BgSubLib/ZivkovicAGMM.hpp"
-
-typedef Algorithms::BackgroundSubtraction::ZivkovicAGMM::GMM GaussMixtureCompoenent;
+#include "VisualObservationIf.h"
 
 class PW_EXPORTS AppearanceModel
 {
@@ -46,4 +44,16 @@ PW_EXPORTS void mergeGaussianMixtureComponents(const GaussMixtureCompoenent* gmm
 
 // Ensures that GMM has the total sum of weights for each GMM component equals one.
 void fixGmmWeights(GaussMixtureCompoenent* gmm, int gmmSize);
+
+
+
+class SwimmerAppearanceModel : public SwimmerAppearanceModelBase
+{
+public:
+	SwimmerAppearanceModel() = default;
+
+	float appearanceScore(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size) override;
+	
+	void mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, GaussMixtureCompoenent * resultGmm, int resultGmmMaxSize, int& resultGmmSize) override;
+};
 

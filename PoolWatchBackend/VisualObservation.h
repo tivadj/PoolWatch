@@ -6,39 +6,13 @@
 #include <log4cxx/logger.h>
 
 #include "PoolWatchFacade.h"
+#include "VisualObservationIf.h"
 #include "SwimmerDetector.h"
 #include "CameraProjector.h"
 #include "AppearanceModel.h"
 #include "WaterClassifier.h"
 
 PW_EXPORTS void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
-
-namespace PoolWatch
-{
-	// The number of components for a GMM color signature.
-	const int ColorSignatureGmmMaxSize = 3;
-}
-
-/** Rectangular region of tracket target, which is detected in camera's image frame. */
-struct DetectedBlob
-{
-	int Id;
-	cv::Rect2f BoundingBox;
-	cv::Point2f Centroid;
-	// TODO: analyze usage to check whether to represent it as a vector of points?
-	cv::Mat_<int32_t> OutlinePixels; // [Nx2], N=number of points; (Y,X) per row
-
-	cv::Mat FilledImage; // [W,H] CV_8UC1 image contains only bounding box of this blob
-
-	// used in appearance modeling
-	cv::Mat FilledImageRgb; // [W,H] CV_8UC3 image contains only bounding box of this blob
-	std::array<GaussMixtureCompoenent, PoolWatch::ColorSignatureGmmMaxSize> ColorSignature;
-	int ColorSignatureGmmCount = 0;
-
-	//
-	cv::Point3f CentroidWorld;
-	float AreaPix; // area of the blob in pixels
-};
 
 // Updates world coordinates of each blob.
 PW_EXPORTS void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjectorBase& cameraProjector);

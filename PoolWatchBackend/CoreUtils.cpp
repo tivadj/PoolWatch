@@ -1,6 +1,7 @@
 #include "CoreUtils.h"
 #include <ctime> // time_t
 #include <cassert>
+#include <sstream>
 
 namespace PoolWatch
 {

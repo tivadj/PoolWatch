@@ -15,6 +15,7 @@
 #include "MultiHypothesisBlobTracker.h"
 #include "KalmanFilterMovementPredictor.h"
 #include "GraphVizHypothesisTreeVisualizer.h"
+#include "AppearanceModel.h"
 
 using namespace std;
 using namespace log4cxx;
@@ -57,8 +58,7 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 
 	// default to Kalman Filter
 	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps, swimmerMaxSpeed_);
-
-	appearanceGmmEstimator_ = std::make_unique<AppearanceModel>(TrackHypothesisTreeNode::AppearanceGmmMaxSize);
+	swimmerAppearanceModel_ = std::make_unique<SwimmerAppearanceModel>();
 }
 
 
@@ -212,20 +212,9 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		cv::Point3f estPos;
 		movementPredictor_->estimateAndSave(*leafHyp, blobCentrWorld, estPos, movementScore, childHyp);
 
-		// update color signature
-		//appearanceGmmEstimator_->loadGmmComponents(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount);
-		//appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0,0,0));
-		//appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
-
 		// merge color signature
-		const float MaxRidgeRatio = 0.8;
-		const float GmmComponentMinWeight = 0.001;
-		float maxRidgeRatio = MaxRidgeRatio;
-		float componentMinWeight = GmmComponentMinWeight;
-		float learningRate = 0.06;
-		bool mergeOp = mergeTwoGaussianMixtures(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount,
-			maxRidgeRatio, componentMinWeight, learningRate, pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
-		CV_Assert(mergeOp);
+		swimmerAppearanceModel_->mergeTwoGaussianMixtures(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount,
+			pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
 
 		// calculate appearance score
 
@@ -233,16 +222,7 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 		float appearanceScore = 0;
 		if (leafHyp->AppearanceGmmCount > 0 && pChildHyp->AppearanceGmmCount > 0)
 		{
-			// appearance score
-			bool distOp = normalizedL2Distance(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount, appearDist);
-			CV_Assert(distOp && "There must be some distance between two valid GMMs");
-
-			// score function pass the {0,maxScore} and approaches zero in infinity
-			const float maxScore = 1.5;
-			//const float c1 = 0.00218; // bends exponent to pass through {2300,0.01} point
-			//const float c1 = 125.266f; // bends exponent to pass through {0.04, 0.01} point
-			const float c1 = 6.26f; // bends exponent to pass through {0.8, 0.01} point
-			appearanceScore = maxScore * std::expf(-c1 * appearDist);
+			appearanceScore = swimmerAppearanceModel_->appearanceScore(leafHyp->AppearanceGmm.data(), leafHyp->AppearanceGmmCount, blob.ColorSignature.data(), blob.ColorSignatureGmmCount);
 		}
 
 		childHyp.Score = leafHyp->Score + movementScore + appearanceScore;
@@ -351,11 +331,6 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 		float movementScore;
 		movementPredictor_->initScoreAndState(frameInd, blobInd, blobCentrWorld, movementScore, childHyp);
 		childHyp.Score = movementScore;
-
-		// update appearance
-		//appearanceGmmEstimator_->initGmmComponents();
-		//appearanceGmmEstimator_->pushNextPixels(blob.FilledImageRgb, cv::Vec3b(0, 0, 0));
-		//appearanceGmmEstimator_->saveGmmComponents(pChildHyp->AppearanceGmm.data(), pChildHyp->AppearanceGmm.size(), pChildHyp->AppearanceGmmCount);
 
 		// init color signature with one from the blob
 		assert(blob.ColorSignatureGmmCount <= pChildHyp->AppearanceGmm.size());

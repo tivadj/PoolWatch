@@ -654,3 +654,31 @@ void fixGmmWeights(GaussMixtureCompoenent* gmm, int gmmSize)
 		c.weight /= sumWeight;
 	}
 }
+
+float SwimmerAppearanceModel::appearanceScore(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size)
+{
+	float appearDist = 0;
+
+	// appearance score
+	bool distOp = normalizedL2Distance(gmm1, gmm1Size, gmm2, gmm2Size, appearDist);
+	CV_Assert(distOp && "There must be some distance between two valid GMMs");
+
+	// score function pass the {0,maxScore} and approaches zero in infinity
+	const float maxScore = 1.5;
+	//const float c1 = 0.00218; // bends exponent to pass through {2300,0.01} point
+	//const float c1 = 125.266f; // bends exponent to pass through {0.04, 0.01} point
+	const float c1 = 6.26f; // bends exponent to pass through {0.8, 0.01} point
+	float appearanceScore = maxScore * std::expf(-c1 * appearDist);
+	return appearanceScore;
+}
+
+void SwimmerAppearanceModel::mergeTwoGaussianMixtures(GaussMixtureCompoenent const* gmm1, int gmm1Size, GaussMixtureCompoenent const* gmm2, int gmm2Size, GaussMixtureCompoenent* resultGmm, int resultGmmMaxSize, int& resultGmmSize)
+{
+	const float MaxRidgeRatio = 0.8;
+	const float GmmComponentMinWeight = 0.001;
+	float maxRidgeRatio = MaxRidgeRatio;
+	float componentMinWeight = GmmComponentMinWeight;
+	float learningRate = 0.06;
+	bool mergeOp = ::mergeTwoGaussianMixtures(gmm1, gmm1Size, gmm2, gmm2Size, maxRidgeRatio, componentMinWeight, learningRate, resultGmm, resultGmmMaxSize, resultGmmSize);
+	CV_Assert(mergeOp);
+}

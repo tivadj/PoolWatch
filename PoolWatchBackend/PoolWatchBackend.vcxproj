@@ -123,6 +123,7 @@
     <ClInclude Include="SwimmingPoolObserver.h" />
     <ClInclude Include="VideoLogger.h" />
     <ClInclude Include="VisualObservation.h" />
+    <ClInclude Include="VisualObservationIf.h" />
     <ClInclude Include="WaterClassifier.h" />
   </ItemGroup>
   <ItemGroup>

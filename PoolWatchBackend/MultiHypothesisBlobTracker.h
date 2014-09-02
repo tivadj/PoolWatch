@@ -8,8 +8,7 @@
 
 #include <boost/filesystem/path.hpp>
 
-#include "VisualObservation.h"
-#include "AppearanceModel.h"
+#include "VisualObservationIf.h"
 #include "CameraProjector.h"
 #include "SwimmerMovementModel.h"
 
@@ -95,10 +94,14 @@ void enumerateBranchNodesReversed(TrackHypothesisTreeNode* leaf, int pruneWindow
 
 enum TrackChangeUpdateType
 {
-	// TODO: should New and ObservationUpdate be merged?
+	// Notifies about the creation of a new track. 
 	New = 1,
+
+	// TODO: should NoObservation and ObservationUpdate be merged?
 	ObservationUpdate,
 	NoObservation,
+
+	// Notifies that the track is removed from the tracker. There will be no further updates for this track.
 	Pruned
 };
 
@@ -197,11 +200,13 @@ private:
 #if PW_DEBUG
 	TrackChangeConsistencyChecker trackChangeChecker_;
 #endif
-	std::unique_ptr<AppearanceModel> appearanceGmmEstimator_;
+	std::unique_ptr<SwimmerAppearanceModelBase> swimmerAppearanceModel_;
 public:
 	MultiHypothesisBlobTracker(std::shared_ptr<CameraProjectorBase> cameraProjector, int pruneWindow, float fps);
 	MultiHypothesisBlobTracker(const MultiHypothesisBlobTracker& mht) = delete;
 	virtual ~MultiHypothesisBlobTracker();
+
+	// TODO: do we need FPS or ElapsedTime?
 	void trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackStatusList);
 
 	// TODO: this method should return "hypothesis tree finalizer" object and client will query it to get the next layer of oldest track nodes

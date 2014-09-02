@@ -1,9 +1,8 @@
 #pragma once
 #include <string>
 #include <functional>
-
-#include <opencv2/core.hpp>
-#include <opencv2/core/core_c.h>
+#include <vector>
+#include <cassert>
 
 #include "PoolWatchFacade.h"
 
@@ -20,7 +19,7 @@ namespace PoolWatch
 	struct CyclicHistoryBuffer
 	{
 	private:
-		std::vector<cv::Mat> cyclicBuffer_;
+		std::vector<T> cyclicBuffer_;
 		int freeFrameIndex_;
 	public:
 		CyclicHistoryBuffer(int bufferSize)
@@ -54,7 +53,7 @@ namespace PoolWatch
 
 		auto requestNew() -> T&
 		{
-			cv::Mat& result = cyclicBuffer_[freeFrameIndex_];
+			auto& result = cyclicBuffer_[freeFrameIndex_];
 
 			freeFrameIndex_++;
 			if (freeFrameIndex_ >= cyclicBuffer_.size())
