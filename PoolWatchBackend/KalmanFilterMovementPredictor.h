@@ -13,18 +13,18 @@ class PW_EXPORTS KalmanFilterMovementPredictor : public SwimmerMovementPredictor
 	const float NullPosX = -1;
 	cv::KalmanFilter kalmanFilter_;
 	float penalty_;
-	float blobMaxShift_;
+	float maxShiftPerFrameM_; // (in meters) maximum shift of a tracked object from frame to frame
 public:
-	KalmanFilterMovementPredictor(float fps, float swimmerMaxSpeed);
+	KalmanFilterMovementPredictor(float maxShiftPerFrame);
 	KalmanFilterMovementPredictor(const KalmanFilterMovementPredictor&) = delete;
 
 private:
-	void initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps, float swimmerMaxSpeed);
+	void initKalmanFilter(cv::KalmanFilter& kalmanFilter);
 
 public:
-	virtual ~KalmanFilterMovementPredictor();
-
 	void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) override;
 
 	void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) override;
+
+	float maxShiftPerFrame() const override;
 };

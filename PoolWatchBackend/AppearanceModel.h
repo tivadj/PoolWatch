@@ -47,7 +47,7 @@ void fixGmmWeights(GaussMixtureCompoenent* gmm, int gmmSize);
 
 
 
-class SwimmerAppearanceModel : public SwimmerAppearanceModelBase
+class PW_EXPORTS SwimmerAppearanceModel : public SwimmerAppearanceModelBase
 {
 public:
 	SwimmerAppearanceModel() = default;

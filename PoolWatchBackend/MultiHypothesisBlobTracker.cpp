@@ -36,14 +36,15 @@ extern "C"
 
 log4cxx::LoggerPtr MultiHypothesisBlobTracker::log_ = log4cxx::Logger::getLogger("PW.MultiHypothesisBlobTracker");
 
-MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraProjectorBase> cameraProjector, int pruneWindow, float fps)
-	:cameraProjector_(cameraProjector),
-	fps_(fps),
-	pruneWindow_(pruneWindow),
-	nextTrackCandidateId_(1),
-	swimmerMaxSpeed_(2.3f)         // max speed for swimmers 2.3m/s
+MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(int pruneWindow, std::shared_ptr<CameraProjectorBase> cameraProjector,
+	std::unique_ptr<SwimmerMovementPredictor> movementPredictor,
+	std::unique_ptr<SwimmerAppearanceModelBase> blobAppearanceModel)
+	:pruneWindow_(pruneWindow),
+	cameraProjector_(cameraProjector),
+	movementPredictor_(std::move(movementPredictor)),
+	swimmerAppearanceModel_(std::move(blobAppearanceModel)),
+	nextTrackCandidateId_(1)
 {
-	CV_DbgAssert(fps > 0);
 	CV_DbgAssert(pruneWindow_ >= 0);
 
 	// root of the tree is an artificial node to gather all trees in hypothesis forest
@@ -55,19 +56,9 @@ MultiHypothesisBlobTracker::MultiHypothesisBlobTracker(std::shared_ptr<CameraPro
 	trackHypothesisForestPseudoNode_.ObservationInd = 0;
 	trackHypothesisForestPseudoNode_.Parent = nullptr;
 	fixHypNodeConsistency(&trackHypothesisForestPseudoNode_);
-
-	// default to Kalman Filter
-	movementPredictor_ = std::make_unique<KalmanFilterMovementPredictor>(fps, swimmerMaxSpeed_);
-	swimmerAppearanceModel_ = std::make_unique<SwimmerAppearanceModel>();
 }
 
-
-MultiHypothesisBlobTracker::~MultiHypothesisBlobTracker()
-{
-}
-
-void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& readyFrameInd,
-	std::vector<TrackChangePerFrame>& trackChanges)
+void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, int& readyFrameInd, std::vector<TrackChangePerFrame>& trackChanges)
 {
 #if PW_DEBUG
 	// check blobs
@@ -76,7 +67,7 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 		CV_Assert(blob.ColorSignatureGmmCount >= 0 && "Blob's color signature must be initialized (required for calculation of appearance score)");
 	}
 #endif
-	growTrackHyposhesisTree(frameInd, blobs, fps, elapsedTimeMs);
+	growTrackHyposhesisTree(frameInd, blobs);
 
 	pruneLowScoreTracks(frameInd,trackChanges);
 
@@ -156,7 +147,7 @@ void MultiHypothesisBlobTracker::trackBlobs(int frameInd, const std::vector<Dete
 #endif
 }
 
-void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, const std::vector<DetectedBlob>& blobs, float elapsedTimeMs, int& addedDueCorrespondence, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes)
+void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, const std::vector<DetectedBlob>& blobs, int& addedDueCorrespondence, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes)
 {
 	// associate hypothesis node with each observation
 
@@ -167,8 +158,7 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 
 		// constraint: blob can't shift too much (can't leave the blob's gate)
 		{
-			//swimmerMaxShiftM = elapsedTimeMs * this.v.swimmerMaxSpeed / 1000 + this.humanDetector.shapeCentroidNoise;
-			float swimmerMaxShiftM = (elapsedTimeMs * 0.001f) * swimmerMaxSpeed_ + shapeCentroidNoise_;
+			float swimmerMaxShiftM = movementPredictor_->maxShiftPerFrame() + shapeCentroidNoise_;
 
 			auto dist = cv::norm(leafHyp->EstimatedPosWorld - blobCentrWorld);
 			if (dist > swimmerMaxShiftM)
@@ -253,7 +243,7 @@ void MultiHypothesisBlobTracker::makeCorrespondenceHypothesis(int frameInd, Trac
 	}
 }
 
-void MultiHypothesisBlobTracker::makeNoObservationHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, float elapsedTimeMs, int& addedDueNoObservation, int noObsOrder, int blobsCount)
+void MultiHypothesisBlobTracker::makeNoObservationHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, int& addedDueNoObservation, int noObsOrder, int blobsCount)
 {
 	auto id = nextTrackCandidateId_++;
 	auto hypothesisReason = TrackHypothesisCreationReason::NoObservation;
@@ -361,12 +351,7 @@ void MultiHypothesisBlobTracker::makeNewTrackHypothesis(int frameInd, const std:
 	}
 }
 
-void MultiHypothesisBlobTracker::setSwimmerMaxSpeed(float swimmerMaxSpeed)
-{
-	swimmerMaxSpeed_ = swimmerMaxSpeed;
-}
-
-void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs)
+void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs)
 {
 	vector<TrackHypothesisTreeNode*> leafSet;
 	getLeafSet(&trackHypothesisForestPseudoNode_, leafSet);
@@ -382,13 +367,13 @@ void MultiHypothesisBlobTracker::growTrackHyposhesisTree(int frameInd, const std
 
 	for (auto pLeaf : leafSet)
 	{
-		makeCorrespondenceHypothesis(frameInd, pLeaf, blobs, elapsedTimeMs, addedDueCorrespondence, observationIndToHypNodes);
+		makeCorrespondenceHypothesis(frameInd, pLeaf, blobs, addedDueCorrespondence, observationIndToHypNodes);
 	}
 
 	int noObsOrder = 0;
 	for (auto pLeaf : leafSet)
 	{
-		makeNoObservationHypothesis(frameInd, pLeaf, elapsedTimeMs, addedDueNoObservation, noObsOrder, blobs.size());
+		makeNoObservationHypothesis(frameInd, pLeaf, addedDueNoObservation, noObsOrder, blobs.size());
 		noObsOrder++;
 	}
 
@@ -1642,11 +1627,10 @@ void MultiHypothesisBlobTracker::setLogDir(const boost::filesystem::path& dir)
 	logDir_ = dir;
 }
 
-void MultiHypothesisBlobTracker::setMovementPredictor(unique_ptr<SwimmerMovementPredictor> movementPredictor)
+SwimmerMovementPredictor& MultiHypothesisBlobTracker::movementPredictor()
 {
-	movementPredictor_.swap(std::move(movementPredictor));
+	return *movementPredictor_.get();
 }
-
 
 void TrackChangeConsistencyChecker::setNextTrackChanges(int readyFrameInd, const std::vector<TrackChangePerFrame>& trackChanges)
 {

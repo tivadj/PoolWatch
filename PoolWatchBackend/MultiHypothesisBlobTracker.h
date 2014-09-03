@@ -180,34 +180,32 @@ class PW_EXPORTS MultiHypothesisBlobTracker
 
 	TrackHypothesisTreeNode trackHypothesisForestPseudoNode_;
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
-public:
 	std::unique_ptr<SwimmerMovementPredictor> movementPredictor_;
-	std::vector<DetectedBlob> prevFrameBlobs;
-private:
+	std::unique_ptr<SwimmerAppearanceModelBase> swimmerAppearanceModel_;
 	float fps_;
 	int pruneWindow_; // the depth of track history (valid value>=1; value=0 purges all hypothesis nodes so that hypothesis tree has the single pseudo node)
 	int nextTrackCandidateId_;
-	float swimmerMaxSpeed_; // max swimmer speed in m/s (default=2.3)
+	boost::filesystem::path logDir_;
+#if PW_DEBUG
+	TrackChangeConsistencyChecker trackChangeChecker_;
+#endif
 public: // visible to a test module
 	// 0 = blobs from two consequent frames can't be assiciated with a single track and new track is created
 	// 0.4 = ok, track doesn't jump to the swimmer moving in opposite direction
 	// 0.5 = too much, track may jump to a swimmer which moves in oppositite direction
 	float shapeCentroidNoise_ = 0.5f; // constant to add to the max swimmer speed to get max possible swimmer shift
 	int initNewTrackDelay_ = 1; // value >= 1; generate new track each N frames
-	float trackMinScore_ = -15;
-private:
-	boost::filesystem::path logDir_;
-#if PW_DEBUG
-	TrackChangeConsistencyChecker trackChangeChecker_;
-#endif
-	std::unique_ptr<SwimmerAppearanceModelBase> swimmerAppearanceModel_;
-public:
-	MultiHypothesisBlobTracker(std::shared_ptr<CameraProjectorBase> cameraProjector, int pruneWindow, float fps);
-	MultiHypothesisBlobTracker(const MultiHypothesisBlobTracker& mht) = delete;
-	virtual ~MultiHypothesisBlobTracker();
+	float trackMinScore_ = -15; // track score starts from negative value and increases to infinity
+	std::vector<DetectedBlob> prevFrameBlobs;
 
-	// TODO: do we need FPS or ElapsedTime?
-	void trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackStatusList);
+public:
+	MultiHypothesisBlobTracker(int pruneWindow, std::shared_ptr<CameraProjectorBase> cameraProjector,
+		std::unique_ptr<SwimmerMovementPredictor> movementPredictor,
+		std::unique_ptr<SwimmerAppearanceModelBase> blobAppearanceModel);
+	MultiHypothesisBlobTracker(const MultiHypothesisBlobTracker& mht) = delete;
+
+	// TODO: API frameInd_ is required?
+	void trackBlobs(int frameInd, const std::vector<DetectedBlob>& blobs, int& frameIndWithTrackInfo, std::vector<TrackChangePerFrame>& trackStatusList);
 
 	// TODO: this method should return "hypothesis tree finalizer" object and client will query it to get the next layer of oldest track nodes
 	// Such finalizer object will reuse the set of bestTrackLeafs.
@@ -226,14 +224,12 @@ public:
 
 	void setLogDir(const boost::filesystem::path& dir);
 
-	void setMovementPredictor(std::unique_ptr<SwimmerMovementPredictor> movementPredictor);
+	SwimmerMovementPredictor& movementPredictor();
 
 	float getFps() { return fps_; }
 
-	void setSwimmerMaxSpeed(float swimmerMaxSpeed);
-
 private:
-	void growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs, float fps, float elapsedTimeMs);
+	void growTrackHyposhesisTree(int frameInd, const std::vector<DetectedBlob>& blobs);
 
 	// Updates the node so all its fields are consistent.
 	// Some fields, like ChildrensCount or FirstChild, duplicate data in other fields and must be consistent.
@@ -244,10 +240,10 @@ private:
 	void checkHypNodesConsistency();
 
 	// "Correspondence" hypothesis2: track has correspondent observations in this frame
-	void makeCorrespondenceHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, const std::vector<DetectedBlob>& blobs, float elapsedTimeMs, int& addedDueCorrespondence, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes);
+	void makeCorrespondenceHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, const std::vector<DetectedBlob>& blobs, int& addedDueCorrespondence, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes);
 
 	// "No observation" hypothesis: track has no observation in this frame
-	void makeNoObservationHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, float elapsedTimeMs, int& addedDueNoObservation, int noObsOrder, int blobsCount);
+	void makeNoObservationHypothesis(int frameInd, TrackHypothesisTreeNode* leafHyp, int& addedDueNoObservation, int noObsOrder, int blobsCount);
 
 	// "New track" hypothesis - track got the initial observation in this frame
 	void makeNewTrackHypothesis(int frameInd, const std::vector<DetectedBlob>& blobs, int& addedNew, std::map<int, std::vector<TrackHypothesisTreeNode*>>& observationIndToHypNodes);

@@ -49,14 +49,13 @@ namespace PoolWatchBackendUnitTests
 			const int pruneWindow = 2;
 			const float fps = 1;
 			auto cameraProjector = make_shared<LinearCameraProjector>();
+			float maxShiftPerFrame = 1.1;
+			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1, 0, 0), maxShiftPerFrame);
+			auto appearanceModel = std::make_unique<SwimmerAppearanceModel>();
 
-			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->setSwimmerMaxSpeed(1.1);
+			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(pruneWindow, cameraProjector, movementPredictor, appearanceModel);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
-
-			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1, 0, 0));
-			blobTracker->setMovementPredictor(std::move(movementPredictor));
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
@@ -117,18 +116,18 @@ namespace PoolWatchBackendUnitTests
 			const int pruneWindow = 2;
 			const float fps = 1;
 			auto cameraProjector = make_shared<LinearCameraProjector>();
+			float maxShiftPerFrame = 1.1;
+			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(0, 0, 0), maxShiftPerFrame);
+			auto appearanceModel = std::make_unique<SwimmerAppearanceModel>();
 
-			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->setSwimmerMaxSpeed(1.1);
+			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(pruneWindow, cameraProjector, movementPredictor, appearanceModel);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
 
-			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(0, 0, 0));
 			cv::Point3f vel1(1, 0, 0);
 			cv::Point3f vel2(0, -1, 0);
 			movementPredictor->setSwimmerVelocity(FamilyIdHint(0, 0), vel1);
 			movementPredictor->setSwimmerVelocity(FamilyIdHint(0, 1), vel2);
-			blobTracker->setMovementPredictor(std::move(movementPredictor));
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
@@ -181,14 +180,13 @@ namespace PoolWatchBackendUnitTests
 			const int pruneWindow = 2;
 			const float fps = 1;
 			auto cameraProjector = make_shared<LinearCameraProjector>();
+			float maxShiftPerFrame = 1.1;
+			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1, 0, 0), maxShiftPerFrame);
+			auto appearanceModel = std::make_unique<SwimmerAppearanceModel>();
 
-			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->setSwimmerMaxSpeed(1.1);
+			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(pruneWindow, cameraProjector, movementPredictor, appearanceModel);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
-
-			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1, 0, 0));
-			blobTracker->setMovementPredictor(std::move(movementPredictor));
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;
@@ -265,14 +263,13 @@ namespace PoolWatchBackendUnitTests
 			const int pruneWindow = 2;
 			const float fps = 1;
 			auto cameraProjector = make_shared<LinearCameraProjector>();
+			float maxShiftPerFrame = 1.1;
+			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1, 0, 0), maxShiftPerFrame);
+			auto appearanceModel = std::make_unique<SwimmerAppearanceModel>();
 
-			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
-			blobTracker->setSwimmerMaxSpeed(1.1);
+			auto blobTracker = make_unique<MultiHypothesisBlobTracker>(pruneWindow, cameraProjector, movementPredictor, appearanceModel);
 			blobTracker->shapeCentroidNoise_ = 0;
 			blobTracker->initNewTrackDelay_ = 1;
-
-			auto movementPredictor = std::make_unique<ConstantVelocityMovementPredictor>(cv::Point3f(1, 0, 0));
-			blobTracker->setMovementPredictor(std::move(movementPredictor));
 
 			SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);
 			poolObserver.trackMinDurationFrames_ = 2;

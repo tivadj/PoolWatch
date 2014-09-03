@@ -98,11 +98,9 @@ void SwimmingPoolObserver::processBlobs(size_t frameOrd, const vector<DetectedBl
 {
 	setBlobs(frameOrd, blobs);
 
-	auto fps = blobTracker_->getFps();
-	auto elapsedTimeMs = 1000.0f / fps;
 	int readyFrameInd = -1;
 	vector<TrackChangePerFrame> trackChangeList;
-	blobTracker_->trackBlobs((int)frameOrd, blobs, fps, elapsedTimeMs, readyFrameInd, trackChangeList);
+	blobTracker_->trackBlobs((int)frameOrd, blobs, readyFrameInd, trackChangeList);
 
 	if (pReadyFrameInd != nullptr)
 		*pReadyFrameInd = readyFrameInd;
@@ -320,7 +318,7 @@ void SwimmingPoolObserver::predictNextFrameBlobs(int frameOrd, const std::vector
 		
 		cv::Point3f estPosWorld;
 		float score;
-		blobTracker_->movementPredictor_->estimateAndSave(*pNode, nullptr, estPosWorld, score, dummyNode);
+		blobTracker_->movementPredictor().estimateAndSave(*pNode, nullptr, estPosWorld, score, dummyNode);
 
 		cv::Point2f estPos = cameraProjector_->worldToCamera(estPosWorld);
 

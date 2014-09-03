@@ -63,16 +63,19 @@ class ConstantVelocityMovementPredictor : public SwimmerMovementPredictor
 		TrackVelocity(::FamilyIdHint familyIdHint, const cv::Point3f& velocity) : FamilyIdHint(familyIdHint), Velocity(velocity) {}
 	};
 	cv::Point3f defaultVelocity_; // the speed of any swimmer, if exact value is not specified using 'getSwimmerVelocity'
+	float maxShiftPerFrameM_;
 	float sigma_; // in N(mu,sigma^2) shows how actual and estimated position agree
 	std::vector<TrackVelocity> trackVelocityList_; // list of artificially specified swimmer velocities
 public:
-	ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity);
+	ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity, float maxDistPerFrame);
 	ConstantVelocityMovementPredictor(const ConstantVelocityMovementPredictor&) = delete;
 	virtual ~ConstantVelocityMovementPredictor();
 
 	void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) override;
 
 	void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) override;
+
+	float maxShiftPerFrame() const override;
 	
 	void setSwimmerVelocity(FamilyIdHint familyIdHint, const cv::Point3f& velocity);
 	boost::optional<cv::Point3f> getSwimmerVelocity(int frameInd, int observationInd) const;

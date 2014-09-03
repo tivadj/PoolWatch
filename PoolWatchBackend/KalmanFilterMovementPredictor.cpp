@@ -53,9 +53,14 @@ float estimateProbOfShift(float shift, float sigma)
 const float spatDensClutter = 0.0026f;
 const float spatDensNew = 4e-6;
 
-KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps, float swimmerMaxSpeed)
+KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float maxShiftPerFrame)
 {
-	initKalmanFilter(kalmanFilter_, fps, swimmerMaxSpeed);
+	// 2.3m / s is max speed for swimmers
+	// let say 0.5m / s is an average speed
+	// estimate sigma as one third of difference between max and mean shift per frame
+	maxShiftPerFrameM_ = maxShiftPerFrame;
+
+	initKalmanFilter(kalmanFilter_);
 
 	// penalty for missed observation
 	// prob 0.4 - penalty - 0.9163
@@ -66,32 +71,22 @@ KalmanFilterMovementPredictor::KalmanFilterMovementPredictor(float fps, float sw
 	//penalty_ = -1.79 / 200;
 }
 
-void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps, float swimmerMaxSpeed)
+void KalmanFilterMovementPredictor::initKalmanFilter(cv::KalmanFilter& kalmanFilter)
 {
 	kalmanFilter.init(KalmanFilterDynamicParamsCount, 2, 0);
 
 	kalmanFilter.transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1);
 
-	// 2.3m / s is max speed for swimmers
-	// let say 0.5m / s is an average speed
-	// estimate sigma as one third of difference between max and mean shift per frame
-	float maxShiftM = swimmerMaxSpeed / fps;
-	blobMaxShift_ = maxShiftM;
-
 	//float meanShiftM = 0.5f / fps;
 	//float meanShiftM = 23.0f / fps;
 	//float sigma = (maxShiftM - meanShiftM) / 3;
 	//float sigma = (maxShiftM - meanShiftM);
-	float sigma = maxShiftM / 3;
+	float sigma = maxShiftPerFrameM_ / 3;
 	setIdentity(kalmanFilter.processNoiseCov, cv::Scalar::all(sigma*sigma));
 
 	kalmanFilter.measurementMatrix = (cv::Mat_<float>(2, 4) << 1, 0, 0, 0, 0, 1, 0, 0);
 	const float measS = 5.0f / 3;
 	setIdentity(kalmanFilter.measurementNoiseCov, cv::Scalar::all(measS*measS));
-}
-
-KalmanFilterMovementPredictor::~KalmanFilterMovementPredictor()
-{
 }
 
 void KalmanFilterMovementPredictor::initScoreAndState(int frameInd, int observationInd, cv::Point3f const& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode)
@@ -158,7 +153,7 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 		//CV_Assert(distOp);
 		
 		float pd = 0.9f;
-		float sigma = blobMaxShift_ / 2; // 2 means that 2sig=95% of values will be at max shift
+		float sigma = maxShiftPerFrameM_ / 2; // 2 means that 2sig=95% of values will be at max shift
 		float probObs = estimateProbOfShift(dist, sigma);
 		auto shiftScore = std::log(probObs * pd / (spatDensClutter + spatDensNew));
 		const float minShiftScore = 0.001;
@@ -181,4 +176,9 @@ void KalmanFilterMovementPredictor::estimateAndSave(const TrackHypothesisTreeNod
 	// save Kalman Filter state
 	childHyp.KalmanFilterState = kalmanFilter.statePost.clone();
 	childHyp.KalmanFilterStateCovariance = kalmanFilter.errorCovPost.clone();
+}
+
+float KalmanFilterMovementPredictor::maxShiftPerFrame() const
+{
+	return maxShiftPerFrameM_;
 }

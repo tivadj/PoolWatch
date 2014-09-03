@@ -2,12 +2,13 @@
 #include "TestingUtils.h"
 #include "SwimmingPoolObserver.h"
 
-ConstantVelocityMovementPredictor::ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity) : defaultVelocity_(defaultVelocity)
-{	
-	float maxShift = std::max(defaultVelocity_.x, defaultVelocity_.y);
+ConstantVelocityMovementPredictor::ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity, float maxShiftPerFrame) 
+	:defaultVelocity_(defaultVelocity),
+	maxShiftPerFrameM_(maxShiftPerFrame)
 
+{	
 	// treat part of the maxShift as expected max error
-	float maxError = maxShift / 2;
+	float maxError = maxShiftPerFrame / 2;
 
 	// select sigma so that 3*sgma = maxError
 	sigma_ = maxError / 3;
@@ -77,6 +78,11 @@ void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTre
 	saveState.y = estPos.y;
 	saveState.vx = swimmerVelocity.x;
 	saveState.vy = swimmerVelocity.y;
+}
+
+float ConstantVelocityMovementPredictor::maxShiftPerFrame() const
+{
+	return maxShiftPerFrameM_;
 }
 
 boost::optional<cv::Point3f> ConstantVelocityMovementPredictor::getSwimmerVelocity(int frameInd, int observationInd) const

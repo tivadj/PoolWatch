@@ -22,6 +22,7 @@
 #include "VideoLogger.h"
 #include "CoreUtils.h"
 #include "PaintHelper.h"
+#include <KalmanFilterMovementPredictor.h>
 
 namespace SwimmingPoolVideoFileTrackerTestsNS
 {
@@ -52,7 +53,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 	bool getImageCalibrationPoints(const QString& videoFile, int frameOrd, std::vector<cv::Point3f>& worldPoints, std::vector<cv::Point2f>& imagePoints)
 	{
-		if (videoFile.startsWith("mvi_3177", Qt::CaseInsensitive))
+		if (videoFile.startsWith("mvi_3177", Qt::CaseInsensitive) ||
+			videoFile.startsWith("mvi3177", Qt::CaseInsensitive))
+
 		{
 			// top, origin(0, 0)
 			imagePoints.push_back(cv::Point2f(242, 166));
@@ -149,7 +152,14 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		const int NewTrackDelay = 7;
 		const float ShapeCentroidNoise = 0.4f;
 		auto cameraProjector = make_shared<CameraProjector>();
-		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(cameraProjector, pruneWindow, fps);
+
+		const float swimmerMaxSpeed = 2.3f;         // max speed for swimmers 2.3m/s
+		float maxDistPerFrame = swimmerMaxSpeed / fps;
+
+		auto movementModel = std::make_unique<KalmanFilterMovementPredictor>(maxDistPerFrame);
+		auto appearanceModel = std::make_unique<SwimmerAppearanceModel>();
+
+		auto blobTracker = make_unique<MultiHypothesisBlobTracker>(pruneWindow, cameraProjector, std::move(movementModel), std::move(appearanceModel));
 		blobTracker->initNewTrackDelay_ = NewTrackDelay;
 		blobTracker->shapeCentroidNoise_ = ShapeCentroidNoise;
 		SwimmingPoolObserver poolObserver(std::move(blobTracker), cameraProjector);

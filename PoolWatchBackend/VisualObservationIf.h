@@ -1,6 +1,7 @@
 #pragma once
 #include "BgSubLib/ZivkovicAGMM.hpp"
 #include <cstdint>
+#include "PoolWatchFacade.h"
 
 namespace PoolWatch
 {
@@ -31,7 +32,7 @@ struct DetectedBlob
 	float AreaPix; // area of the blob in pixels
 };
 
-class SwimmerAppearanceModelBase
+class PW_EXPORTS SwimmerAppearanceModelBase
 {
 public:
 	SwimmerAppearanceModelBase() = default;
