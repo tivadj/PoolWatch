@@ -86,22 +86,130 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			imagePoints.push_back(cv::Point2f(654, 523));
 			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
 
-			// top of flags string
+			// top of the string of flags
 			imagePoints.push_back(cv::Point2f(414, 108));
 			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
 
-			// bottom of flags string
+			// bottom of the string of flags
 			imagePoints.push_back(cv::Point2f(149, 481));
 			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
 			return true;
 		}
+		else if (videoFile.startsWith("mvi_4636", Qt::CaseInsensitive))
+		{
+			// 640x480
+
+			// top-right
+			imagePoints.push_back(cv::Point2f(565, 75));
+			worldPoints.push_back(cv::Point3f(25, 0, CameraProjector::zeroHeight()));
+
+			// bottom-right is origin
+			imagePoints.push_back(cv::Point2f(641, 484));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			// top of the string of flags
+			imagePoints.push_back(cv::Point2f(444, 76));
+			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
+
+			// bottom of the string of flags
+			imagePoints.push_back(cv::Point2f(192, 389));
+			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
+			return true;
+		}
+		else if (videoFile.startsWith("mvi_4637", Qt::CaseInsensitive))
+		{
+			// 640x480
+
+			// top-right
+			imagePoints.push_back(cv::Point2f(508, 76.5));
+			worldPoints.push_back(cv::Point3f(25, 0, CameraProjector::zeroHeight()));
+
+			// bottom-right is origin
+			imagePoints.push_back(cv::Point2f(828, 410));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			// top of the string of flags
+			imagePoints.push_back(cv::Point2f(398, 78.5));
+			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
+
+			// bottom of the string of flags
+			imagePoints.push_back(cv::Point2f(468, 395.5));
+			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
+			return true;
+		}
+		else if (videoFile.startsWith("mvi_4638", Qt::CaseInsensitive))
+		{
+			// 640x480
+
+			// top-right
+			imagePoints.push_back(cv::Point2f(624.5, 114.5));
+			worldPoints.push_back(cv::Point3f(25, 0, CameraProjector::zeroHeight()));
+
+			// bottom-right is origin
+			imagePoints.push_back(cv::Point2f(631, 503.5));
+			worldPoints.push_back(cv::Point3f(0, 0, CameraProjector::zeroHeight()));
+
+			// top of the string of flags
+			imagePoints.push_back(cv::Point2f(505.5, 117.5));
+			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
+
+			// bottom of the string of flags
+			imagePoints.push_back(cv::Point2f(214.5, 436));
+			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
+			return true;
+		}
+		else if (videoFile.startsWith("mvi_4641", Qt::CaseInsensitive))
+		{
+			// 640x480
+
+			// bottom of the string of flags
+			imagePoints.push_back(cv::Point2f(264, 436.5));
+			worldPoints.push_back(cv::Point3f(0, 5, CameraProjector::zeroHeight()));
+
+			// top of the string of flags
+			imagePoints.push_back(cv::Point2f(644, 165.5));
+			worldPoints.push_back(cv::Point3f(25, 5, CameraProjector::zeroHeight()));
+
+			// top-left
+			imagePoints.push_back(cv::Point2f(150.5, 157));
+			worldPoints.push_back(cv::Point3f(25, 50, CameraProjector::zeroHeight()));
+
+			// left
+			imagePoints.push_back(cv::Point2f(-90, 218.5));
+			worldPoints.push_back(cv::Point3f(0, 50, CameraProjector::zeroHeight()));
+
+			return true;
+		}
+
 		return false;
+	}
+
+	void downsamplePointsInplace(float downsampleRatio, std::vector<cv::Point2f>& imagePoints)
+	{
+		for (auto& point : imagePoints)
+		{
+			point.x = point.x * downsampleRatio;
+			point.y = point.y * downsampleRatio;
+		}
+	}
+
+	bool readVideoFrame(cv::VideoCapture& videoCapture, int takeEachKthFrame, cv::Mat& imageFrame)
+	{
+		// skip takeEachKthFrame-1 frames and read/return the next frame
+
+		for (int skip = 0; skip < takeEachKthFrame; skip++)
+		{
+			bool readOp = videoCapture.read(imageFrame);
+			if (!readOp)
+				return false;
+		}
+		return true;
 	}
 
 	void trackVideoFileTest()
 	{
 		std::string timeStamp = PoolWatch::timeStampNow();
-		boost::filesystem::path outDir = boost::filesystem::path("../../output/debug") / timeStamp;
+		boost::filesystem::path outDir = boost::filesystem::path("../output") / timeStamp;
 		outDir = boost::filesystem::absolute(outDir, ".").normalize();
 		QDir outDirQ = QDir(outDir.string().c_str());
 
@@ -112,8 +220,20 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		LOG4CXX_ERROR(log_, "test error");
 
 		//
-		//auto videoPathRel = "../../output/mvi3177_blueWomanLane3.avi";
+		// new / old frame size ratio (eg. 0.5 or 1)
+		const float downsampleRatio = 1; // no downsampling
+		//const float downsampleRatio = 0.5; // decreases width and height in 2 times 
+
+		// process only each K-th frame
+		//const int takeEachKthFrame = 1; // original FPS
+		const int takeEachKthFrame = 5;
+
+		//auto videoPathRel = "../../output/mvi3177_blueWomanLane3.avi"; // 640x480
 		auto videoPathRel = "../../dinosaur/mvi_4635_640x480.mp4";
+		//auto videoPathRel = "../../dinosaur/mvi_4636_640x480.mp4";
+		//auto videoPathRel = "../../dinosaur/mvi_4637_640x480.mp4";
+		//auto videoPathRel = "../../dinosaur/mvi_4638_640x480.mp4";
+		//auto videoPathRel = "../../dinosaur/mvi_4641_640x480.mp4";
 		boost::filesystem::path videoPath = boost::filesystem::absolute(videoPathRel).normalize();
 		cv::VideoCapture videoCapture(videoPath.string());
 		if (!videoCapture.isOpened())
@@ -127,8 +247,15 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		int frameHeight = (int)videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT);
 		int framesCount = (int)videoCapture.get(cv::CAP_PROP_FRAME_COUNT);
 
-		LOG4CXX_INFO(log_, "opened " <<videoPath);
-		LOG4CXX_INFO(log_, "WxH=[" << frameWidth << " " << frameHeight << "] framesCount=" << framesCount <<" fps=" << fps);
+		LOG4CXX_INFO(log_, "opened FramesCount=" << framesCount <<" File=" <<videoPath);
+		LOG4CXX_INFO(log_, "original WxH=[" << frameWidth << " " << frameHeight <<"] FPS=" << fps);
+
+		// actual number of frames to process may be smaller
+		frameWidth = frameWidth * downsampleRatio;
+		frameHeight = frameHeight * downsampleRatio;
+		fps = fps / takeEachKthFrame;
+		framesCount = static_cast<int>(framesCount / takeEachKthFrame);
+		LOG4CXX_INFO(log_, "downsamp WxH=[" << frameWidth << " " << frameHeight << "] FPS=" << fps);
 
 		// prepare video writing
 
@@ -149,11 +276,23 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		// prepare video observer
 
 		const int pruneWindow = 5;
-		const int NewTrackDelay = 7;
-		const float ShapeCentroidNoise = 0.4f;
+		//const int NewTrackDelay = 7;
+		const int NewTrackDelay = 1;
+
+		// 0.4 doesn't work for takeEachKthFrame=5 (dist=0.894914 (>0.86))
+		// 0.5 doesn't handle the case when there is a noise blob and then the track can't catch up with the real track(dist 1.06259>0.96)
+		// 0.7 doesn't handle the case when there is a noise blob and then the track can't catch up with the real track(dist 1.21266>1.16)
+		// 0.9 works
+		// 1 is too large, as tracks jumps to nearby noise blobs
+		const float ShapeCentroidNoise = 10.0f;
 		auto cameraProjector = make_shared<CameraProjector>();
 
 		const float swimmerMaxSpeed = 2.3f;         // max speed for swimmers 2.3m/s
+
+		// the speed increases twice, so that if back and hands are split into two blobs with distance 1.1m, then tracker prefer to continue track
+		// instead of associating new track with hands
+		//const float swimmerMaxSpeed = 2.3f*2;         // max speed for swimmers 2.3m/s
+		// Max shift per frame depends on image size and camera projection
 		float maxDistPerFrame = swimmerMaxSpeed / fps;
 
 		auto movementModel = std::make_unique<KalmanFilterMovementPredictor>(maxDistPerFrame);
@@ -178,9 +317,9 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 			if (log_->isDebugEnabled())
 			{
 				stringstream bld;
-				bld << "Found " << blobs.size() << " blobs" << endl;
+				bld << "Found " << blobs.size() << " blobs";
 				for (const auto& blob : blobs)
-					bld << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << " Area=" << blob.AreaPix << endl;
+					bld << std::endl << "  Id=" << blob.Id << " Centroid=" << blob.Centroid << blob.CentroidWorld << " Area=" << blob.AreaPix;
 				LOG4CXX_DEBUG(log_, bld.str());
 			}
 		};
@@ -207,7 +346,7 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		cv::Matx33f cameraMat;
 		auto videoFileName = videoPath.filename().string(); 
-		if (guessCameraMat(videoFileName.c_str(), cameraMat))
+		if (false && guessCameraMat(videoFileName.c_str(), cameraMat))
 		{
 			LOG4CXX_INFO(log_, "Camera matrix: from configuration");
 		}
@@ -235,38 +374,50 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 
 		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
 
+		cv::Mat imageFrameOrigin;
+
+		typedef std::chrono::system_clock Clock;
+		std::chrono::time_point<Clock> startProcessing = Clock::now();
 		int frameOrd = 0;
+		bool isCameraOriented = false;
 		for (; frameOrd < framesCount; ++frameOrd)
 		{
 			LOG4CXX_INFO(log_, "frameOrd= " << frameOrd << " of " << framesCount);
 
-			typedef std::chrono::system_clock Clock;
 			std::chrono::time_point<Clock> now1 = Clock::now();
 
 			// TODO: tracking doesn't work when processing the same image repeatedly
-
-			//cv::Mat imageFrame = cv::imread("data/MVI_3177_0127_640x476.png");
-
-			cv::Mat& imageFrame = videoBuffer.requestNew();
-			bool readOp = videoCapture.read(imageFrame);
+			bool readOp = readVideoFrame(videoCapture, takeEachKthFrame, imageFrameOrigin);
 			if (!readOp)
 			{
 				LOG4CXX_ERROR(log_, "Can't read video frame, frameOrd= " << frameOrd);
 				break;
 			}
 
-			//
+			// downsample the image
+			cv::Mat& imageFrame = videoBuffer.requestNew();
+			if (downsampleRatio < 1)
+				cv::pyrDown(imageFrameOrigin, imageFrame);
+			else
+				imageFrameOrigin.copyTo(imageFrame);
+
+			// if camera is fixed, then we may orient camera only once
+			// otherwise camera should be oriented independently for each frame
+
+			if (false || !isCameraOriented)
 			{
 				worldPoints.clear();
 				imagePoints.clear();
 				bool pointsFound = getImageCalibrationPoints(videoFileName.c_str(), frameOrd, worldPoints, imagePoints);
 				CV_Assert(pointsFound);
+				downsamplePointsInplace(downsampleRatio, imagePoints);
 
 				bool cameraOriented = cameraProjector->orientCamera(cameraMat, worldPoints, imagePoints);
 				CV_Assert(cameraOriented);
 				
 				cv::Point3f cameraPos = cameraProjector->cameraPosition();
 				LOG4CXX_DEBUG(log_, "camera Pos" << cameraPos);
+				isCameraOriented = true;
 			}
 
 			int readyFrameInd;
@@ -308,6 +459,12 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		std::stringstream bld;
 		poolObserver.dumpTrackHistory(bld);
 		LOG4CXX_DEBUG(log_, "Tracks Result " << bld.str());
+
+		std::chrono::time_point<Clock> finishProcessing = Clock::now();
+		auto processingMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(finishProcessing - startProcessing).count();
+		int processedFramesCount = frameOrd + 1;
+		auto processingFPS = processedFramesCount * 1000.0 / processingMilliseconds;
+		LOG4CXX_INFO(log_, "Processed FramesCount=" << processedFramesCount <<" in " << processingMilliseconds << "ms" << " procFPS=" << processingFPS);
 	}
 
 	void run()

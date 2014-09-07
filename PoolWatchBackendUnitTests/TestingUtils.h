@@ -71,7 +71,7 @@ public:
 	ConstantVelocityMovementPredictor(const ConstantVelocityMovementPredictor&) = delete;
 	virtual ~ConstantVelocityMovementPredictor();
 
-	void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) override;
+	void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode, float* pShiftDistOrNull = nullptr) override;
 
 	void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) override;
 

@@ -14,7 +14,7 @@ public:
 
 	// Estimates position and score of movement from position of curNode to blobCentrWorld. Saves state into saveNode.
 	// deltaMovementScore = delta score of shifting from current node to proposed blob's center.
-	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) = 0;
+	virtual void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode, float* pShiftDistOrNull = nullptr) = 0;
 
 	virtual float maxShiftPerFrame() const = 0;
 };

@@ -2,9 +2,12 @@
 *.asv
 _UserBreak*.txt
 *.user
-build/
 *.sdf
 *.opensdf
 *.suo
 *.psess
 *.ipch
+build/
+output/
+PoolWatchTraceDemoProj1/Debug
+PoolWatchTraceDemoProj1/Release
