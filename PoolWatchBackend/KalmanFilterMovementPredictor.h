@@ -1,28 +1,30 @@
 #pragma once
 #include <opencv2\video\tracking.hpp> // KalmanFilter
-#include "TrackHypothesisTreeNode.h"
+#include "PoolWatchFacade.h"
+#include "MultiHypothesisBlobTracker.h"
+#include "SwimmerMovementModel.h"
 
 float kalmanFilterDistance(const cv::KalmanFilter& kalmanFilter, const cv::Mat& observedPos);
-_declspec(dllimport) float normalizedDistance(const cv::Point3f& pos, const cv::Point3f& mu, float sigma);
+PW_EXPORTS bool normalizedDistance(const cv::Matx21f& pos, const cv::Matx21f& mu, const cv::Matx22f& sigma, float& dist);
 
-class _declspec(dllexport) KalmanFilterMovementPredictor : public SwimmerMovementPredictor
+class PW_EXPORTS KalmanFilterMovementPredictor : public SwimmerMovementPredictor
 {
 	const int KalmanFilterDynamicParamsCount = 4;
 	const float NullPosX = -1;
 	cv::KalmanFilter kalmanFilter_;
 	float penalty_;
-	float blobMaxShift_;
+	float maxShiftPerFrameM_; // (in meters) maximum shift of a tracked object from frame to frame
 public:
-	KalmanFilterMovementPredictor(float fps, float swimmerMaxSpeed);
+	KalmanFilterMovementPredictor(float maxShiftPerFrame);
 	KalmanFilterMovementPredictor(const KalmanFilterMovementPredictor&) = delete;
 
 private:
-	void initKalmanFilter(cv::KalmanFilter& kalmanFilter, float fps, float swimmerMaxSpeed);
+	void initKalmanFilter(cv::KalmanFilter& kalmanFilter);
 
 public:
-	virtual ~KalmanFilterMovementPredictor();
-
 	void initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode) override;
 
-	void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode) override;
+	void estimateAndSave(const TrackHypothesisTreeNode& curNode, const boost::optional<cv::Point3f>& blobCentrWorld, cv::Point3f& estPos, float& deltaMovementScore, TrackHypothesisTreeNode& saveNode, float* pShiftDistOrNull = nullptr) override;
+
+	float maxShiftPerFrame() const override;
 };

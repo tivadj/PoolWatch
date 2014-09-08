@@ -41,4 +41,13 @@ struct mxArrayDeleter
 	}
 };
 
+typedef void(*MexFunctionDelegate)(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
+
+PW_EXPORTS void executeMexFunctionSafe(MexFunctionDelegate mexFun, int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]);
+
+//
+
+PW_EXPORTS void TrackPaintMexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
+PW_EXPORTS void MaxWeightInependentSetMaxFirstMexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]);
+
 #endif

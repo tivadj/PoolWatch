@@ -11,11 +11,11 @@
 #include <boost/filesystem/path.hpp>
 
 #include "PoolWatchFacade.h"
+#include "VisualObservation.h"
 #include "MultiHypothesisBlobTracker.h"
-#include "SwimmerDetector.h"
 
 /** Decorates frame images with tracks pathes and swimmer shapes. */
-class __declspec(dllexport) SwimmingPoolObserver
+class PW_EXPORTS SwimmingPoolObserver
 {
 	static log4cxx::LoggerPtr log_;
 public:

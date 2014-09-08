@@ -5,9 +5,10 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
 
-#include "PoolWatchFacade.h"
+#include "VisualObservation.h"
 #include "WaterClassifier.h"
 #include "algos1.h"
+#include "SvgImageMaskSerializer.h"
 
 namespace SkinClassifierTestsNS
 {

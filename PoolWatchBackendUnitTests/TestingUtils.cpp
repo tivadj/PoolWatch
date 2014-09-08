@@ -14,6 +14,7 @@
 #include <CppUnitTest.h>
 
 #include "TestingUtils.h"
+#include "CoreUtils.h"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 

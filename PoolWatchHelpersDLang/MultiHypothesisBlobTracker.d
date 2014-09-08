@@ -392,8 +392,11 @@ void findBestTracks(TrackHypothesisTreeNode* hypTree, int collisionIgnoreNodeId,
 	// find leaves
 
 	CppVector!(HypTreeAdapter.NodeId) leaves;
-	foreach(e; getLeaves(hypTreeAdapt))
-		leaves.pushBack(e);
+	foreach(TrackHypothesisTreeNode* leaf; getLeaves(hypTreeAdapt))
+	{
+		if (leaf.Id != collisionIgnoreNodeId) // ignore pseudo root
+			leaves.pushBack(leaf);
+	}
 
 	//
 	alias UndirectedAdjacencyGraphVectorImpl!MwisPayload ConflictingTrackHypothesisGraphT;

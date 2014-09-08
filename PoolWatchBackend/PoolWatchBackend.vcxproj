@@ -65,14 +65,18 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;POOLWATCH_EXPORTS;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;PWAPI_EXPORTS;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
+      <BrowseInformation>true</BrowseInformation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>PoolWatchHelpersDLang.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <Bscmake>
+      <PreserveSbr>true</PreserveSbr>
+    </Bscmake>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -82,7 +86,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>WIN32;POOLWATCH_EXPORTS;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;PWAPI_EXPORTS;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
@@ -102,17 +106,24 @@
     <ClInclude Include="BgSubLib\BgsParams.hpp" />
     <ClInclude Include="BgSubLib\Image.hpp" />
     <ClInclude Include="BgSubLib\ZivkovicAGMM.hpp" />
+    <ClInclude Include="CameraProjector.h" />
+    <ClInclude Include="CoreUtils.h" />
     <ClInclude Include="GraphVizHypothesisTreeVisualizer.h" />
     <ClInclude Include="MatrixUndirectedGraph.h" />
+    <ClInclude Include="SwimmerMovementModel.h" />
     <ClInclude Include="MultiHypothesisBlobTracker.h" />
+    <ClInclude Include="PaintHelper.h" />
     <ClInclude Include="PoolWatchDLangInterop.h" />
     <ClInclude Include="PoolWatchFacade.h" />
     <ClInclude Include="MatlabInterop.h" />
     <ClInclude Include="KalmanFilterMovementPredictor.h" />
+    <ClInclude Include="SvgImageMaskSerializer.h" />
     <ClInclude Include="SwimmerDetector.h" />
     <ClInclude Include="TrackHypothesisTreeNode.h" />
     <ClInclude Include="SwimmingPoolObserver.h" />
     <ClInclude Include="VideoLogger.h" />
+    <ClInclude Include="VisualObservation.h" />
+    <ClInclude Include="VisualObservationIf.h" />
     <ClInclude Include="WaterClassifier.h" />
   </ItemGroup>
   <ItemGroup>
@@ -121,6 +132,7 @@
     <ClCompile Include="BgSubLib\Image.cpp" />
     <ClCompile Include="BgSubLib\ZivkovicAGMM.cpp" />
     <ClCompile Include="CameraProjector.cpp" />
+    <ClCompile Include="CoreUtils.cpp" />
     <ClCompile Include="GraphVizHypothesisTreeVisualizer.cpp" />
     <ClCompile Include="KalmanFilterMovementPredictor.cpp" />
     <ClCompile Include="MatrixUndirectedGraph.cpp" />
@@ -133,10 +145,12 @@
     <ClCompile Include="MatlabInterop.cpp" />
     <ClCompile Include="SvgImageMaskSerializer.cpp" />
     <ClCompile Include="SwimmerDetector.cpp" />
+    <ClCompile Include="TrackChangeClientSide.cpp" />
     <ClCompile Include="TrackHypothesisTreeNode.cpp" />
     <ClCompile Include="TrackPaintMexFunction.cpp" />
     <ClCompile Include="SwimmingPoolObserver.cpp" />
     <ClCompile Include="VideoLogger.cpp" />
+    <ClCompile Include="VisualObservation.cpp" />
     <ClCompile Include="WaterClassifier.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

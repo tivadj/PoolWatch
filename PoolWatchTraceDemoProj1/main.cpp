@@ -12,9 +12,9 @@
 #include <log4cxx/rollingfileappender.h>
 #include <log4cxx/patternlayout.h>
 
-#include "PoolWatchFacade.h"
 #include "topviewdemotracermainwindow.h"
 #include "DemoHelpers.h"
+#include "CoreUtils.h"
 
 using namespace cv;
 using namespace PoolWatch;

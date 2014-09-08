@@ -1,7 +1,7 @@
 #include <opencv2\core.hpp>
 #include <opencv2\highgui.hpp> // imread
 
-#include "PoolWatchFacade.h"
+#include "VisualObservation.h"
 #include "algos1.h"
 
 namespace PoolBoundaryDetectorTestsNS

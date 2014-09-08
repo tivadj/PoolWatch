@@ -2,12 +2,13 @@
 #include "TestingUtils.h"
 #include "SwimmingPoolObserver.h"
 
-ConstantVelocityMovementPredictor::ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity) : defaultVelocity_(defaultVelocity)
-{	
-	float maxShift = std::max(defaultVelocity_.x, defaultVelocity_.y);
+ConstantVelocityMovementPredictor::ConstantVelocityMovementPredictor(const cv::Point3f& defaultVelocity, float maxShiftPerFrame) 
+	:defaultVelocity_(defaultVelocity),
+	maxShiftPerFrameM_(maxShiftPerFrame)
 
+{	
 	// treat part of the maxShift as expected max error
-	float maxError = maxShift / 2;
+	float maxError = maxShiftPerFrame / 2;
 
 	// select sigma so that 3*sgma = maxError
 	sigma_ = maxError / 3;
@@ -20,7 +21,11 @@ ConstantVelocityMovementPredictor::~ConstantVelocityMovementPredictor()
 void ConstantVelocityMovementPredictor::initScoreAndState(int frameInd, int observationInd, const cv::Point3f& blobCentrWorld, float& score, TrackHypothesisTreeNode& saveNode)
 {
 	const float initialTrackScore = 5;
-	score = normalizedDistance(blobCentrWorld, blobCentrWorld, sigma_);
+
+	cv::Matx21f blobCentrWorldMat(blobCentrWorld.x, blobCentrWorld.y);
+	cv::Matx22f covMat(sigma_*sigma_, 0, 0, sigma_*sigma_);
+	bool distOp = normalizedDistance(blobCentrWorldMat, blobCentrWorldMat, covMat, score);
+	CV_Assert(distOp);
 
 	auto& saveState = nodeState(saveNode);
 	saveState.x = blobCentrWorld.x;
@@ -49,7 +54,13 @@ void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTre
 	estPos = curPos + swimmerVelocity;
 
 	if (blobCentrWorld != nullptr)
-		deltaMovementScore = normalizedDistance(blobCentrWorld.get(), estPos, sigma_);
+	{
+		cv::Matx21f blobCentrWorldMat(blobCentrWorld.get().x, blobCentrWorld.get().y);
+		cv::Matx21f estPosMat(estPos.x, estPos.y);
+		cv::Matx22f covMat(sigma_*sigma_, 0, 0, sigma_*sigma_);
+		bool distOp= normalizedDistance(blobCentrWorldMat, estPosMat, covMat, deltaMovementScore);
+		CV_Assert(distOp);
+	}
 	else
 	{
 		// penalty for missed observation
@@ -67,6 +78,11 @@ void ConstantVelocityMovementPredictor::estimateAndSave(const TrackHypothesisTre
 	saveState.y = estPos.y;
 	saveState.vx = swimmerVelocity.x;
 	saveState.vy = swimmerVelocity.y;
+}
+
+float ConstantVelocityMovementPredictor::maxShiftPerFrame() const
+{
+	return maxShiftPerFrameM_;
 }
 
 boost::optional<cv::Point3f> ConstantVelocityMovementPredictor::getSwimmerVelocity(int frameInd, int observationInd) const
@@ -88,10 +104,10 @@ void ConstantVelocityMovementPredictor::setSwimmerVelocity(FamilyIdHint familyId
 const ConstantVelocityMovementPredictor::SwimmerState& ConstantVelocityMovementPredictor::nodeState(TrackHypothesisTreeNode const& node) const
 {
 	// use Kalman Filter state matrix just to store position of a blob
-	return reinterpret_cast<const SwimmerState&>(node.KalmanFilterState.data);
+	return reinterpret_cast<const SwimmerState&>(node.KalmanFilterState.val);
 }
 
 ConstantVelocityMovementPredictor::SwimmerState& ConstantVelocityMovementPredictor::nodeState(TrackHypothesisTreeNode& node) const
 {
-	return reinterpret_cast<SwimmerState&>(node.KalmanFilterState.data);
+	return reinterpret_cast<SwimmerState&>(node.KalmanFilterState.val);
 }

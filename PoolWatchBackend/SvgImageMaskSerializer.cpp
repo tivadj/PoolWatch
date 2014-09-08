@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QDir>
 
+#include "SvgImageMaskSerializer.h"
 #include "PoolWatchFacade.h"
 
 using namespace std;

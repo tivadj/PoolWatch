@@ -5,6 +5,7 @@
 #include "CppUnitTest.h"
 #include "SwimmerDetector.h"
 #include "TestingUtils.h"
+#include "SvgImageMaskSerializer.h"
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
