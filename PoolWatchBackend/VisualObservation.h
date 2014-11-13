@@ -13,6 +13,7 @@
 #include "WaterClassifier.h"
 
 PW_EXPORTS void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
+PW_EXPORTS std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image);
 
 // Updates world coordinates of each blob.
 PW_EXPORTS void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjectorBase& cameraProjector);

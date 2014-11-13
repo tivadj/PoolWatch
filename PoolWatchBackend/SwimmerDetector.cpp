@@ -9,6 +9,7 @@
 
 #include <boost/filesystem.hpp>
 
+#include "CoreUtils.h"
 #include "SwimmerDetector.h"
 #include "SwimmingPoolObserver.h"
 #include "algos1.h"
@@ -666,68 +667,13 @@ void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageM
 	}
 }
 
-// transparentCol=color to avoid copying
-void copyTo(const cv::Mat& sourceImageRgb, const cv::Mat& sourceImageMask, cv::Vec3b transparentCol, std::vector<Vec3b>& resultPixels)
-{
-	CV_Assert(sourceImageRgb.type() == CV_8UC3);
-	CV_Assert(sourceImageMask.type() == CV_8UC1);
-	CV_Assert(sourceImageRgb.cols == sourceImageMask.cols);
-	CV_Assert(sourceImageRgb.rows == sourceImageMask.rows);
-
-	if (false && sourceImageRgb.isContinuous() && sourceImageMask.isContinuous())
-	{
-		cv::Mat blobPixList = sourceImageRgb.reshape(1, 3);
-		cv::Mat blobMaskList = sourceImageMask.reshape(1, 1);
-		assert(blobPixList.cols == blobMaskList.cols && "Image and mask must be of the same size");
-
-		Vec3b* pPixSrc = reinterpret_cast<Vec3b*>(blobPixList.data);
-		uchar* pMask = blobMaskList.data;
-		for (int x = 0; x < blobMaskList.cols; ++x, ++pMask, ++pPixSrc)
-		{
-			bool isBlob = *pMask;
-			if (isBlob)
-			{
-				resultPixels.push_back(*pPixSrc);
-			}
-		}
-	}
-	else
-	{
-		uchar* pSrcRowStart = sourceImageRgb.data;
-		uchar* pSrcMaskRowStart = sourceImageMask.data;
-		for (int y = 0; y < sourceImageRgb.rows; ++y)
-		{
-			Vec3b* pSrcPix = reinterpret_cast<Vec3b*>(pSrcRowStart);
-			uchar* pSrcMask = pSrcMaskRowStart;
-
-			for (int x = 0; x < sourceImageRgb.cols; ++x)
-			{
-				bool isBlob = *pSrcMask;
-				if (isBlob)
-				{
-					resultPixels.push_back(*pSrcPix);
-				}
-				++pSrcPix;
-				++pSrcMask;
-			}
-
-			pSrcRowStart += sourceImageRgb.step;
-			pSrcMaskRowStart += sourceImageMask.step;
-		}
-	}
-
-	// ensure all fore pixels were copied
-	int sum1 = cv::countNonZero(sourceImageMask);
-	CV_DbgAssert(sum1 == resultPixels.size());
-}
-
 void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::Mat& blobImageMask, cv::Vec3b transparentCol, DetectedBlob& resultBlob)
 {
 	CV_Assert(blobImageRgb.cols == blobImageMask.cols);
 	CV_Assert(blobImageRgb.rows == blobImageMask.rows);
 
 	std::vector<Vec3b> pixs;
-	copyTo(blobImageRgb, blobImageMask, transparentCol, pixs);
+	PoolWatch::copyTo(blobImageRgb, blobImageMask, transparentCol, pixs);
 
 	cv::Mat pixsMat(pixs.size(), 3, CV_8UC1, pixs.data()); // [N,3] each row has a pixel, because OpenCV is row-major
 

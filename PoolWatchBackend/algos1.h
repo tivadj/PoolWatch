@@ -40,9 +40,18 @@ namespace PoolWatch
 	PW_EXPORTS auto deg2rad(const float& degree) -> float;
 	PW_EXPORTS auto normalProb(float x, float mu, float sigma) -> float;
 	PW_EXPORTS auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float;
+
+	// Finds the intersection of two lines, or returns false.
+	// The lines are defined by (o1, p1) and (o2, p2).
+	bool intersectLines(cv::Point2f o1, cv::Point2f p1, cv::Point2f o2, cv::Point2f p2, cv::Point2f& r);
+	
+	// Finds the distance of the perpendicular from point freePoint to line (p1,p2).
+	// Returns false if two points are the same.
+	bool distLinePoint(cv::Point2f p1, cv::Point2f p2, cv::Point2f freePoint, float& dist);
 }
 
-class EMQuick : public cv::EM
+// TODO: this should have an internal usage
+class PW_EXPORTS EMQuick : public cv::EM
 {
 public:
 	EMQuick(int nclusters, int covMatType);
