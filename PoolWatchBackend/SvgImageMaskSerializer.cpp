@@ -30,7 +30,7 @@ void loadImageAndPolygons(const std::string& svgFilePath, const std::string& str
 	file.close();
 
 	QDomElement docElem = xml.documentElement();
-	qDebug() << docElem.tagName();
+	//qDebug() << docElem.tagName();
 
 	//
 
@@ -46,14 +46,14 @@ void loadImageAndPolygons(const std::string& svgFilePath, const std::string& str
 			int width = e.attribute("width").toInt();
 			int height = e.attribute("width").toInt();
 			QString fileName = e.attribute("xlink:href");
-			qDebug() << "image " << width << "x" << height << " name=" << fileName;
+			//qDebug() << "image " << width << "x" << height << " name=" << fileName;
 
 			// abs svg path
 			QDir dir(svgFilePath.c_str());
 			auto dirUp = dir.cdUp();
 			assert(dirUp);
 			QString svgAbsPath = dir.absoluteFilePath(fileName);
-			qDebug() << svgAbsPath;
+			//qDebug() << svgAbsPath;
 
 
 			auto image = cv::imread(svgAbsPath.toStdString());
@@ -66,7 +66,7 @@ void loadImageAndPolygons(const std::string& svgFilePath, const std::string& str
 				continue;
 
 			QString pointsStr = e.attribute("points");
-			qDebug() << "polygon stroke=" << strokeStr << "points=" << pointsStr;
+			//qDebug() << "polygon stroke=" << strokeStr << "points=" << pointsStr;
 
 			QRegExp rx(R"([,\s])"); // separate by space and comma
 			QStringList stringList = pointsStr.split(rx, QString::SkipEmptyParts);
@@ -96,7 +96,7 @@ void loadImageAndPolygons(const std::string& svgFilePath, const std::string& str
 		}
 		else
 		{
-			qDebug() << e.tagName();
+			//qDebug() << e.tagName();
 		}
 	}
 }
@@ -172,13 +172,16 @@ void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr
 	}
 }
 
-void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
+// Loads pixels from every file in a given folder. Pixels are stored in BGR formad in cv::Vec3d structure.
+void loadWaterPixels(const QFileInfo& fileOrDirInfo, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
 {
-	QFileInfo fileInfo = QFileInfo(QString(folderPath.c_str()));
-	if (fileInfo.isDir())
+	std::string childFolderPathTmp = fileOrDirInfo.absoluteFilePath().toStdString();
+	if (fileOrDirInfo.isDir())
 	{
-		QDir dir = fileInfo.dir();
-		
+		QDir dir(fileOrDirInfo.absoluteFilePath());
+
+		// process svg files
+
 		QStringList filterList;
 		filterList.append(svgFilter.c_str());
 		
@@ -188,14 +191,28 @@ void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter
 			QString svgAbsPath = dir.absoluteFilePath(files[i]);
 			loadWaterPixelsOne(svgAbsPath, strokeStr, pixels, invertMask, inflateContourDelta);
 		}
+
+		// recursively process subdirectories
+		QFileInfoList dirInfos = dir.entryInfoList(QDir::Filter::Dirs | QDir::Filter::NoDotAndDotDot);
+		for (QFileInfo childInfo : dirInfos)
+		{
+			loadWaterPixels(childInfo, svgFilter, strokeStr, pixels, invertMask, inflateContourDelta);
+		}
 	}
-	else if (fileInfo.isFile())
+	else if (fileOrDirInfo.isFile())
 	{
-		loadWaterPixelsOne(fileInfo.absoluteFilePath(), strokeStr, pixels, invertMask, inflateContourDelta);
+		loadWaterPixelsOne(fileOrDirInfo.absoluteFilePath(), strokeStr, pixels, invertMask, inflateContourDelta);
 	}
 	else
 		return;
 }
+
+void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
+{
+	QFileInfo fileInfo = QFileInfo(QString(folderPath.c_str()));
+	loadWaterPixels(fileInfo, svgFilter, strokeStr, pixels, invertMask, inflateContourDelta);
+}
+
 
 void PWDrawContours(const cv::Mat& image, const std::vector<std::vector<cv::Point2i>>& contours, int contourIdx, const cv::Scalar& color, int thickness)
 {
