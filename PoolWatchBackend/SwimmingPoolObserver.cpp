@@ -2,7 +2,8 @@
 #include <iostream>
 #include <stdint.h>
 
-#include "opencv2/highgui/highgui_c.h"
+#include <opencv2\highgui\highgui_c.h>
+#include <opencv2\imgproc.hpp> // cv::threshold
 
 #include <boost/lexical_cast.hpp>
 
@@ -10,6 +11,7 @@
 #include "PoolWatchFacade.h"
 #include "algos1.h"
 #include "PaintHelper.h"
+#include "VisualObservation.h"
 
 using namespace std;
 
@@ -27,11 +29,18 @@ std::tuple<bool, std::string> SwimmingPoolObserver::init()
 	// init water classifier
 
 	cv::FileStorage fs;
-	if (!fs.open("1.yml", cv::FileStorage::READ))
+	if (!fs.open("cl_water.yml", cv::FileStorage::READ))
 	{
 		return make_tuple(false, "Can't find file '1.yml' (change working directory)");
 	}
 	waterClassifier_ = WaterClassifier::read(fs);
+
+	//
+	if (!fs.open("cl_reflectedLight.yml", cv::FileStorage::READ))
+	{
+		return make_tuple(false, "Can't find file 'reflectedLight_clasifier.yml ' (change working directory)");
+	}
+	reflectedLightClassifier_ = WaterClassifier::read(fs);	
 
 	return make_tuple(true, "");
 }
@@ -57,34 +66,15 @@ void SwimmingPoolObserver::setBlobs(size_t frameOrd, const vector<DetectedBlob>&
 	blobsPerFrame_[frameOrd] = blobs;
 }
 
-void SwimmingPoolObserver::processCameraImage(size_t frameOrd, const cv::Mat& imageFrame, int* pReadyFrameInd)
+void SwimmingPoolObserver::processCameraImage(size_t frameOrd, const cv::Mat& image, int* pReadyFrameInd)
 {
-	// find water mask
-
-	cv::Mat_<uchar> waterMask;
-	classifyAndGetMask(imageFrame, [this](const cv::Vec3d& pix) -> bool
-	{
-		//bool b1 = wc.predict(pix);
-		bool b2 = waterClassifier_->predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
-		//assert(b1 == b2);
-		return b2;
-	}, waterMask);
-
-
-	// find pool mask
-
-	cv::Mat_<uchar> poolMask;
-	getPoolMask(imageFrame, waterMask, poolMask);
-
-	cv::Mat imageFamePoolOnly = cv::Mat::zeros(imageFrame.rows, imageFrame.cols, imageFrame.type());
-	imageFrame.copyTo(imageFamePoolOnly, poolMask);
-
-	//
 	std::vector<DetectedBlob> blobs;
+	cv::Mat imageBlobsDebug;
 	//getHumanBodies(imageFamePoolOnly, waterMask, expectedBlobs, blobs);
-	swimmerDetector_.getBlobs(imageFamePoolOnly, expectedBlobs_, blobs);
+	//swimmerDetector_.getBlobsSkinColor(image, expectedBlobs_, *waterClassifier_, blobs, imageBlobsDebug);
+	swimmerDetector_.getBlobsSubtractive(image, expectedBlobs_, *waterClassifier_, *reflectedLightClassifier_, blobs, imageBlobsDebug);
 
-	BlobsDetected(blobs, imageFamePoolOnly);
+	BlobsDetected(blobs, imageBlobsDebug);
 
 	processBlobs(frameOrd, blobs, pReadyFrameInd);
 

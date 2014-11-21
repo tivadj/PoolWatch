@@ -11,13 +11,21 @@ using namespace std;
 using namespace cv;
 
 
-WaterClassifier::WaterClassifier(int nClusters, int covMatType)
+WaterClassifier::WaterClassifier(int nClusters, int covMatType, const cv::TermCriteria& termWater, const cv::TermCriteria& termNonWater)
 :nClusters_(nClusters),
 covMatType_(covMatType)
 {
+	waterMixGauss_ = cv::EM(nClusters, covMatType, termWater);
+	nonWaterMixGauss_ = cv::EM(nClusters, covMatType, termNonWater);
+	//initCache();
+}
+
+WaterClassifier::WaterClassifier(int nClusters, int covMatType)
+	:nClusters_(nClusters),
+	covMatType_(covMatType)
+{
 	waterMixGauss_ = cv::EM(nClusters, covMatType);
 	nonWaterMixGauss_ = cv::EM(nClusters, covMatType);
-	//initCache();
 }
 
 WaterClassifier::WaterClassifier()
@@ -32,34 +40,51 @@ void WaterClassifier::initCache()
 
 	// cache EM's double internals as floats
 	auto& c1 = static_cast<EMQuick&>(waterMixGauss_);
+	if (c1.isTrained())
+	{
+		invCovs1.resize(nClusters_);
+		invCovsDbl1.resize(nClusters_);
+		for (size_t i = 0; i < nClusters_; ++i)
+		{
+			invCovs1[i] = (float)c1.getInvCovsEigenValuesPar()[i].at<double>(0);
+			invCovsDbl1[i] = c1.getInvCovsEigenValuesPar()[i].at<double>(0);
+		}
+
+		meanFloats1.resize(nClusters_ * 3);
+		for (size_t i = 0; i < meanFloats1.size(); ++i)
+		{
+			meanFloats1[i] = (float)c1.getMeans().at<double>(i);
+		}
+
+		logWeights1.resize(nClusters_);
+		for (size_t i = 0; i < logWeights1.size(); ++i)
+		{
+			logWeights1[i] = (float)c1.getLogWeightDivDetPar().at<double>(i);
+		}
+	}
+
 	auto& c2 = static_cast<EMQuick&>(nonWaterMixGauss_);
-
-	invCovs1.resize(nClusters_);
-	invCovs2.resize(nClusters_);
-	invCovsDbl1.resize(nClusters_);
-	invCovsDbl2.resize(nClusters_);
-	for (size_t i = 0; i < nClusters_; ++i)
+	if (c2.isTrained())
 	{
-		invCovs1[i] = (float)c1.getInvCovsEigenValuesPar()[i].at<double>(0);
-		invCovs2[i] = (float)c2.getInvCovsEigenValuesPar()[i].at<double>(0);
-		invCovsDbl1[i] = c1.getInvCovsEigenValuesPar()[i].at<double>(0);
-		invCovsDbl2[i] = c2.getInvCovsEigenValuesPar()[i].at<double>(0);
-	}
+		invCovs2.resize(nClusters_);
+		invCovsDbl2.resize(nClusters_);
+		for (size_t i = 0; i < nClusters_; ++i)
+		{
+			invCovs2[i] = (float)c2.getInvCovsEigenValuesPar()[i].at<double>(0);
+			invCovsDbl2[i] = c2.getInvCovsEigenValuesPar()[i].at<double>(0);
+		}
 
-	meanFloats1.resize(nClusters_ * 3);
-	meanFloats2.resize(nClusters_ * 3);
-	for (size_t i = 0; i < meanFloats1.size(); ++i)
-	{
-		meanFloats1[i] = (float)c1.getMeans().at<double>(i);
-		meanFloats2[i] = (float)c2.getMeans().at<double>(i);
-	}
+		meanFloats2.resize(nClusters_ * 3);
+		for (size_t i = 0; i < meanFloats1.size(); ++i)
+		{
+			meanFloats2[i] = (float)c2.getMeans().at<double>(i);
+		}
 
-	logWeights1.resize(nClusters_);
-	logWeights2.resize(nClusters_);
-	for (size_t i = 0; i < logWeights1.size(); ++i)
-	{
-		logWeights1[i] = (float)c1.getLogWeightDivDetPar().at<double>(i);
-		logWeights2[i] = (float)c2.getLogWeightDivDetPar().at<double>(i);
+		logWeights2.resize(nClusters_);
+		for (size_t i = 0; i < logWeights1.size(); ++i)
+		{
+			logWeights2[i] = (float)c2.getLogWeightDivDetPar().at<double>(i);
+		}
 	}
 }
 
@@ -78,6 +103,15 @@ void WaterClassifier::trainWater(const cv::Mat_<double>& waterColors, const cv::
 
 	bool success2 = nonWaterMixGauss_.train(nonWaterColors);
 	assert(success2);
+}
+
+void WaterClassifier::trainOne(const cv::Mat_<double>& colors, bool isFirst)
+{
+	CV_Assert(!colors.empty());
+
+	cv::EM& em = isFirst ? waterMixGauss_ : nonWaterMixGauss_;
+	bool success = em.train(colors);
+	assert(success);
 }
 
 bool WaterClassifier::predict(const cv::Vec3d& pix)
@@ -104,18 +138,18 @@ bool WaterClassifier::predict(const cv::Vec3d& pix)
 	return label2;
 }
 
-double WaterClassifier::computeOne(const cv::Vec3d& pix, bool isFirst)
+double WaterClassifier::computeOne(const cv::Vec3d& pix, bool isFirst) const
 {
-	auto& c1 = static_cast<EMQuick&>(waterMixGauss_);
-	auto& c2 = static_cast<EMQuick&>(nonWaterMixGauss_);
+	auto& c1 = static_cast<const EMQuick&>(waterMixGauss_);
+	auto& c2 = static_cast<const EMQuick&>(nonWaterMixGauss_);
 	
-	EMQuick& cc = isFirst ? c1 : c2;
+	const EMQuick& cc = isFirst ? c1 : c2;
 
 	double logProb = computeGaussMixtureModel(nClusters_, (double*)cc.getMeans().data, &invCovsDbl1[0], (double*)cc.getLogWeightDivDetPar().data, (double*)&pix[0], (double*)cacheL.data);
 	return logProb;
 }
 
-bool WaterClassifier::predictFloat(const cv::Vec3f& pix)
+bool WaterClassifier::predictFloat(const cv::Vec3f& pix) const
 {
 	float logProb1;
 	auto probFun1 = [&]()

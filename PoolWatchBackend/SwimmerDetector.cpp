@@ -262,8 +262,30 @@ SwimmerDetector::SwimmerDetector(int bodyHalfLenthPix) : SwimmerDetector(nullptr
 	bodyHalfLenthPix_ = bodyHalfLenthPix;
 }
 
-void SwimmerDetector::getBlobs(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
+void SwimmerDetector::getBlobsSkinColor(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, const WaterClassifier& waterClassifier, std::vector<DetectedBlob>& blobs, cv::Mat& imageBlobsDebug)
 {
+	// const double fleshPixMaxLogProb = 9e-04; // max probability which gives the flesh classifier
+	//auto fleshMeasureFun = [this](const cv::Vec3d& pix) -> uchar
+	//{
+	//	double logVal = fleshClassifier_->computeOne(pix, true);
+
+	//	double result = std::exp(logVal) / fleshPixMaxLogProb;
+
+	//	// 255=sure flesh
+	//	// 0  =certainly not a flesh
+	//	result *= 255; // scale into uchar type
+	//	if (result > 255)
+	//		result = 255;
+
+	//	return (uchar)result;
+	//};
+
+	//cv::Mat_<uchar> fleshGrayMask;
+	//classifyAndGetGrayMask(image, fleshMeasureFun, fleshGrayMask);
+
+	//cv::Mat_<uchar> fleshMask;
+	//cv::threshold(fleshGrayMask, fleshMask, exp(-10) / fleshPixMaxLogProb * 255, 255, cv::THRESH_BINARY);
+
 	auto skinClassifAbsFun = [this](const cv::Vec3d& pix) -> bool
 	{
 		double val = fleshClassifier_->computeOne(pix, true);
@@ -273,7 +295,7 @@ void SwimmerDetector::getBlobs(const cv::Mat& image, const std::vector<DetectedB
 	cv::Mat_<uchar> fleshMask;
 	classifyAndGetMask(image, skinClassifAbsFun, fleshMask);
 
-	//
+	// find lanes using static classifier (using lane color, not agile)
 	auto laneSepClassifFun = [this](const cv::Vec3d& pix) -> bool
 	{
 		return laneSeparatorClassifier_->predict(pix);
@@ -283,22 +305,149 @@ void SwimmerDetector::getBlobs(const cv::Mat& image, const std::vector<DetectedB
 	classifyAndGetMask(image, laneSepClassifFun, laneSepMask);
 
 	//
-	cv::Mat fleshNoLaneSepsMat;
-	cv::subtract(fleshMask, laneSepMask, fleshNoLaneSepsMat, noArray(), CV_16SC1);
-	fleshNoLaneSepsMat.convertTo(fleshNoLaneSepsMat, CV_8UC1);
+	cv::Mat maskFleshNoLaneSeps;
+	cv::subtract(fleshMask, laneSepMask, maskFleshNoLaneSeps, noArray(), CV_16SC1);
+	maskFleshNoLaneSeps.convertTo(maskFleshNoLaneSeps, CV_8UC1);
+
+	cv::Mat_<uchar> maskWater;
+	classifyAndGetMask(image, [this, &waterClassifier](const cv::Vec3d& pix) -> bool
+	{
+		bool b2 = waterClassifier.predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
+		return b2;
+	}, maskWater);
+
+	// find pool mask
+
+	cv::Mat_<uchar> maskPool;
+	getPoolMask(image, maskWater, maskPool);
+
+	// use pool area only
+	cv::bitwise_and(maskFleshNoLaneSeps, maskPool, maskFleshNoLaneSeps);
 
 	// 1 = 1-pixel dots remain
 	const int blobsGap = 3;
 	auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(blobsGap, blobsGap));
-	cv::Mat fleshNoTenious;
-	cv::morphologyEx(fleshNoLaneSepsMat, fleshNoTenious, cv::MORPH_OPEN, sel);
+	cv::Mat maskFleshNoNoise;
+	cv::morphologyEx(maskFleshNoLaneSeps, maskFleshNoNoise, cv::MORPH_OPEN, sel);
 
-	// TODO: no water mask
-	cv::Mat waterMask = cv::Mat::zeros(image.rows, image.cols, CV_8UC1);
-	getHumanBodies(image, fleshNoTenious, waterMask, expectedBlobs, blobs);
+	getHumanBodies(image, maskFleshNoNoise, expectedBlobs, blobs);
+	
+	imageBlobsDebug = cv::Mat::zeros(image.rows, image.cols, image.type());
+	image.copyTo(imageBlobsDebug, maskFleshNoNoise);
 }
 
-void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
+void SwimmerDetector::getBlobsSubtractive(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, 
+	const WaterClassifier& waterClassifier, const WaterClassifier& reflectedLightClassifier,
+	std::vector<DetectedBlob>& blobs, cv::Mat& imageBlobsDebug)
+{
+	// find water mask
+
+	//double maxLogProb = std::numeric_limits<double>::lowest();
+	//classifyAndGetMask(image, [this, &maxLogProb, &waterClassifier](const cv::Vec3d& pix) -> bool
+	//{
+	//	double logProb = waterClassifier.computeOne(cv::Vec3d(pix[0], pix[1], pix[2]), true);
+	//	if (logProb > maxLogProb)
+	//		maxLogProb = logProb;
+	//	return false;
+	//}, waterMask);
+
+	//cv::Mat_<uchar> waterGrayMask;
+	//double maxLogProb = -6.56; // log of max probability for all pixels in an image
+	//classifyAndGetGrayMask(image, [this, maxLogProb, &waterClassifier](const cv::Vec3d& pix) -> uchar
+	//{
+	//	double logProb = waterClassifier.computeOne(cv::Vec3d(pix[0], pix[1], pix[2]), true);
+	//	double result = std::exp(logProb) / std::exp(maxLogProb) * 255;
+	//	if (result > 255)
+	//		result = 255;
+	//	return (uchar)result;
+	//}, waterGrayMask);
+
+	cv::Mat_<uchar> waterMask;
+	classifyAndGetMask(image, [this, &waterClassifier](const cv::Vec3d& pix) -> bool
+	{
+		bool b2 = waterClassifier.predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
+		return b2;
+	}, waterMask);
+
+
+	// find reflected light mask
+
+	cv::Mat_<uchar> reflectedLightGrayMask;
+	classifyAndGetGrayMask(image, [this, &reflectedLightClassifier](const cv::Vec3d& pix) -> uchar
+	{
+		double logProb = reflectedLightClassifier.computeOne(cv::Vec3d(pix[0], pix[1], pix[2]), true);
+		const double reflLightMaxProb = 0.0078;
+		double result = std::exp(logProb) / reflLightMaxProb * 255;
+		if (result > 255)
+			result = 255;
+		return (uchar)result;
+	}, reflectedLightGrayMask);
+
+	cv::Mat_<uchar> reflectedLightBinMask;
+	cv::threshold(reflectedLightGrayMask, reflectedLightBinMask, 1, 255, cv::THRESH_BINARY);
+
+	// find pool mask
+
+	cv::Mat_<uchar> poolMask;
+	getPoolMask(image, waterMask, poolMask);
+
+	// subtract reflected light and water
+
+	cv::Mat_<uchar> poolBlobsDirtyBinMask;
+	cv::bitwise_and(poolMask, ~reflectedLightBinMask, poolBlobsDirtyBinMask);
+	cv::bitwise_and(poolBlobsDirtyBinMask, ~waterMask, poolBlobsDirtyBinMask);
+
+	cv::Mat imageFameNoWaterRgb = cv::Mat::zeros(image.rows, image.cols, image.type());
+	image.copyTo(imageFameNoWaterRgb, poolBlobsDirtyBinMask);
+
+	// find swimming lanes; the algo detect lane's lines and hence require most cleaned image
+	std::vector<std::vector<cv::Point2f>> swimLanes;
+	auto lanesOp = getSwimLanes(imageFameNoWaterRgb, swimLanes);
+
+	// subtract lanes
+	cv::Mat imageNoLanesRgb = imageFameNoWaterRgb;
+	if (std::get<0>(lanesOp))
+	{
+		cv::Mat swimLanesBinMask(image.rows, image.cols, CV_8U, cv::Scalar(0));
+		{
+			std::vector<std::vector<cv::Point2i>> swimLanesInt(1);
+			for (size_t i = 0; i < swimLanes.size(); ++i)
+			{
+				std::vector<cv::Point2i> contour(swimLanes[i].size());
+				for (size_t j = 0; j < swimLanes[i].size(); ++j)
+					contour[j] = swimLanes[i][j];
+
+				swimLanesInt[0] = contour;
+				cv::drawContours(swimLanesBinMask, swimLanesInt, 0, cv::Scalar(255), CV_FILLED);
+			}
+		}
+
+		// construct pool mask again, without swimming lanes
+		cv::bitwise_and(poolBlobsDirtyBinMask, ~swimLanesBinMask, poolBlobsDirtyBinMask);
+
+		imageNoLanesRgb = cv::Mat::zeros(image.rows, image.cols, image.type());
+		image.copyTo(imageNoLanesRgb, poolBlobsDirtyBinMask);
+	}
+
+	//
+
+	cv::Mat imageMaskGray;
+	cv::cvtColor(imageNoLanesRgb, imageMaskGray, CV_BGR2GRAY);
+
+	cv::Mat imageBinMask;
+	cv::threshold(imageMaskGray, imageBinMask, 1, 255, CV_THRESH_BINARY);
+
+	// 1 = 1-pixel dots remain
+	const int blobsGap = 3;
+	auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(blobsGap, blobsGap));
+	cv::Mat imageFleshNoNoiseMask;
+	cv::morphologyEx(imageBinMask, imageFleshNoNoiseMask, cv::MORPH_OPEN, sel);
+
+	getHumanBodies(image, imageFleshNoNoiseMask, expectedBlobs, blobs);
+	imageBlobsDebug = imageNoLanesRgb;
+}
+
+void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)
 {
 	int const& rows1 = imageMask.rows;
 	int const& width = imageMask.cols;
@@ -697,9 +846,13 @@ void SwimmerDetector::fixColorSignature(const cv::Mat& blobImageRgb, const cv::M
 		colorSignatureTmp[colorSignatureTmpSize].muB = em.getMeans().at<double>(i, 2);
 		auto variance = em.getCovs()[i].at<double>(0, 0); // assumes diagonal spherical covariance matrix
 		
-		// for some reason cv::EM may get GMM component with almost zero variance, ignore it
+		// cv::EM may return GMM component with almost zero variance (when there are small amount of different pixels in one component)
 		if (variance < 0.0001)
-			continue;
+		{
+			// choose 3*sig = 3
+			const double sig = 1;
+			variance = sig*sig;
+		}
 		colorSignatureTmp[colorSignatureTmpSize].sigma = std::sqrtf(variance);
 		colorSignatureTmpSize++;
 	}

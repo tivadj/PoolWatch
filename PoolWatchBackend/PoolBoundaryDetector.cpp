@@ -427,30 +427,35 @@ void buildSwimLaneContours(const std::vector<SegmentInfo>& lines, const std::vec
 	}
 }
 
-std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image)
+std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image, std::vector<std::vector<cv::Point2f>>& swimLanes)
 {
-	// find water mask
+	//// find water mask
 
-	cv::FileStorage fs;
-	if (!fs.open("1.yml", cv::FileStorage::READ))
-	{
-		return make_tuple(false, "Can't find file '1.yml' (try to change the working directory)");
-	}
-	auto waterClassifier = WaterClassifier::read(fs);
+	//cv::FileStorage fs;
+	//if (!fs.open("cl_water.yml", cv::FileStorage::READ))
+	//{
+	//	return make_tuple(false, "Can't find saved water classifier (try to change the working directory)");
+	//}
+	//auto waterClassifier = WaterClassifier::read(fs);
 
-	cv::Mat_<uchar> waterMask;
-	classifyAndGetMask(image, [&](const cv::Vec3d& pix) -> bool
-	{
-		//bool b1 = wc.predict(pix);
-		bool b2 = waterClassifier->predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
-		//assert(b1 == b2);
-		return b2;
-	}, waterMask);
+	//cv::Mat_<uchar> waterMask;
+	//classifyAndGetMask(image, [&](const cv::Vec3d& pix) -> bool
+	//{
+	//	//bool b1 = wc.predict(pix);
+	//	bool b2 = waterClassifier->predictFloat(cv::Vec3f(pix[0], pix[1], pix[2]));
+	//	//assert(b1 == b2);
+	//	return b2;
+	//}, waterMask);
 
-	cv::bitwise_not(waterMask, waterMask);
-	cv::Mat_<uchar>& lanesMask = waterMask;
+	//cv::bitwise_not(waterMask, waterMask);
+	//cv::Mat_<uchar>& lanesMask = waterMask;
 
-	cv::Mat_<uchar> edgesMask(waterMask.rows, waterMask.cols);
+	cv::Mat_<uchar> imageGray;
+	cv::cvtColor(image, imageGray, CV_BGR2GRAY);
+	cv::Mat_<uchar> lanesMask;
+	cv::threshold(imageGray, lanesMask, 1, 255, cv::THRESH_BINARY);
+
+	cv::Mat_<uchar> edgesMask(image.rows, image.cols);
 	float threshold1 = 50;
 	float threshold2 = 200;
 	int apertureSize = 3;
@@ -466,7 +471,7 @@ std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image)
 	float maxLineGapReliable = 10; // allows to find reliable lines
 	cv::HoughLinesP(edgesMask, lines, rhoStep, thetaStep, thresh, minLineLength, maxLineGapReliable);
 
-	cv::Mat imageWithLinesRgbMatRelLines(waterMask.rows, waterMask.cols, CV_8UC3);
+	cv::Mat imageWithLinesRgbMatRelLines(image.rows, image.cols, CV_8UC3);
 	image.copyTo(imageWithLinesRgbMatRelLines);
 	std::array<char, 10> strBuf;
 	for (size_t i = 0; i < lines.size(); i++)
@@ -496,7 +501,7 @@ std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image)
 	float maxLineGap = 100; // keep it big so that segments of different color of the same lane are connected
 	cv::HoughLinesP(edgesMask, lines, rhoStep, thetaStep, thresh, minLineLength, maxLineGap);
 
-	cv::Mat imageWithLinesRgbMatAllLines(waterMask.rows, waterMask.cols, CV_8UC3);
+	cv::Mat imageWithLinesRgbMatAllLines(image.rows, image.cols, CV_8UC3);
 	image.copyTo(imageWithLinesRgbMatAllLines);
 	for (size_t i = 0; i < lines.size(); i++)
 	{
@@ -539,7 +544,7 @@ std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image)
 	std::vector<SegmentInfo> validLines;
 	filterOutInvalidDirectionLines(lineInfos, vanishPoint, thetaStep, maxDistToVanishPoint, validLines);
 
-	cv::Mat imageWithLinesRgbMatValidLines(waterMask.rows, waterMask.cols, CV_8UC3);
+	cv::Mat imageWithLinesRgbMatValidLines(image.rows, image.cols, CV_8UC3);
 	image.copyTo(imageWithLinesRgbMatValidLines);
 	for (size_t i = 0; i < validLines.size(); i++)
 	{
@@ -564,7 +569,7 @@ std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image)
 	std::vector<SegmentInfo> validLines2;
 	filterOutInvalidDirectionLines(lineInfos, vanishPointAvg, thetaStep, maxDistToVanishPoint, validLines2);
 
-	cv::Mat imageWithLinesRgbMatValidLines2(waterMask.rows, waterMask.cols, CV_8UC3);
+	cv::Mat imageWithLinesRgbMatValidLines2(image.rows, image.cols, CV_8UC3);
 	image.copyTo(imageWithLinesRgbMatValidLines2);
 	for (size_t i = 0; i < validLines2.size(); i++)
 	{
@@ -591,12 +596,12 @@ std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image)
 		line.pLaneGroup = nullptr;
 
 	groupCloseLineSegments(validLines, maxSwimLaneWidth, swimLaneLineGroups);
-	
-	std::vector<std::vector<cv::Point2f>> swimLanes;
+
+	//
 	buildSwimLaneContours(validLines, swimLaneLineGroups, swimLanes);
 
 	//
-	cv::Mat imageWithLinesRgbSwimLanes(waterMask.rows, waterMask.cols, CV_8UC3);
+	cv::Mat imageWithLinesRgbSwimLanes(image.rows, image.cols, CV_8UC3);
 	image.copyTo(imageWithLinesRgbSwimLanes);
 	
 	std::vector<std::vector<cv::Point2i>> swimLanesInt(1);
