@@ -9,7 +9,13 @@
 #include "MatrixUndirectedGraph.h"
 #include "WaterClassifier.h"
 
+// Classify each pixel into true/false values.
 PW_EXPORTS void classifyAndGetMask(const cv::Mat& image, std::function<bool(const cv::Vec3d&)>  pred, cv::Mat_<uchar>& mask);
+
+// Classify each pixel into [0;255] range.
+// The function may be used with hysteresis algorithms which convert threshold gray mask to binary mask with two (min,max) gray values.
+PW_EXPORTS void classifyAndGetGrayMask(const cv::Mat& image, std::function<uchar(const cv::Vec3d&)>  pred, cv::Mat_<uchar>& mask);
+
 PW_EXPORTS void estimateClassifier(const cv::Mat& image, std::function<double(const cv::Vec3d&)> computeOne, cv::Mat_<double>& mask);
 
 PW_EXPORTS void maximumWeightIndependentSetNaiveMaxFirst(const MatrixUndirectedGraph& graph, std::vector<uchar>& vertexSet);
@@ -40,9 +46,18 @@ namespace PoolWatch
 	PW_EXPORTS auto deg2rad(const float& degree) -> float;
 	PW_EXPORTS auto normalProb(float x, float mu, float sigma) -> float;
 	PW_EXPORTS auto normalProb(int spaceDim, const float* pX, float* pMu, float sigma) -> float;
+
+	// Finds the intersection of two lines, or returns false.
+	// The lines are defined by (o1, p1) and (o2, p2).
+	bool intersectLines(cv::Point2f o1, cv::Point2f p1, cv::Point2f o2, cv::Point2f p2, cv::Point2f& r);
+	
+	// Finds the distance of the perpendicular from point freePoint to line (p1,p2).
+	// Returns false if two points are the same.
+	bool distLinePoint(cv::Point2f p1, cv::Point2f p2, cv::Point2f freePoint, float& dist);
 }
 
-class EMQuick : public cv::EM
+// TODO: this should have an internal usage
+class PW_EXPORTS EMQuick : public cv::EM
 {
 public:
 	EMQuick(int nclusters, int covMatType);
@@ -51,27 +66,27 @@ public:
 	static cv::Vec2d predict2(cv::InputArray _sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, cv::Mat& cacheL);
 	static cv::Vec2d computeProbabilitiesInplace(cv::Mat& sample, const cv::Mat& meansPar, const std::vector<cv::Mat>& invCovsEigenValuesPar, const cv::Mat& logWeightDivDetPar, cv::Mat& cacheL);
 
-	int getNClusters()
+	int getNClusters() const
 	{
 		return this->nclusters;
 	}
-	const cv::Mat& getWeights()
+	const cv::Mat& getWeights() const
 	{
 		return this->weights;
 	}
-	const cv::Mat& getMeans()
+	const cv::Mat& getMeans() const
 	{
 		return this->means;
 	}
-	const std::vector<cv::Mat>& getCovs()
+	const std::vector<cv::Mat>& getCovs() const
 	{
 		return this->covs;
 	}
-	const std::vector<cv::Mat>& getInvCovsEigenValuesPar()
+	const std::vector<cv::Mat>& getInvCovsEigenValuesPar() const
 	{
 		return this->invCovsEigenValues;
 	}
-	const cv::Mat& getLogWeightDivDetPar()
+	const cv::Mat& getLogWeightDivDetPar() const
 	{
 		return this->logWeightDivDet;
 	}

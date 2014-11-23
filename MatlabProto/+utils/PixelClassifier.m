@@ -41,6 +41,18 @@ function filteredImage = applyAndGetImage(image, pixelClassifFun, debug)
     filteredImage = utils.applyMask(image, maskSuccess);
 end
 
+% XYMat=[N,2,'int32') coordinates of given pixel per row
+function XYMat = findPixel(imageRgb, pixel)
+    XYMat = zeros(0,3,'int32');
+    for y=1:size(imageRgb,1)
+        for x=1:size(imageRgb,2)
+            if imageRgb(y,x,1) == pixel(1) && imageRgb(y,x,2) == pixel(2) && imageRgb(y,x,3) == pixel(3)
+                XYMat = [XYMat; x y];
+            end
+        end
+    end
+end
+
 % evaluate Mixture of Gaussians for given points X.
 % X=[Nxl]
 % m=[mixCount,l]

@@ -13,10 +13,11 @@
 
 #include "SvgImageMaskSerializer.h"
 #include "PoolWatchFacade.h"
+#include "CoreUtils.h"
 
 using namespace std;
 
-void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
+void loadImageAndPolygons(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, std::vector<std::vector<cv::Point2f>>& outPolygons)
 {
 	QFile file(svgFilePath.c_str());
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -29,7 +30,7 @@ void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& str
 	file.close();
 
 	QDomElement docElem = xml.documentElement();
-	qDebug() << docElem.tagName();
+	//qDebug() << docElem.tagName();
 
 	//
 
@@ -45,19 +46,18 @@ void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& str
 			int width = e.attribute("width").toInt();
 			int height = e.attribute("width").toInt();
 			QString fileName = e.attribute("xlink:href");
-			qDebug() <<"image " <<width <<"x" <<height <<" name=" <<fileName;
+			//qDebug() << "image " << width << "x" << height << " name=" << fileName;
 
 			// abs svg path
 			QDir dir(svgFilePath.c_str());
 			auto dirUp = dir.cdUp();
 			assert(dirUp);
 			QString svgAbsPath = dir.absoluteFilePath(fileName);
-			qDebug() <<svgAbsPath;
+			//qDebug() << svgAbsPath;
 
 
 			auto image = cv::imread(svgAbsPath.toStdString());
 			outImage = image;
-			outMask = cv::Mat_<bool>::zeros(outImage.rows, outImage.cols);
 		}
 		else if (e.tagName() == "polygon")
 		{
@@ -66,7 +66,7 @@ void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& str
 				continue;
 
 			QString pointsStr = e.attribute("points");
-			qDebug() << "polygon stroke=" << strokeStr << "points=" << pointsStr;
+			//qDebug() << "polygon stroke=" << strokeStr << "points=" << pointsStr;
 
 			QRegExp rx(R"([,\s])"); // separate by space and comma
 			QStringList stringList = pointsStr.split(rx, QString::SkipEmptyParts);
@@ -78,7 +78,7 @@ void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& str
 
 			CV_Assert(pointsXY.size() % 2 == 0 && "There must be list of (X,Y) pairs");
 
-			vector<cv::Point2i> points;
+			vector<cv::Point2f> points;
 			points.resize(pointsXY.size() / 2);
 			int index = 0;
 			for (size_t i = 0; i < points.size(); ++i)
@@ -91,24 +91,39 @@ void loadImageAndMaskCore(const std::string& svgFilePath, const std::string& str
 
 			//
 			assert(!outImage.empty() && "Svg file must have the first tag to be the image tag");
-			assert(!outMask.empty());
 
-			vector<vector<cv::Point2i>> contoursList(1);
-			contoursList[0] = std::move(points);
-			cv::drawContours(outMask, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
+			outPolygons.push_back(std::move(points));
 		}
 		else
 		{
-			qDebug() << e.tagName();
+			//qDebug() << e.tagName();
 		}
 	}
 }
 
 void loadImageAndMask(const std::string& svgFilePath, const std::string& strokeColor, cv::Mat& outImage, cv::Mat_<bool>& outMask)
 {
-	loadImageAndMaskCore(svgFilePath, strokeColor, outImage, outMask);
+	vector<vector<cv::Point2f>> polygonsList;
+	loadImageAndPolygons(svgFilePath, strokeColor, outImage, polygonsList);
 	CV_Assert(!outImage.empty());
-	CV_Assert(!outMask.empty());
+
+	// draw mask using filled contours
+	outMask = cv::Mat_<bool>::zeros(outImage.rows, outImage.cols);
+
+	vector<vector<cv::Point2i>> contoursList(1);
+	vector<cv::Point2i> contourOne;
+	for (vector<cv::Point2f>& polygon : polygonsList)
+	{
+		PoolWatch::convertPointList(polygon, contourOne);
+
+		// put resources to contoursList to avoid copying
+		std::swap(contoursList[0], contourOne);
+
+		cv::drawContours(outMask, contoursList, 0, cv::Scalar::all(255), CV_FILLED);
+
+		// put resources back to contourOne
+		std::swap(contoursList[0], contourOne);
+	}
 }
 
 void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
@@ -157,13 +172,16 @@ void loadWaterPixelsOne(const QString& svgFilePath, const std::string& strokeStr
 	}
 }
 
-void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
+// Loads pixels from every file in a given folder. Pixels are stored in BGR formad in cv::Vec3d structure.
+void loadWaterPixels(const QFileInfo& fileOrDirInfo, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
 {
-	QFileInfo fileInfo = QFileInfo(QString(folderPath.c_str()));
-	if (fileInfo.isDir())
+	std::string childFolderPathTmp = fileOrDirInfo.absoluteFilePath().toStdString();
+	if (fileOrDirInfo.isDir())
 	{
-		QDir dir = fileInfo.dir();
-		
+		QDir dir(fileOrDirInfo.absoluteFilePath());
+
+		// process svg files
+
 		QStringList filterList;
 		filterList.append(svgFilter.c_str());
 		
@@ -173,11 +191,30 @@ void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter
 			QString svgAbsPath = dir.absoluteFilePath(files[i]);
 			loadWaterPixelsOne(svgAbsPath, strokeStr, pixels, invertMask, inflateContourDelta);
 		}
+
+		// recursively process subdirectories
+		QFileInfoList dirInfos = dir.entryInfoList(QDir::Filter::Dirs | QDir::Filter::NoDotAndDotDot);
+		for (QFileInfo childInfo : dirInfos)
+		{
+			loadWaterPixels(childInfo, svgFilter, strokeStr, pixels, invertMask, inflateContourDelta);
+		}
 	}
-	else if (fileInfo.isFile())
+	else if (fileOrDirInfo.isFile())
 	{
-		loadWaterPixelsOne(fileInfo.absoluteFilePath(), strokeStr, pixels, invertMask, inflateContourDelta);
+		loadWaterPixelsOne(fileOrDirInfo.absoluteFilePath(), strokeStr, pixels, invertMask, inflateContourDelta);
 	}
 	else
 		return;
+}
+
+void loadWaterPixels(const std::string& folderPath, const std::string& svgFilter, const std::string& strokeStr, std::vector<cv::Vec3d>& pixels, bool invertMask, int inflateContourDelta)
+{
+	QFileInfo fileInfo = QFileInfo(QString(folderPath.c_str()));
+	loadWaterPixels(fileInfo, svgFilter, strokeStr, pixels, invertMask, inflateContourDelta);
+}
+
+
+void PWDrawContours(const cv::Mat& image, const std::vector<std::vector<cv::Point2i>>& contours, int contourIdx, const cv::Scalar& color, int thickness)
+{
+	cv::drawContours(image, contours, contourIdx, color, thickness);
 }

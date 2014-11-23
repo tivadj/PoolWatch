@@ -25,6 +25,7 @@ public:
 	std::vector<float> logWeights1;
 	std::vector<float> logWeights2;
 public:
+	WaterClassifier(int nClusters, int covMatType, const cv::TermCriteria& termWater, const cv::TermCriteria& termNonWater);
 	WaterClassifier(int nClusters, int covMatType);
 private:
 	WaterClassifier();
@@ -32,9 +33,10 @@ public:
 	WaterClassifier(WaterClassifier const& wc) = delete;
 	virtual ~WaterClassifier();
 	void trainWater(const cv::Mat_<double>& waterColors, const cv::Mat_<double>& nonWaterColors);
+	void trainOne(const cv::Mat_<double>& colors, bool isFirst);
 	bool predict(const cv::Vec3d& pix);
-	bool predictFloat(const cv::Vec3f& pix);
-	double computeOne(const cv::Vec3d& pix, bool isFirst);
+	bool predictFloat(const cv::Vec3f& pix) const;
+	double computeOne(const cv::Vec3d& pix, bool isFirst) const;
 
 	void write(cv::FileStorage& fs);
 	static std::unique_ptr<WaterClassifier> read(cv::FileStorage& fs);

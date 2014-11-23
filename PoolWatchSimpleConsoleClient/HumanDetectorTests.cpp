@@ -169,7 +169,8 @@ namespace SkinClassifierTestsNS
 
 		WaterClassifier& wc = *pc;
 
-		cv::Mat image = cv::imread("../../output/mvi3177_blueWomanLane3_Frame8.png");
+		//cv::Mat image = cv::imread("../../output/mvi3177_blueWomanLane3_Frame8.png");
+		cv::Mat image = cv::imread("../../dinosaur/poolBoundary/MVI_4636_640x480_Frame1.png");
 		if (image.empty())
 			return;
 
@@ -199,9 +200,9 @@ namespace SkinClassifierTestsNS
 			testLaneSeparatorClassifier();
 		});
 
-		//testSkinClassifier();
+		testSkinClassifier();
 
-		testLaneSeparatorClassifier();
+		//testLaneSeparatorClassifier();
 		for (;;)
 		{
 			if (cv::waitKey(5) == 27)

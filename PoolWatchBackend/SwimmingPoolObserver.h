@@ -26,6 +26,7 @@ private:
 	std::shared_ptr<CameraProjectorBase> cameraProjector_;
 	SwimmerDetector swimmerDetector_;
 	std::unique_ptr<WaterClassifier> waterClassifier_;
+	std::unique_ptr<WaterClassifier> reflectedLightClassifier_;
 	std::vector<DetectedBlob> expectedBlobs_;
 public:
 	int trackMinDurationFrames_ = 2; // value>=1; each track must be longer (in frames) than this threshold

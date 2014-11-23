@@ -18,6 +18,10 @@ for dirInd=1:length(svgFiles)
     if invertMask
         m1 = ~m1;
     end
+    
+    if sum(m1(:)) == 0 % image(mask) doesn't work when mask is empty
+        continue;
+    end
 
     i1R = i1(:,:,1);
     i1G = i1(:,:,2);

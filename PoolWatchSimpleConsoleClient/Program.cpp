@@ -22,10 +22,11 @@ using namespace std;
 namespace SvgImageMaskSerializerNS { void run(); }
 namespace WaterClassifierTestsNS { void run(); }
 namespace PoolBoundaryDetectorTestsNS { void run(); }
-namespace HumanBodiesTestsNS { void run(); }
 namespace SwimmingPoolVideoFileTrackerTestsNS { void run(); }
 namespace SkinClassifierTestsNS { void run(); }
 namespace CameraProjectorTestsNS { void run(); }
+namespace PoolBoundaryDetectorTestsNS { void run(); }
+namespace ReflectedLightTestsNS { void run(); }
 
 #ifdef SAMPLE_MATLABPROX_EX
 // NOTE: path to Matlab's runtime dlls 
@@ -117,6 +118,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	//PoolBoundaryDetectorTestsNS::run();
 	SwimmingPoolVideoFileTrackerTestsNS::run();
 	//CameraProjectorTestsNS::run();
+	//ReflectedLightTestsNS::run();
 
 	return 0;
 }

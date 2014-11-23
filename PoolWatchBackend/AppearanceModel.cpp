@@ -174,9 +174,25 @@ bool integrateTwoGaussiansProduct(const cv::Matx31f& mu1, const cv::Matx33f& cov
 	const int L = 3;
 
 	cv::Matx33f covSum = cov1 + cov2;
-	float det = cv::determinant(covSum);
-	float piL = std::powf(2 * M_PI, L); // constexpr
 
+	double covSumNorm = cv::norm(covSum);
+	const double SmallValue = 1e-7;
+	if (covSumNorm < SmallValue)
+	{
+		// if mu1 and mu2 are different then the result=0
+		// otherwise the result is some positive value
+		// in this routine we assume mu1 and mu2 to be different
+		double muNorm = cv::norm(mu1 - mu2);
+		CV_DbgAssert(muNorm > SmallValue);
+		
+		result = 0;
+		return true;
+	}
+
+	float det = cv::determinant(covSum);
+	CV_DbgAssert(det > 0 && "Assume sum of covariance matrices to be nonsingular");
+
+	float piL = std::powf(2 * M_PI, L); // constexpr
 	float coefLeft = std::powf(piL * det, -0.5);
 
 	//

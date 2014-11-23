@@ -13,6 +13,7 @@
 #include "WaterClassifier.h"
 
 PW_EXPORTS void getPoolMask(const cv::Mat& image, const cv::Mat_<uchar>& waterMask, cv::Mat_<uchar>& poolMask);
+PW_EXPORTS std::tuple<bool, std::string> getSwimLanes(const cv::Mat& image, std::vector<std::vector<cv::Point2f>>& swimLanes);
 
 // Updates world coordinates of each blob.
 PW_EXPORTS void fixBlobs(std::vector<DetectedBlob>& blobs, const CameraProjectorBase& cameraProjector);
@@ -36,12 +37,18 @@ public:
 public:
 	SwimmerDetector(const std::shared_ptr<CameraProjectorBase> cameraProjector);
 	SwimmerDetector(int bodyHalfLenthPix); // used for testing
-	void getBlobs(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
+
+	// Finds the swimmers relying on targeting the skin color.
+	void getBlobsSkinColor(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, const WaterClassifier& waterClassifier, std::vector<DetectedBlob>& blobs, cv::Mat& imageBlobsDebug);
+
+	// Finds the swimmers in 'subtractive' way: Blob=Pool-Water-ReflectedLight-SwimmingLanes.
+	void getBlobsSubtractive(const cv::Mat& image, const std::vector<DetectedBlob>& expectedBlobs, const WaterClassifier& waterClassifier, const WaterClassifier& reflectedLightClassifier, std::vector<DetectedBlob>& blobs, cv::Mat& imageBlobsDebug);
 
 	// Calculates GMM color signature from blob's RGB image
 	static void fixColorSignature(const cv::Mat& blobImageRgb, const cv::Mat& blobImageMask, cv::Vec3b transparentCol, DetectedBlob& resultBlob);
 private:
-	void getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const cv::Mat_<uchar>& waterMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
+	void cleanRippleBlobs(const cv::Mat& imageRgb, const cv::Mat& maskNoisyBlobs, cv::Mat& maskBlobsNoRipples);
+	void getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
 	void trainLaneSeparatorClassifier(WaterClassifier& wc);
 	void trainSkinClassifier(WaterClassifier& wc);
 };

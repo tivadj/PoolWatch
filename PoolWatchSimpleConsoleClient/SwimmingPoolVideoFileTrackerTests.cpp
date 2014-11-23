@@ -4,6 +4,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp> // imread
 #include <opencv2/highgui/highgui_c.h> // CV_FOURCC
+#include <opencv2/video.hpp> // background subtractor
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
@@ -367,6 +368,10 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		
 		LOG4CXX_INFO(log_, "cx,cy=" << cameraMat(0, 2) << "," << cameraMat(1, 2) << " fx,fy=" << cameraMat(0, 0) << "," << cameraMat(1, 1));
 
+		// init background subtractor
+		const int HistSize = 100;
+		auto backgroundSubtractor = createBackgroundSubtractorMOG2(HistSize, 16, false);
+
 		std::vector<cv::Point3f> worldPoints;
 		std::vector<cv::Point2f> imagePoints;
 
@@ -375,6 +380,8 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 		cv::Mat imageAdornment = cv::Mat::zeros(frameHeight, frameWidth, CV_8UC3);
 
 		cv::Mat imageFrameOrigin;
+		cv::Mat imageFrameNoBackground;
+		cv::Mat foreMask;
 
 		typedef std::chrono::system_clock Clock;
 		std::chrono::time_point<Clock> startProcessing = Clock::now();
@@ -394,12 +401,26 @@ namespace SwimmingPoolVideoFileTrackerTestsNS
 				break;
 			}
 
+			// remove background
+
+			auto learningRate = -1;
+			backgroundSubtractor->apply(imageFrameOrigin, foreMask, learningRate);
+			imageFrameOrigin.copyTo(imageFrameNoBackground, foreMask);
+
+#if PW_DEBUG
+			cv::Mat imageBackground;
+			backgroundSubtractor->getBackgroundImage(imageBackground);
+
+			cv::Mat imageDiff;
+			cv::subtract(imageFrameNoBackground, imageBackground, imageDiff);
+#endif
+
 			// downsample the image
 			cv::Mat& imageFrame = videoBuffer.requestNew();
 			if (downsampleRatio < 1)
-				cv::pyrDown(imageFrameOrigin, imageFrame);
+				cv::pyrDown(imageFrameNoBackground, imageFrame);
 			else
-				imageFrameOrigin.copyTo(imageFrame);
+				imageFrameNoBackground.copyTo(imageFrame);
 
 			// if camera is fixed, then we may orient camera only once
 			// otherwise camera should be oriented independently for each frame

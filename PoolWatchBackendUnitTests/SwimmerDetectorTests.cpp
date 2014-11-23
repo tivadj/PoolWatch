@@ -48,7 +48,7 @@ namespace PoolWatchBackendUnitTests
 
 			std::vector<DetectedBlob> blobs;
 			std::vector<DetectedBlob> expectedBlobs;
-			sd.getBlobs(image, expectedBlobs, blobs);
+			sd.getBlobsSkinColor(image, expectedBlobs, blobs);
 
 			Assert::AreEqual(1, expectedBlobsCount);
 		}
