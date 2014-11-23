@@ -434,17 +434,199 @@ void SwimmerDetector::getBlobsSubtractive(const cv::Mat& image, const std::vecto
 	cv::Mat imageMaskGray;
 	cv::cvtColor(imageNoLanesRgb, imageMaskGray, CV_BGR2GRAY);
 
-	cv::Mat imageBinMask;
-	cv::threshold(imageMaskGray, imageBinMask, 1, 255, CV_THRESH_BINARY);
+	cv::Mat swimmersMask;
+	cv::threshold(imageMaskGray, swimmersMask, 1, 255, CV_THRESH_BINARY);
 
-	// 1 = 1-pixel dots remain
-	const int blobsGap = 3;
-	auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(blobsGap, blobsGap));
-	cv::Mat imageFleshNoNoiseMask;
-	cv::morphologyEx(imageBinMask, imageFleshNoNoiseMask, cv::MORPH_OPEN, sel);
-
-	getHumanBodies(image, imageFleshNoNoiseMask, expectedBlobs, blobs);
+	const bool tryToDetectRipple = false;
+	if (tryToDetectRipple)
+	{
+		cv::Mat blobsNoRipplesMask;
+		cleanRippleBlobs(imageNoLanesRgb, swimmersMask, blobsNoRipplesMask);
+		getHumanBodies(image, blobsNoRipplesMask, expectedBlobs, blobs);
+	}
+	else
+	{
+		// 1 = 1-pixel dots remain
+		const int blobsGap = 6;
+		auto sel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(blobsGap, blobsGap));
+		cv::Mat fleshNoNoiseMask;
+		cv::morphologyEx(swimmersMask, fleshNoNoiseMask, cv::MORPH_OPEN, sel);
+		getHumanBodies(image, fleshNoNoiseMask, expectedBlobs, blobs);
+	}
+	
 	imageBlobsDebug = imageNoLanesRgb;
+}
+
+struct RippleBlobInfo
+{
+	std::vector<cv::Point2i> Contour;
+	float Area;
+	bool IsBig;
+	bool IsRipple = false;
+	std::array<cv::Vec3b,3> ColorCentroids;
+	int ColorCentroidsCount;
+	cv::Point2i PosCenterDebug;
+	std::vector<cv::Vec3b> PixelsDebug;
+};
+
+// Tries to detect ripples as a sparse set of small blobs of the same color.
+// Doesn't work.
+// for each big blob
+// if number of surrounding small blobs (isolated blobs) in radius = SupportPixelsRadiusMax bigger than SmallBlobsCountSupport
+// it may be a big ripple blob
+// if the color is approx equal to surrounding small blobs then it is definitely a big ripple blob
+void SwimmerDetector::cleanRippleBlobs(const cv::Mat& imageRgb, const cv::Mat& noisyBlobsMask, cv::Mat& blobsNoRipplesMask)
+{
+	const int BigBlobPixelsCount = 9; // min number of pixels for a blob to be big
+
+	std::vector<vector<cv::Point2i>> contours;
+	cv::findContours(noisyBlobsMask.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+	// init helper info structures
+
+	cv::Mat copy1;
+	cv::Mat curOutlineMat = cv::Mat::zeros(imageRgb.rows, imageRgb.cols, CV_8UC1); // minimal image extended to the size of the original image
+	vector<vector<cv::Point>> singleContourTmp(1);
+	std::vector<RippleBlobInfo> contourInfos(contours.size());
+	for (size_t i = 0; i < contours.size(); ++i)
+	{
+		std::vector<cv::Point2i>& points = contours[i];
+		size_t s = points.size();
+
+		// position centroid
+		cv:Point2i posCenter = std::accumulate(std::begin(points), std::end(points), cv::Point2i(0, 0),
+			[](const cv::Point2i& accum, const cv::Point2i& p) { return cv::Point2i(accum.x + p.x, accum.y + p.y); });
+		posCenter.x /= points.size();
+		posCenter.y /= points.size();
+
+		//
+
+		auto area = cv::contourArea(points); // area=0 for blobs with 1-pixel with/height
+		auto isBig = area > BigBlobPixelsCount;
+
+		RippleBlobInfo& blobInfo = contourInfos[i];
+		cv::Vec3b colorCentroid(0,0,0);
+		if (points.size() == 1) // optimization for small blobs
+		{
+			cv::Point2i pixPos = points[0];
+			colorCentroid = imageRgb.at<cv::Vec3b>(pixPos.y, pixPos.x);
+			blobInfo.ColorCentroids[0] = colorCentroid;
+			blobInfo.ColorCentroidsCount = 1;
+		}
+		else
+		{
+			// collect blob's pixels
+
+			singleContourTmp[0] = points;
+			curOutlineMat.setTo(0);
+			cv::drawContours(curOutlineMat, singleContourTmp, 0, cv::Scalar::all(255), CV_FILLED);
+
+			std::vector<cv::Vec3b> pixels;
+			PoolWatch::copyTo(imageRgb, curOutlineMat, cv::Vec3b(0, 0, 0), pixels);
+			pixels.erase(std::remove(std::begin(pixels), std::end(pixels), cv::Vec3b(0, 0, 0)), std::end(pixels));
+			
+			std::vector<cv::Vec3f> pixelsFloat(pixels.size());
+			std::transform(std::begin(pixels), std::end(pixels), std::begin(pixelsFloat), [](const cv::Vec3b& vb){ return cv::Vec3f(vb[0], vb[1], vb[2]); });
+
+			// calculate centroid of all pixels in the blob
+
+			cv::TermCriteria term(cv::TermCriteria::EPS, 0, 0);
+			cv::Mat colorCenters; // float Kx3, size(rgb)=3
+			int nclusters = 1;
+			if (area < 10)
+				nclusters = 1;
+			else
+				nclusters = blobInfo.ColorCentroids.size();
+			std::vector<int> bestLabels;
+			auto compactness = cv::kmeans(pixelsFloat, nclusters, bestLabels, term, 1, cv::KMEANS_RANDOM_CENTERS, colorCenters);
+
+			blobInfo.ColorCentroidsCount = nclusters;
+			for (int i = 0; i < nclusters; ++i)
+			{
+				blobInfo.ColorCentroids[i] = cv::Vec3b((uchar)colorCenters.at<float>(i, 0), (uchar)colorCenters.at<float>(i, 1), (uchar)colorCenters.at<float>(i, 2));
+			}
+			blobInfo.PixelsDebug = pixels;
+		}
+
+		std::swap(contours[i], blobInfo.Contour);
+		blobInfo.Area = area;
+		blobInfo.IsBig = isBig;
+		blobInfo.PosCenterDebug = posCenter;
+	}
+
+	// determine ripple blobs
+
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		RippleBlobInfo& blobInfo = contourInfos[i];
+		if (!blobInfo.IsBig)
+			continue;
+
+		// check all neighbour small blobs
+
+		int numSmallBlobs = 0;
+		for (size_t i = 0; i < contourInfos.size(); ++i)
+		{
+			RippleBlobInfo& otherBlobInfo = contourInfos[i];
+			if (otherBlobInfo.IsBig)
+				continue;
+
+			const int SupportPixelsRadiusMax = 60; // the circle to determine whether to consider other blob as support
+			double supportRadius = cv::norm(otherBlobInfo.PosCenterDebug - blobInfo.PosCenterDebug);
+			if (supportRadius > SupportPixelsRadiusMax)
+				continue;
+
+			// distance between two blobs is the maximal distance between two color centroids from different blobs
+			auto distFun = [](const RippleBlobInfo& b1, const RippleBlobInfo& b2) -> float
+			{
+				float maxDist = 0;
+				for (size_t i1 = 0; i1 < b1.ColorCentroidsCount; ++i1)
+					for (size_t i2 = 0; i2 < b2.ColorCentroidsCount; ++i2)
+					{
+						float dist = (float)cv::norm(b1.ColorCentroids[i1], b2.ColorCentroids[i2], cv::NORM_L1);
+						maxDist = std::max(dist, maxDist);
+					}
+				return (float)maxDist;
+			};
+			
+			//=50 some false negatives
+			//=200 too many false positives
+			const double SameColorMaxDist = 50;
+			float dist = distFun(blobInfo, otherBlobInfo);
+			if (dist > SameColorMaxDist)
+				continue;
+
+			numSmallBlobs++;
+		}
+
+		int SmallBlobsCountSupport = 5; // blobs, surrounded with bigger number of small blobs are ripple blobs
+		if (numSmallBlobs > SmallBlobsCountSupport)
+		{
+			blobInfo.IsRipple = true;
+		}
+		else
+		{
+			int x1 =blobInfo.PosCenterDebug.x;
+			int y1 =blobInfo.PosCenterDebug.y;
+			int zz = 0;
+		}
+	}
+
+	// construct result mask
+
+	blobsNoRipplesMask.create(imageRgb.rows, imageRgb.cols, CV_8UC1);
+	blobsNoRipplesMask.setTo(0);
+	for (size_t i = 0; i < contourInfos.size(); ++i)
+	{
+		auto& blobInfo = contourInfos[i];
+		bool removeIt = !blobInfo.IsBig || blobInfo.IsRipple;
+
+		if (!removeIt)
+		{
+			singleContourTmp[0] = blobInfo.Contour;
+			cv::drawContours(blobsNoRipplesMask, singleContourTmp, 0, cv::Scalar(255), CV_FILLED);
+		}
+	}
 }
 
 void SwimmerDetector::getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs)

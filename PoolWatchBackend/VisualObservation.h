@@ -47,6 +47,7 @@ public:
 	// Calculates GMM color signature from blob's RGB image
 	static void fixColorSignature(const cv::Mat& blobImageRgb, const cv::Mat& blobImageMask, cv::Vec3b transparentCol, DetectedBlob& resultBlob);
 private:
+	void cleanRippleBlobs(const cv::Mat& imageRgb, const cv::Mat& maskNoisyBlobs, cv::Mat& maskBlobsNoRipples);
 	void getHumanBodies(const cv::Mat& image, const cv::Mat& imageMask, const std::vector<DetectedBlob>& expectedBlobs, std::vector<DetectedBlob>& blobs);
 	void trainLaneSeparatorClassifier(WaterClassifier& wc);
 	void trainSkinClassifier(WaterClassifier& wc);

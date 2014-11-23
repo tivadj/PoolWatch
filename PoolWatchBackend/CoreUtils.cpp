@@ -61,6 +61,8 @@ namespace PoolWatch
 					bool isBlob = *pSrcMask;
 					if (isBlob)
 					{
+						//const cv::Vec3b& srcPix = *pSrcPix;
+						//if (srcPix != transparentCol) resultPixels.push_back(srcPix);
 						resultPixels.push_back(*pSrcPix);
 					}
 					++pSrcPix;
